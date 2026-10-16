@@ -2,15 +2,15 @@ import * as core from '@actions/core';
 import { DefaultArtifactClient } from '@actions/artifact';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseInputs } from './inputs.js';
 import { assertRevision, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
-import { requireRuntime, runtimeBlocker } from './runtime.js';
+import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
 import { renderSummary, structuredReport, type Report } from './reporting.js';
 import { githubClient, ReportingError, takeReportToken } from './github.js';
 import { postReport } from './reporter.js';
-import { sha256 } from './tooling.js';
+import { acquireEngine, resolveRelease, sha256 } from './tooling.js';
 
 const execute = promisify(execFile);
 
@@ -23,6 +23,8 @@ export async function runAction(): Promise<void> {
   };
   let inputs: ReturnType<typeof parseInputs> | undefined;
   let pullNumber: number | undefined;
+  let nativeFiles: string[] = [];
+  let nativeDirectory: string | undefined;
   try {
     inputs = parseInputs((name) => core.getInput(name, { trimWhitespace: false }));
     report.command = inputs.command;
@@ -44,19 +46,47 @@ export async function runAction(): Promise<void> {
         const number = object(payload).number;
         if (typeof number === 'number' && Number.isSafeInteger(number) && number > 0) pullNumber = number;
       }
+      nativeDirectory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-native-'));
+      nativeArguments(inputs, cwd, nativeDirectory, 'selection-check');
+      const home = join(nativeDirectory, 'home');
+      await mkdir(home, { mode: 0o700 });
+      const env = nativeEnvironment(inputs, process.env, home, reportToken);
+      const tools = join(requiredEnv('RUNNER_TEMP'), `evals-tools-${sha256(JSON.stringify([
+        requiredEnv('GITHUB_RUN_ID'), requiredEnv('GITHUB_RUN_ATTEMPT'), requiredEnv('GITHUB_JOB'),
+      ]))}`);
       report.category = 'dependency';
-      report.code = 'headless-runtime-unavailable';
-      requireRuntime();
+      report.code = 'vally-acquisition-failed';
+      const release = await resolveRelease(inputs.vallyVersion, tools);
+      const engine = await acquireEngine(release, tools);
+      report.engine = {
+        version: engine.version, sha256: engine.sha256,
+        dependencySha256: engine.dependencySha256, lockSha256: engine.lockSha256,
+      };
+      report.category = 'execution';
+      report.code = 'vally-execution-failed';
+      const current = await execute('git', ['-C', cwd, 'rev-parse', 'HEAD'], {
+        env: inertEnvironment(process.env), timeout: 10_000, maxBuffer: 4096,
+      });
+      assertRevision(current.stdout, requiredEnv('GITHUB_SHA'));
+      if (await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory) !== cwd) throw new NativeError('project-directory-changed', 'policy');
+      const operation = await runNative(inputs, engine, cwd, nativeDirectory, env);
+      nativeFiles = operation.files;
+      Object.assign(report, operation.result);
     }
-  } catch {
-    // Do not echo exceptions: external paths, process stderr and configuration can contain private data.
-    core.setFailed(report.category === 'dependency' ? runtimeBlocker : 'Invalid Action inputs or workflow context. See the documented input and event requirements.');
+  } catch (error) {
+    report.outcome = 'error';
+    if (error instanceof NativeError) { report.category = error.category; report.code = error.code; }
   }
+  if (report.outcome === 'error' || report.outcome === 'failed' || report.outcome === 'cancelled') core.setFailed(`Evals ${report.outcome}: ${report.code}. See the documented command requirements and local native diagnostics.`);
+  if (report.code === 'native-empty-selection') core.warning('Native evidence reports zero executed trials. This is not an evaluation pass.');
   core.setOutput('outcome', report.outcome);
   core.setOutput('plan-completeness', report.completeness);
   if (report.executed !== undefined) core.setOutput('executed', report.executed);
+  if (report.passed !== undefined) core.setOutput('passed', report.passed);
+  if (report.failed !== undefined) core.setOutput('failed', report.failed);
+  if (report.engine) core.setOutput('vally-version', report.engine.version);
+  if (nativeDirectory) core.setOutput('native-diagnostics-path', nativeDirectory);
   await core.summary.addRaw(renderSummary(report)).write();
-  if (inputs?.uploadTranscripts) core.warning('Transcript upload is unavailable until canonical evidence integration. No raw files were uploaded.');
   const directory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-report-'));
   const path = join(directory, 'report.json');
   await writeFile(path, structuredReport(report), { mode: 0o600 });
@@ -66,6 +96,20 @@ export async function runAction(): Promise<void> {
     [path], directory, { retentionDays: inputs?.retentionDays ?? 7 },
   );
   if (artifact.id !== undefined) core.setOutput('artifact-id', artifact.id);
+  if (inputs?.uploadTranscripts && nativeDirectory && nativeFiles.length) {
+    core.warning('Opt-in native JSONL/logs may contain prompts, source, tool output and secrets. Perfect redaction is not guaranteed.');
+    try {
+      for (const file of nativeFiles) {
+        if (!(await lstat(file)).isFile()) throw new Error('Native transcript is not a regular file.');
+      }
+      await new DefaultArtifactClient().uploadArtifact(
+        `evals-transcripts-${inputs.reportId}-${directory.slice(-6)}`, nativeFiles, nativeDirectory,
+        { retentionDays: inputs.retentionDays },
+      );
+    } catch {
+      core.warning('Optional transcript upload failed. The native operation outcome is unchanged.');
+    }
+  }
   if (inputs?.comment) {
     let warning: string | undefined;
     if (pullNumber === undefined) {

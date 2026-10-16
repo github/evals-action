@@ -38,8 +38,8 @@ describe('minimal presentation projections', () => {
     expect(JSON.parse(serialized)).not.toHaveProperty('passed');
     expect(JSON.parse(structuredReport({
       ...report, passed: 0, failed: 0,
-      engine: { version: '0.19.0', sha256: 'engine' }, runtime: { version: '1', sha256: 'runtime' },
-    }))).toMatchObject({ passed: 0, failed: 0, engine: { version: '0.19.0' }, runtime: { version: '1' } });
+      engine: { version: '0.19.0', sha256: 'engine' },
+    }))).toMatchObject({ passed: 0, failed: 0, engine: { version: '0.19.0' } });
   });
 });
 

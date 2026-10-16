@@ -2,7 +2,7 @@ name: Model-free CI
 on:
   pull_request:
   push:
-    branches: [main, feat/ci-integration]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,27 +45,64 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Exercise packaged entry point without model credentials
-        id: action
+      - name: Run native mock evaluation through the packaged Action
+        id: passing
         uses: ./
         continue-on-error: true
         with:
-          command: plan
+          command: run
           working-directory: .
-          suite: synthetic-control
-          report-id: packaged-control
-      - name: Verify the blocked or excluded outcome
+          eval-paths: tests/fixtures/pass.eval.yaml
+          vally-version: 0.19.0
+          report-id: native-pass
+      - name: Verify native verdict failure through the same installed CLI
+        id: failing
+        uses: ./
+        continue-on-error: true
+        with:
+          command: run
+          working-directory: .
+          eval-paths: tests/fixtures/fail.eval.yaml
+          vally-version: 0.19.0
+          report-id: native-fail
+      - name: Lint through the same installed CLI
+        id: lint
+        uses: ./
+        continue-on-error: true
+        with:
+          command: lint
+          working-directory: .
+          eval-paths: tests/fixtures/pass.eval.yaml
+          vally-version: 0.19.0
+          report-id: native-lint
+      - name: Check native results and structured uploads
         env:
-          OPERATION_OUTCOME: ${{ steps.action.outputs.outcome }}
-          STEP_OUTCOME: ${{ steps.action.outcome }}
-          ARTIFACT_ID: ${{ steps.action.outputs.artifact-id }}
-          PLAN_COMPLETENESS: ${{ steps.action.outputs.plan-completeness }}
+          PASS_OUTCOME: ${{ steps.passing.outputs.outcome }}
+          PASS_STEP: ${{ steps.passing.outcome }}
+          FAIL_OUTCOME: ${{ steps.failing.outputs.outcome }}
+          FAIL_STEP: ${{ steps.failing.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outputs.outcome }}
+          LINT_STEP: ${{ steps.lint.outcome }}
+          PASS_ARTIFACT: ${{ steps.passing.outputs.artifact-id }}
+          FAIL_ARTIFACT: ${{ steps.failing.outputs.artifact-id }}
+          LINT_ARTIFACT: ${{ steps.lint.outputs.artifact-id }}
+          EXECUTED: ${{ steps.passing.outputs.executed }}
+          FAILED: ${{ steps.failing.outputs.failed }}
         run: |
-          test -n "$ARTIFACT_ID"
-          test "$PLAN_COMPLETENESS" = unknown
-          if [ "$OPERATION_OUTCOME" = not-run ]; then
-            test "$STEP_OUTCOME" = success
+          test -n "$PASS_ARTIFACT"
+          test -n "$FAIL_ARTIFACT"
+          test -n "$LINT_ARTIFACT"
+          if [ "$PASS_OUTCOME" = not-run ]; then
+            test "$PASS_STEP" = success
+            test "$FAIL_OUTCOME" = not-run
+            test "$LINT_OUTCOME" = not-run
           else
-            test "$OPERATION_OUTCOME" = error
-            test "$STEP_OUTCOME" = failure
+            test "$PASS_OUTCOME" = passed
+            test "$PASS_STEP" = success
+            test "$EXECUTED" = 1
+            test "$FAIL_OUTCOME" = failed
+            test "$FAIL_STEP" = failure
+            test "$FAILED" = 1
+            test "$LINT_OUTCOME" = validated
+            test "$LINT_STEP" = success
           fi

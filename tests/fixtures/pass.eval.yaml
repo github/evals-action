@@ -1,0 +1,20 @@
+name: deterministic-pass
+type: capability
+defaults:
+  executor: mock
+stimuli:
+  - name: greeting
+    prompt: hello
+    tags:
+      cost: free
+    graders:
+      - type: output-contains
+        config:
+          substring: hello
+      - type: output-contains
+        config:
+          substring: intentionally-absent
+scoring:
+  weights:
+    output-contains: 1
+  threshold: 0.5

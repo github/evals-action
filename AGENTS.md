@@ -1,7 +1,8 @@
 # Contributor instructions
 
-- Keep this a thin GitHub adapter; native selection, execution and evidence
-  belong to the canonical Runtime/Core bundle, never a parallel runner.
+- Keep this a thin GitHub adapter over the acquired Vally CLI. Translate
+  supported commands and consume native JSONL; never duplicate selection,
+  configuration parsing, grading or execution. No Runtime/Core bundle is required.
 - Use Node 24, the pinned pnpm version, and one lockfile. Install with scripts
   disabled. Run focused tests during development and `pnpm check` before review.
 - Rebuild and commit `dist` after source changes. Never manually edit bundles.
@@ -12,4 +13,5 @@
 - Treat prompts, source, raw evidence and credentials as private. Default
   artifacts are allowlisted structured projections only.
 - Use argument-array process calls and SHA-pinned third-party Actions.
-- Keep the PR draft while actual native integration or Linux acceptance is missing.
+- Qualify native behavior with the built-in mock executor and deterministic
+  graders. Do not substitute model-backed runs for model-free acceptance.

@@ -18,10 +18,11 @@ pnpm check
 
 `pnpm check` runs type checking, lint, model-free coverage, deterministic
 source-to-bundle comparison, and a clean consumer-directory packaging control.
-The packaged control deliberately lacks artifact-service credentials and
-verifies explicit failure, not native execution. Linux CI separately exercises
-the packaged Action under the hosted artifact service. Neither is native runtime
-qualification. No model credentials belong in CI or test fixtures.
+The clean consumer-directory packaging control deliberately lacks artifact
+credentials and verifies invalid-input failure. Linux CI separately exercises
+the packaged Action with real Vally acquisition, native mock-executor pass/fail
+and lint, plus hosted artifact upload. No model credentials belong in CI or
+test fixtures.
 
 PR check names map directly to these commands:
 
@@ -29,15 +30,16 @@ PR check names map directly to these commands:
 | --- | --- |
 | Lint | `pnpm lint`: source/test lint rules. |
 | Type check | `pnpm typecheck`: strict TypeScript validation. |
-| Unit tests | `pnpm test:coverage`: input, policy, reporting, mocked GitHub, tool reuse and Action orchestration tests with coverage thresholds. |
+| Unit tests | `pnpm test:coverage`: input, policy, reporting, mocked GitHub, tool reuse, orchestration and real model-free native CLI tests with coverage thresholds. |
 | Bundle verification | `pnpm check:package`: committed bundle freshness and a clean consumer-directory packaged entry-point test. |
-| Action smoke test | Executes `uses: ./` on Ubuntu, checks its explicit blocked/excluded outcome and real artifact upload. No models or native evaluations run. |
+| Action smoke test | Executes `uses: ./` on Ubuntu with actual acquisition, native mock-executor pass/fail, lint, installation reuse and artifact upload. No models run. |
 
 Comment networking tests use synthetic GitHub responses, including serialized
 workflow guards, pagination, bot ownership, late runs/attempts, permission
 failures and readback. Installer tests use synthetic packages and exercise
-concurrent install/reuse and tampered files/receipts. They are not native
-runtime or live GitHub bot-token qualification.
+concurrent install/reuse and tampered files/receipts. `tests/native.test.ts`
+separately qualifies the real pinned Vally CLI with the built-in mock executor
+and deterministic graders. No test claims live GitHub bot-token qualification.
 
 Commit `dist/index.cjs` and its generated license notices. This is an intentional
 JavaScript Action distribution exception: consumers execute committed `dist`
@@ -48,17 +50,16 @@ rebuild, and review both source and distribution changes.
 Use strict TypeScript, argument-array process invocation, exact dependencies,
 and SHA-pinned third-party Actions. Do not log raw evaluator/process output or
 copy native runtime behavior into the Action. New native capabilities require
-the canonical headless runtime contract and model-free integration controls.
+verified CLI arguments/output contracts and model-free integration controls.
 Only trusted own-repository code may eventually receive execution credentials;
 environment filtering is not an OS sandbox.
 
 ## Release preparation
 
-This draft is not release-ready. Before proposing a release, integrate an
-immutable closed Runtime/Core bundle and record its actual version/checksum,
-verify supported selected-engine identities and native Linux model-free
-acceptance, wire native verdict/evidence handling, and qualify the optional
-reporting client with the supported hosted token. Include the runtime's notices in the distribution.
+Before proposing a release, verify supported CLI versions and their native
+evidence contracts, run the Linux model-free controls, and qualify the optional
+reporting client with the supported hosted token. Do not advertise a plan
+operation or native selector combination the selected CLI does not expose.
 Run `pnpm check` from a clean checkout, review dependency provenance and the
 packaged delta, and document support and limitations.
 

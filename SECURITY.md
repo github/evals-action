@@ -22,8 +22,21 @@ separate long-term support schedule.
 
 ## Execution boundary
 
-The development preview fails closed before native execution. Future execution
-must bind authority to a reviewed workflow, immutable checkout, selected engine
-and current native plan. Fork model execution and `pull_request_target` are not
-supported. Do not provide model credentials to untrusted code. Environment
-filtering does not isolate processes running as the same runner user.
+The Action invokes the acquired Vally CLI directly. Use only trusted,
+reviewed workflows and evaluation sources. Native project configuration can
+load executable plugins, including during lint; lint does not run subjects or
+judges, but it is not a sandbox. Native run may execute project setup, providers,
+executors and graders. Fork jobs and `pull_request_target` are excluded.
+
+The checkout revision is checked before acquisition and again before execution.
+Workflow preparation can still intentionally change files in that checkout;
+the reported Git revision is not a claim that all working files are unchanged.
+An explicit run step is the team's execution authorization. Use a protected
+GitHub environment when approval is required. No plan-preview approval token
+or reusable authorization is invented.
+
+Only run receives `COPILOT_GITHUB_TOKEN` and explicitly named `credential-env`
+values. Installation, version checks and lint receive neither model nor reporting
+tokens. Reporting credentials are separate, and protected environment names
+cannot be forwarded through `credential-env`. Do not provide secrets to untrusted
+code. Environment filtering does not isolate processes under the same runner user.

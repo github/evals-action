@@ -1,0 +1,8 @@
+paths:
+  evals: [.]
+  evalFilenames: ['*.eval.yaml']
+suites:
+  smoke:
+    evals: [pass.eval.yaml]
+  empty:
+    evals: [missing/*.eval.yaml]

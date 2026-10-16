@@ -1,0 +1,9 @@
+name: deterministic-grader-error
+type: capability
+defaults:
+  executor: mock
+stimuli:
+  - name: greeting
+    prompt: hello
+    graders:
+      - type: synthetic-error

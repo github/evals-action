@@ -12,6 +12,7 @@ export interface Inputs {
   reportId: string;
   uploadTranscripts: boolean;
   retentionDays: number;
+  credentialEnv: string[];
 }
 
 export function exactVersion(value: string): boolean {
@@ -72,5 +73,6 @@ export function parseInputs(read: InputReader): Inputs {
   return {
     command, workingDirectory, ...(suite ? { suite } : {}), evalPaths, tags, vallyVersion, overrides,
     comment: boolean('comment'), reportId, uploadTranscripts: boolean('upload-transcripts'), retentionDays,
+    credentialEnv: lines('credential-env'),
   };
 }

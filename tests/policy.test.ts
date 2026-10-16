@@ -3,7 +3,6 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assertRevision, eventEligibility, inertEnvironment, object, projectDirectory } from '../src/policy.js';
-import { requireRuntime, runtimeBlocker } from '../src/runtime.js';
 
 const directories: string[] = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
@@ -50,8 +49,7 @@ describe('trust and inert operations', () => {
     await expect(projectDirectory(workspace, root)).rejects.toThrow(/relative/);
     await expect(projectDirectory(workspace, 'missing')).rejects.toThrow();
   });
-  it('rejects absent native integration rather than inventing a runner', () => {
-    expect(() => requireRuntime()).toThrow(runtimeBlocker);
+  it('rejects malformed object boundaries', () => {
     expect(() => object(null)).toThrow();
     expect(() => object([])).toThrow();
     expect(() => object('text')).toThrow();

@@ -1,0 +1,12 @@
+name: deterministic-skip
+type: capability
+defaults:
+  executor: mock
+stimuli:
+  - name: greeting
+    prompt: hello
+    supported_executors: [copilot-sdk]
+    graders:
+      - type: output-contains
+        config:
+          substring: hello

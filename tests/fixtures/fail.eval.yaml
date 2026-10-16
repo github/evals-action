@@ -1,0 +1,15 @@
+name: deterministic-fail
+type: capability
+defaults:
+  executor: mock
+stimuli:
+  - name: greeting
+    prompt: hello
+    graders:
+      - type: output-contains
+        config:
+          substring: intentionally-absent
+scoring:
+  weights:
+    output-contains: 1
+  threshold: 1

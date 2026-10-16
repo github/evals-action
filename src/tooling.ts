@@ -129,7 +129,7 @@ export async function inspectInstallation(directory: string, release: EngineRele
 }
 
 // The caller supplies a private job-scoped directory, never the project or a restored cross-job cache.
-// Not wired into the entry point until the canonical runtime accepts the resulting engine identity.
+// Job-local receipts bind the concrete CLI and installed dependency graph.
 export async function acquireEngine(
   release: EngineRelease, jobDirectory: string,
   install: InstallProcess = async (args, cwd, env) => {

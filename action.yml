@@ -1,17 +1,17 @@
 name: Evals
-description: Native evaluation CI integration (development preview; runtime integration blocked)
+description: Acquire Vally and run native lint or evaluations with structured GitHub reporting.
 author: GitHub
 inputs:
   command:
-    description: Explicit operation - lint, plan, or run. Never defaults to run.
+    description: Explicit lint or run operation. Plan is reserved and fails because Vally has no plan CLI.
     required: true
   working-directory:
     description: Project directory relative to the checked-out workspace.
     required: true
   suite:
-    description: Native named suite. Selection is resolved by the native runtime.
+    description: Native named suite for run. Cannot combine with eval-paths or tags.
   eval-paths:
-    description: Newline-separated native eval paths or patterns; spaces are preserved.
+    description: Newline-separated literal eval file paths (lint also accepts directories). No shell glob expansion.
   tags:
     description: Newline-separated native tag selectors.
   vally-version:
@@ -27,6 +27,8 @@ inputs:
     description: Positive integer native timeout override in seconds.
   max-retries:
     description: Nonnegative integer native retry override.
+  credential-env:
+    description: Newline-separated additional evaluator credential environment variable names for run only. Values stay in environment secrets.
   comment:
     description: Opt in to a sticky PR report; requires report-token and verified workflow serialization.
     default: 'false'
@@ -36,28 +38,30 @@ inputs:
     description: Stable unique identity within a job. PR comments require a literal unique value and a non-matrix job.
     default: evals
   upload-transcripts:
-    description: Opt in to sensitive detailed evidence (not yet integrated).
+    description: Opt in to native JSONL and stdout/stderr logs, which may contain sensitive content.
     default: 'false'
   artifact-retention-days:
     description: Structured artifact retention in days, subject to repository policy.
     default: '7'
 outputs:
   outcome:
-    description: error or not-run in this development preview; never an evaluation pass.
+    description: validated, passed, failed, error, cancelled, or not-run. Lint validation is not an evaluation pass.
   plan-completeness:
-    description: unknown until a canonical runtime resolves the plan.
+    description: Complete native terminal evidence, partial evidence, or unknown. No pre-execution plan is claimed.
   executed:
-    description: Known executed count; absent when unknown.
+    description: Number of executed native trial records, excluding skipped records; absent when unknown.
   passed:
-    description: Known native pass count; absent when unknown.
+    description: Number of executed native eval/variant/model groups with a passing native verdict; absent when unknown.
   failed:
-    description: Known native fail count; absent when unknown.
+    description: Number of executed native eval/variant/model groups with a failing native verdict; absent when unknown.
   vally-version:
     description: Concrete acquired engine version; absent until acquisition.
   result-path:
     description: Local minimal structured report path.
   artifact-id:
     description: Uploaded structured report artifact identifier.
+  native-diagnostics-path:
+    description: Local native output directory. Raw logs are uploaded only when upload-transcripts is true.
 runs:
   using: node24
   main: dist/index.cjs

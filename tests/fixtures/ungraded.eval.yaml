@@ -1,0 +1,7 @@
+name: deterministic-ungraded
+type: capability
+defaults:
+  executor: mock
+stimuli:
+  - name: greeting
+    prompt: hello
