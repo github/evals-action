@@ -12,6 +12,10 @@ describe('public inputs', () => {
     expect(() => parseValues({ suite: '' })).toThrow(/selection/);
     expect(() => parseValues({ 'working-directory': '' })).toThrow(/required/);
   });
+  it('allows selector-free lint but still requires explicit selection for run', () => {
+    expect(parseValues({ command: 'lint', suite: '' })).toMatchObject({ command: 'lint', evalPaths: [], tags: [] });
+    expect(() => parseValues({ command: 'run', suite: '' })).toThrow(/selection/);
+  });
   it.each(['lint', 'plan', 'run'])('accepts only explicit %s routing', (command) => {
     expect(parseValues({ command }).command).toBe(command);
   });

@@ -27,9 +27,8 @@ export interface NativeResult {
 export function nativeArguments(inputs: Inputs, cwd: string, directory: string, runId: string): string[][] {
   if (inputs.command === 'plan') throw new NativeError('vally-plan-not-supported');
   if (inputs.command === 'lint') {
-    if (inputs.suite || inputs.tags.length || !inputs.evalPaths.length) throw new NativeError('vally-lint-requires-eval-paths-without-suite-or-tags');
     if (Object.keys(inputs.overrides).length) throw new NativeError('vally-lint-does-not-support-execution-overrides');
-    return inputs.evalPaths.map((path) => ['lint', `--eval-spec=${resolve(cwd, path)}`]);
+    return [['lint', `--eval-spec=${resolve(cwd)}`]];
   }
   if (inputs.suite && (inputs.evalPaths.length || inputs.tags.length)) throw new NativeError('vally-suite-cannot-combine-with-paths-or-tags');
   const args = ['eval', '--require-pass', '--output=jsonl', `--run-id=${runId}`, `--output-dir=${join(directory, 'artifacts')}`, `--work-dir=${cwd}`];

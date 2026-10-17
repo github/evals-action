@@ -173,3 +173,21 @@ it('enforces platform/input guards and still writes minimal reports', async () =
   await runAction();
   expect(mocks.setFailed).toHaveBeenCalledTimes(2);
 });
+
+it('warns when lint selectors are ignored and keeps the full-project comment identity stable', async () => {
+  mocks.inputs.command = 'lint';
+  mocks.inputs['eval-paths'] = 'selected.yaml';
+  mocks.inputs.tags = 'cost=free';
+  mocks.result = { outcome: 'validated', completeness: 'unknown', category: 'none', code: 'native-lint-validated', executed: 0 };
+  await runAction();
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('selectors are ignored for lint'));
+  const first: unknown[][] = mocks.post.mock.calls;
+  const firstContext = first[0]?.[1];
+  mocks.inputs.suite = '';
+  mocks.inputs['eval-paths'] = '';
+  mocks.inputs.tags = '';
+  await runAction();
+  const calls: unknown[][] = mocks.post.mock.calls;
+  expect(calls[1]?.[1]).toEqual(firstContext);
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+});

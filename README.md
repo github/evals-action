@@ -12,7 +12,7 @@ required while the repository is private. Pin a reviewed full commit SHA.
 
 | Action command | Native command | Supported selection |
 | --- | --- | --- |
-| `lint` | `vally lint --eval-spec=<path>` for each supplied path | Explicit eval files or directories. No suite, tags or execution overrides. |
+| `lint` | `vally lint --eval-spec=<working-directory>` | All evals discovered recursively under the project directory using native filename patterns. No selector required. |
 | `run` | `vally eval --require-pass --output=jsonl ...` | A named suite, explicit eval files, or native tags. |
 | `plan` | None | Explicit error: Vally 0.19.0 exposes no plan/dry-run CLI. It never falls back to a run. |
 
@@ -61,8 +61,11 @@ Model-backed execution consumes the team's account resources. Use a protected
 GitHub environment if approval is required. For a model-free suite using Vally's
 `mock` executor and deterministic graders, omit the token.
 
-For lint, use `command: lint` with `eval-paths: path/to/eval.yaml`, no suite,
-execution overrides or evaluator credentials. Native lint can load configured
+For lint, use only `command: lint` and `working-directory: .`. It always scans
+all evals under that directory using Vally's configured filename patterns.
+Any supplied suite, eval-paths or tags are ignored with a warning, never used
+to narrow lint. Execution overrides are unsupported; do not supply evaluator
+credentials. Native lint can load configured
 grader plugins; it is not a sandbox for untrusted code.
 
 ## Inputs
@@ -72,7 +75,7 @@ grader plugins; it is not a sandbox for untrusted code.
 | `command` | Required: `lint` or `run`. Reserved `plan` explicitly errors. No implicit run. |
 | `working-directory` | Required project path relative to checkout, resolving inside it. Use `.` for the root. |
 | `suite` | Native named suite for run; mutually exclusive with paths and tags. |
-| `eval-paths` | Newline-separated literal paths. Spaces, including leading/trailing spaces, are preserved. Run expects eval files; lint also accepts directories. |
+| `eval-paths` | Newline-separated literal eval file paths for run. Spaces, including leading/trailing spaces, are preserved. Ignored for lint. |
 | `tags` | Newline-separated native filters, e.g. `cost=free` or `flaky!=yes`; run only. |
 | `vally-version` | `latest` stable by default, or an exact stable version such as `0.19.0`. |
 | `model` | Native model override, including Vally's comma-separated model list. |
@@ -85,7 +88,8 @@ grader plugins; it is not a sandbox for untrusted code.
 | `upload-transcripts` | Default `false`. Opt in to native JSONL and stdout/stderr logs, potentially containing sensitive data. |
 | `artifact-retention-days` | 1-90, default 7; subject to repository retention policy. |
 
-At least one selector is required. Omitted execution overrides preserve native
+Run requires at least one selector; lint does not. All selection inputs are
+ignored for lint with a visible warning. Omitted execution overrides preserve native
 configuration/defaults. Trials are not API calls or currency; this Action does
 not impose or promise a dollar/token budget.
 

@@ -28,6 +28,9 @@ export async function runAction(): Promise<void> {
   try {
     inputs = parseInputs((name) => core.getInput(name, { trimWhitespace: false }));
     report.command = inputs.command;
+    if (inputs.command === 'lint' && (inputs.suite || inputs.evalPaths.length || inputs.tags.length)) {
+      core.warning('Lint scans all evals under working-directory. Suite, eval-paths and tags selectors are ignored for lint.');
+    }
     if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Only Linux x64 runners are supported.');
     const payload: unknown = JSON.parse(await readFile(requiredEnv('GITHUB_EVENT_PATH'), 'utf8'));
     if (eventEligibility(requiredEnv('GITHUB_EVENT_NAME'), payload, requiredEnv('GITHUB_REPOSITORY')) === 'fork') {
@@ -119,7 +122,9 @@ export async function runAction(): Promise<void> {
         const outcome = await postReport(githubClient(reportToken, requiredEnv('RUNNER_TEMP')), {
           repository: requiredEnv('GITHUB_REPOSITORY'), workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
           workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'), reportId: inputs.reportId,
-          selection: sha256(JSON.stringify([inputs.suite ?? '', inputs.evalPaths, inputs.tags])),
+          selection: sha256(JSON.stringify(inputs.command === 'lint'
+            ? ['lint', inputs.workingDirectory]
+            : [inputs.suite ?? '', inputs.evalPaths, inputs.tags])),
           pullNumber, runId: Number(requiredEnv('GITHUB_RUN_ID')),
           order: { runNumber: Number(requiredEnv('GITHUB_RUN_NUMBER')), attempt: Number(requiredEnv('GITHUB_RUN_ATTEMPT')) },
         }, report, artifact.id);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -31,12 +31,13 @@ describe('direct CLI translation', () => {
     expect(args).toContain('--timeout=60s');
     expect(args).toContain('--max-retries=0');
     expect(nativeArguments(inputs({ 'eval-paths': '', suite: '--danger' }), '.', '.', 'id')[0]).toContain('--suite=--danger');
-    expect(nativeArguments(inputs({ command: 'lint', 'eval-paths': 'one.yaml\ntwo.yaml' }), '.', '.', 'id')).toHaveLength(2);
+    expect(nativeArguments(inputs({ command: 'lint', 'eval-paths': 'one.yaml\ntwo.yaml', suite: 'smoke', tags: 'cost=free' }), '.', '.', 'id'))
+      .toEqual([['lint', `--eval-spec=${resolve('.')}`]]);
     expect(nativeArguments(inputs(), '.', '.', 'id')[0]).not.toContain('--workers=1');
   });
   it('refuses unsupported native plan/lint and selection combinations, never replacing them with a run', () => {
     for (const values of [
-      { command: 'plan' }, { command: 'lint', suite: 'smoke' }, { command: 'lint', tags: 'cost=free' },
+      { command: 'plan' },
       { command: 'lint', runs: '2' }, { suite: 'smoke' },
     ]) expect(() => nativeArguments(inputs(values), '.', '.', 'id')).toThrow();
   });
@@ -111,14 +112,15 @@ async function nativeFixture() {
 }
 
 describe('real Vally CLI, built-in mock executor, no models', () => {
-  it('lints actual eval files and preserves invalid-config failure', async () => {
+  it('lints the entire project without selectors and catches invalid nested evals outside supplied selections', async () => {
     const fixture = await nativeFixture();
-    const selected = inputs({ command: 'lint' });
+    const selected = inputs({ command: 'lint', 'eval-paths': '' });
     const env = nativeEnvironment(selected, { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
     const valid = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
     expect(valid.result).toMatchObject({ outcome: 'validated', executed: 0 });
-    await writeFile(join(fixture.project, 'invalid.yaml'), 'name: [broken');
-    const invalid = await runNative(inputs({ command: 'lint', 'eval-paths': 'invalid.yaml' }), fixture.engine, fixture.project, fixture.output, env);
+    await mkdir(join(fixture.project, 'nested'));
+    await writeFile(join(fixture.project, 'nested', 'invalid.eval.yaml'), 'name: [broken');
+    const invalid = await runNative(inputs({ command: 'lint', 'eval-paths': 'pass.eval.yaml', suite: 'smoke', tags: 'cost=free' }), fixture.engine, fixture.project, fixture.output, env);
     expect(invalid.result).toMatchObject({ outcome: 'error', code: 'native-lint-failed' });
   }, 30_000);
   it('runs an actual suite and respects native weighted thresholds instead of all-graders-pass rules', async () => {
@@ -157,7 +159,6 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     const env = nativeEnvironment(inputs(), { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
     const ungraded = await runNative(inputs({ 'eval-paths': 'ungraded.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
     expect(ungraded.result).toMatchObject({ outcome: 'passed', executed: 1, passed: 1 });
-    await appendFile(join(fixture.project, '.vally.yaml'), '\nplugins:\n  grader: [./error-grader.mjs]\n');
     const brokenGrader = await runNative(inputs({ 'eval-paths': 'grader-error.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
     expect(brokenGrader.result).toMatchObject({ outcome: 'error', category: 'execution', code: 'native-execution-error' });
     expect(brokenGrader.result).not.toHaveProperty('failed');

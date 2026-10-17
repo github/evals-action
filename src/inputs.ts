@@ -54,7 +54,7 @@ export function parseInputs(read: InputReader): Inputs {
   const suite = text('suite');
   const evalPaths = raw('eval-paths').split(/\r?\n/).filter((line) => line !== '');
   const tags = lines('tags');
-  if (!suite && !evalPaths.length && !tags.length) throw new Error('Explicit suite, eval-paths, or tags selection is required.');
+  if (command !== 'lint' && !suite && !evalPaths.length && !tags.length) throw new Error('Explicit suite, eval-paths, or tags selection is required.');
   const vallyVersion = text('vally-version') || 'latest';
   if (vallyVersion !== 'latest' && !exactVersion(vallyVersion)) throw new Error('vally-version must be latest or an exact stable version.');
   const reportId = text('report-id') || 'evals';

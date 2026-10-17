@@ -3,17 +3,17 @@ description: Acquire Vally and run native lint or evaluations with structured Gi
 author: GitHub
 inputs:
   command:
-    description: Explicit lint or run operation. Plan is reserved and fails because Vally has no plan CLI.
+    description: Lint all evals under working-directory, or run a native selection. Plan is reserved and unsupported.
     required: true
   working-directory:
     description: Project directory relative to the checked-out workspace.
     required: true
   suite:
-    description: Native named suite for run. Cannot combine with eval-paths or tags.
+    description: Native named suite for run. Cannot combine with eval-paths or tags. Ignored for lint.
   eval-paths:
-    description: Newline-separated literal eval file paths (lint also accepts directories). No shell glob expansion.
+    description: Newline-separated literal eval file paths for run. No shell glob expansion. Ignored for lint.
   tags:
-    description: Newline-separated native tag selectors.
+    description: Newline-separated native tag selectors for run. Ignored for lint.
   vally-version:
     description: Latest stable or an exact stable semantic version.
     default: latest
