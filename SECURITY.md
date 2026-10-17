@@ -35,8 +35,10 @@ An explicit run step is the team's execution authorization. Use a protected
 GitHub environment when approval is required. No plan-preview approval token
 or reusable authorization is invented.
 
-Only run receives `COPILOT_GITHUB_TOKEN` and explicitly named `credential-env`
-values. Installation, version checks and lint receive neither model nor reporting
-tokens. Reporting credentials are separate, and protected environment names
-cannot be forwarded through `credential-env`. Do not provide secrets to untrusted
-code. Environment filtering does not isolate processes under the same runner user.
+Only run receives explicitly named `credential-env` values; list
+`COPILOT_GITHUB_TOKEN` there when Copilot authentication is needed. It is not
+implicitly inherited. Installation, version checks, plan and lint receive neither
+model nor reporting tokens. Reporting credentials are separate, and protected
+environment names cannot be forwarded through `credential-env`. Do not provide
+secrets to untrusted code. Environment filtering does not isolate processes under
+the same runner user.

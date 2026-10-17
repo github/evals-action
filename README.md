@@ -53,6 +53,7 @@ jobs:
           working-directory: .
           suite: regression
           vally-version: 0.19.0
+          credential-env: COPILOT_GITHUB_TOKEN
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.EVALS_COPILOT_TOKEN }}
 ```
@@ -81,7 +82,7 @@ grader plugins; it is not a sandbox for untrusted code.
 | `model` | Native model override, including Vally's comma-separated model list. |
 | `runs`, `workers`, `timeout` | Positive integer run overrides. Timeout is per trial in seconds. |
 | `max-retries` | Nonnegative native run override. Vally controls conditional retries and unsupported combinations. |
-| `credential-env` | Additional evaluator credential environment variable **names**, one per line, passed only to run. Values belong in workflow secret references, never this input. |
+| `credential-env` | Evaluator credential environment variable **names**, one per line, passed only to run. Include `COPILOT_GITHUB_TOKEN` to opt in to Copilot authentication. Values belong in workflow secret references, never this input. |
 | `comment` | Default `false`; opt in to a serialized bot-owned PR report. |
 | `report-token` | No default. Explicit reporting-only GitHub App/bot token, normally `${{ github.token }}`. Human/PAT reporters are refused. |
 | `report-id` | Stable identity within a job; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. Comments require unique literal values and non-matrix jobs. |
@@ -150,7 +151,8 @@ executors/graders. An explicit `run` step is the team's authorization; environme
 filtering is not an OS sandbox and same-repository origin alone is not a trust
 decision. Do not pass secrets to unreviewed code.
 
-`COPILOT_GITHUB_TOKEN` is forwarded only to run. The automatic Actions token is
+`COPILOT_GITHUB_TOKEN` is forwarded to run only when explicitly listed in
+`credential-env`; it is not implicitly inherited. The automatic Actions token is
 not model authentication. For BYOK/custom native providers, explicitly list
 their credential variable names in `credential-env`. Reporting tokens and
 protected process/GitHub environment variables cannot be forwarded this way.

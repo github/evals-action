@@ -35,6 +35,31 @@ describe('direct CLI translation', () => {
       .toEqual([['lint', `--eval-spec=${resolve('.')}`]]);
     expect(nativeArguments(inputs(), '.', '.', 'id')[0]).not.toContain('--workers=1');
   });
+  it('keeps adversarial native selectors as single argv values without shell execution', async () => {
+    const root = await temporary();
+    const captured = join(root, 'argv.json');
+    const marker = join(root, 'shell-marker');
+    const entry = join(root, 'capture.cjs');
+    await writeFile(entry, [
+      "require('node:fs').writeFileSync(process.env.ARGV_FILE, JSON.stringify(process.argv.slice(2)));",
+      "setTimeout(() => {}, 10);",
+    ].join('\n'));
+    const parsed = inputs({
+      'eval-paths': 'eval path;echo path.yaml',
+      tags: `cost=free,low\nflaky!=yes;touch ${marker}`,
+    });
+    const args = nativeArguments(parsed, root, root, 'run-id')[0]!;
+    expect(args).toContain('--tag=cost=free,low');
+    expect(args).toContain(`--tag=flaky!=yes;touch ${marker}`);
+    expect(args).toContain(`--eval-spec=${resolve(root, 'eval path;echo path.yaml')}`);
+    const result = await invokeVally(
+      { entry, version: 'synthetic', integrity: '', sha256: '', dependencySha256: '', lockSha256: '' },
+      args, root, { ARGV_FILE: captured }, root,
+    );
+    expect(result.code).toBe(0);
+    expect(JSON.parse(await readFile(captured, 'utf8'))).toEqual(args);
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
   it('refuses unsupported native plan/lint and selection combinations, never replacing them with a run', () => {
     for (const values of [
       { command: 'plan' },
@@ -43,13 +68,25 @@ describe('direct CLI translation', () => {
   });
   it('separates model credentials from installation, preview, reporting and process injection', () => {
     const source = { COPILOT_GITHUB_TOKEN: 'model', OPENAI_API_KEY: 'byok', GITHUB_TOKEN: 'report', ACTIONS_RUNTIME_TOKEN: 'artifact', PATH: '/bin', NODE_OPTIONS: 'unsafe' };
-    expect(nativeEnvironment(inputs({ command: 'lint' }), source, '/home', 'report')).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
-    expect(nativeEnvironment(inputs({ 'credential-env': 'OPENAI_API_KEY' }), source, '/home', 'report'))
-      .toMatchObject({ COPILOT_GITHUB_TOKEN: 'model', OPENAI_API_KEY: 'byok', VALLY_TELEMETRY_OPTOUT: '1' });
+    const unlisted = nativeEnvironment(inputs(), source, '/home', 'report');
+    for (const name of ['COPILOT_GITHUB_TOKEN', 'OPENAI_API_KEY', 'GITHUB_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'NODE_OPTIONS']) {
+      expect(unlisted).not.toHaveProperty(name);
+    }
+    const byok = nativeEnvironment(inputs({ 'credential-env': 'OPENAI_API_KEY' }), source, '/home', 'report');
+    expect(byok).toMatchObject({ OPENAI_API_KEY: 'byok', VALLY_TELEMETRY_OPTOUT: '1' });
+    expect(byok).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+    expect(nativeEnvironment(inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' }), source, '/home', 'report'))
+      .toHaveProperty('COPILOT_GITHUB_TOKEN', 'model');
+    for (const command of ['lint', 'plan']) {
+      const preview = nativeEnvironment(inputs({ command, 'credential-env': 'COPILOT_GITHUB_TOKEN\nOPENAI_API_KEY' }), source, '/home', 'report');
+      expect(preview).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+      expect(preview).not.toHaveProperty('OPENAI_API_KEY');
+    }
     for (const name of ['GITHUB_TOKEN', 'NODE_OPTIONS', 'LD_PRELOAD', 'BASH_ENV', 'bad-name']) {
       expect(() => nativeEnvironment(inputs({ 'credential-env': name }), source, '/home', 'report')).toThrow();
     }
-    expect(() => nativeEnvironment(inputs(), { COPILOT_GITHUB_TOKEN: 'report' }, '/home', 'report')).toThrow(/reporting-token/);
+    expect(() => nativeEnvironment(inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' }), { COPILOT_GITHUB_TOKEN: 'report' }, '/home', 'report'))
+      .toThrow(/reporting-token/);
   });
 });
 
@@ -131,6 +168,13 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 4, passed: 2, failed: 0 });
     expect(actual.result.groups).toHaveLength(2);
     expect(actual.files).toHaveLength(2);
+  }, 30_000);
+  it('preserves native include, exclude and comma-separated tag filters in real CLI execution', async () => {
+    const fixture = await nativeFixture();
+    const selected = inputs({ tags: 'cost=free,low\ncost!=paid' });
+    const env = nativeEnvironment(selected, { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const actual = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
+    expect(actual.result).toMatchObject({ outcome: 'passed', executed: 1, passed: 1, failed: 0 });
   }, 30_000);
   it('fails an actual native verdict and reports a fully skipped selection as not-run', async () => {
     const fixture = await nativeFixture();

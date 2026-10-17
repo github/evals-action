@@ -28,7 +28,7 @@ inputs:
   max-retries:
     description: Nonnegative integer native retry override.
   credential-env:
-    description: Newline-separated additional evaluator credential environment variable names for run only. Values stay in environment secrets.
+    description: Newline-separated evaluator credential environment variable names for run only, including COPILOT_GITHUB_TOKEN when needed. Values stay in environment secrets.
   comment:
     description: Opt in to a sticky PR report; requires report-token and verified workflow serialization.
     default: 'false'

@@ -53,8 +53,7 @@ export function nativeEnvironment(
   if (inputs.command !== 'run') return env;
   const forbidden = /^(GITHUB_|GH_|ACTIONS_|RUNNER_|INPUT_|NODE_|NPM_|PNPM_|GIT_|LD_|DYLD_)|^(PATH|HOME|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|COMSPEC|SYSTEMROOT|WINDIR|TMP|TEMP|TMPDIR|PYTHONPATH|PYTHONHOME|RUBYOPT|PERL5OPT)$/;
   const reportingSecrets = [reportToken, source.GITHUB_TOKEN, source.GH_TOKEN, source.ACTIONS_RUNTIME_TOKEN].filter(Boolean);
-  const names = new Set(['COPILOT_GITHUB_TOKEN', ...inputs.credentialEnv]);
-  for (const name of names) {
+  for (const name of new Set(inputs.credentialEnv)) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || forbidden.test(name)) throw new NativeError('protected-credential-environment-name');
     const value = source[name];
     if (value) {
