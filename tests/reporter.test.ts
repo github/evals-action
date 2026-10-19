@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertSerializedReporter, commentConcurrencyGroup, postReport, type CommentContext } from '../src/reporter.js';
+import {
+  assertSerializedReporter, assertSerializedReusableReporter, commentConcurrencyGroup, postReport, type CommentContext,
+} from '../src/reporter.js';
 import { orderedBody } from '../src/comments.js';
 import { type GitHubClient, ReportingError } from '../src/github.js';
 import { type Report } from '../src/reporting.js';
@@ -25,6 +27,30 @@ const source = `jobs:
         with:
           command: report
           report-id: smoke
+`;
+const reusableSha = 'd'.repeat(40);
+const reusableContext: CommentContext = {
+  ...context,
+  reusableWorkflow: {
+    ref: `github/evals-action/.github/workflows/evals.yml@${reusableSha}`,
+    sha: reusableSha,
+    repository: 'github/evals-action',
+    filePath: '.github/workflows/evals.yml',
+  },
+};
+const reusableSource = `name: Evals
+on:
+  pull_request:
+jobs:
+  evals:
+    uses: github/evals-action/.github/workflows/evals.yml@${reusableSha}
+    with:
+      working-directory: evals
+      suite: smoke
+    permissions:
+      contents: read
+      copilot-requests: write
+      pull-requests: write
 `;
 const identity = { repository: context.repository, workflow: '.github/workflows/evals.yml', job: context.job, report: context.reportId, selection: context.selection };
 const owned = (runNumber = 10, attempt = 1) => ({
@@ -132,6 +158,85 @@ describe('verified workflow serialization guard', () => {
   it('accepts the exact non-cancelling workflow group and distinct literal report steps', () => {
     assertSerializedReporter(source, context);
     assertSerializedReporter(source + '      - uses: github/evals-action@abc\n        with:\n          command: report\n          report-id: other\n', context);
+  });
+
+  describe('verified reusable workflow caller guard', () => {
+    it('accepts the pinned product workflow with the minimal explicit permission ceiling', () => {
+      assertSerializedReusableReporter(reusableSource, reusableContext);
+    });
+    it.each([
+      reusableSource.replace(`@${reusableSha}`, '@main'),
+      reusableSource.replace('copilot-requests: write\n', ''),
+      reusableSource.replace('pull-requests: write\n', ''),
+      reusableSource.replace('pull-requests: write\n', 'pull-requests: write\n      contents: write\n'),
+      reusableSource.replace('      suite: smoke', '      command: shell\n      suite: smoke'),
+      reusableSource.replace('on:\n  pull_request:', 'on:\n  workflow_dispatch:'),
+      reusableSource.replace('jobs:\n  evals:', 'jobs:\n  evals:\n    strategy: {matrix: {os: [ubuntu-latest, windows-latest]}}'),
+      reusableSource.replace('    permissions:', '    secrets: inherit\n    permissions:'),
+      reusableSource + `  other:\n    uses: github/evals-action/.github/workflows/evals.yml@${reusableSha}\n`,
+    ])('rejects an unpinned or over-broad caller %j', (workflow) => {
+      expect(() => assertSerializedReusableReporter(workflow, reusableContext)).toThrow();
+    });
+    it('allows lint-only with no Copilot permission', () => {
+      const lint = reusableSource
+        .replace('      suite: smoke\n', '      command: lint\n')
+        .replace('      copilot-requests: write\n', '');
+      assertSerializedReusableReporter(lint, reusableContext);
+    });
+    it('requires Copilot ceiling for run-only mode', () => {
+      const run = reusableSource.replace('      suite: smoke', '      command: run\n      suite: smoke');
+      assertSerializedReusableReporter(run, reusableContext);
+      expect(() => assertSerializedReusableReporter(
+        run.replace('      copilot-requests: write\n', ''), reusableContext,
+      )).toThrow(/permission-ceiling/);
+    });
+    it('allows the in-repository PR workflow to call its same-commit reusable workflow', () => {
+      const localSource = `name: Evals
+on:
+    pull_request:
+jobs:
+    evals:
+      uses: ./.github/workflows/evals.yml
+      with:
+        working-directory: evals
+        suite: smoke
+      permissions:
+        contents: read
+        copilot-requests: write
+        pull-requests: write
+`;
+      assertSerializedReusableReporter(localSource, {
+        ...reusableContext,
+        repository: 'github/evals-action',
+        workflowRef: 'github/evals-action/.github/workflows/copilot-e2e.yml@refs/pull/3/merge',
+        workflowSha: reusableSha,
+        reusableWorkflow: {
+          ref: 'github/evals-action/.github/workflows/evals.yml@refs/pull/3/merge',
+          sha: reusableSha,
+          repository: 'github/evals-action',
+          filePath: '.github/workflows/evals.yml',
+        },
+      });
+    });
+    it('rejects mismatched system-provided reusable workflow identity', () => {
+      for (const reusableWorkflow of [
+        { ...reusableContext.reusableWorkflow!, repository: 'attacker/action' },
+        { ...reusableContext.reusableWorkflow!, filePath: '.github/workflows/other.yml' },
+        { ...reusableContext.reusableWorkflow!, ref: 'github/evals-action/.github/workflows/evals.yml@main' },
+        { ...reusableContext.reusableWorkflow!, sha: 'main' },
+      ]) {
+        expect(() => assertSerializedReusableReporter(reusableSource, {
+          ...reusableContext, reusableWorkflow,
+        })).toThrow(/reusable-workflow-source/);
+      }
+    });
+    it('posts from a pinned reusable workflow while retaining caller workflow identity', async () => {
+      const test = fixture({ source: reusableSource });
+      expect(await postReport(test.client, reusableContext, report, 123)).toBe('created');
+      const body = String(test.writes()[0]?.[2]?.body);
+      expect(body).toContain('https://github.com/o/r/commit/');
+      expect(body).toContain('https://github.com/o/r/actions/runs/1000/artifacts/123');
+    });
   });
   it.each([
     source.replace('cancel-in-progress: false', 'cancel-in-progress: true'),

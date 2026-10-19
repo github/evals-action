@@ -9,6 +9,12 @@ export interface CommentContext {
   repository: string;
   workflowRef: string;
   workflowSha: string;
+  reusableWorkflow?: {
+    ref: string;
+    sha: string;
+    repository: string;
+    filePath: string;
+  };
   job: string;
   reportId: string;
   selection: string;
@@ -54,6 +60,51 @@ export function assertSerializedReporter(source: string, context: CommentContext
   }
 }
 
+export function assertSerializedReusableReporter(source: string, context: CommentContext): void {
+  const reusable = context.reusableWorkflow;
+  if (!reusable || reusable.repository !== 'github/evals-action' ||
+      reusable.filePath !== '.github/workflows/evals.yml' ||
+      !/^[a-f0-9]{40}$/.test(reusable.sha)) {
+    throw new ReportingError('unsupported-reusable-workflow-source');
+  }
+  const document = parseDocument(source, { uniqueKeys: true });
+  if (document.errors.length) throw new ReportingError('invalid-workflow-document');
+  const workflow = object(document.toJS({ maxAliasCount: 0 }));
+  const jobs = object(workflow.jobs);
+  const calls = Object.values(jobs).map(object).filter((job) =>
+    job.uses === './.github/workflows/evals.yml' ||
+    (typeof job.uses === 'string' && /^github\/evals-action\/\.github\/workflows\/evals\.yml@[a-f0-9]{40}$/.test(job.uses)));
+  if (calls.length !== 1) throw new ReportingError('unique-reusable-workflow-call-required');
+  const call = calls[0]!;
+  const localCall = call.uses === './.github/workflows/evals.yml';
+  const referenceMatches = localCall
+    ? context.repository === 'github/evals-action' &&
+      reusable.repository === context.repository &&
+      reusable.sha === context.workflowSha
+    : call.uses === reusable.ref &&
+      reusable.ref === `github/evals-action/.github/workflows/evals.yml@${reusable.sha}`;
+  if (!referenceMatches) throw new ReportingError('unsupported-reusable-workflow-source');
+  if (call.strategy !== undefined || call.secrets !== undefined ||
+      !Object.hasOwn(object(workflow.on), 'pull_request')) {
+    throw new ReportingError('unsafe-reusable-workflow-caller');
+  }
+  const inputs = object(call.with);
+  const command = inputs.command ?? 'all';
+  if (command !== 'lint' && command !== 'run' && command !== 'all') {
+    throw new ReportingError('invalid-reusable-workflow-command');
+  }
+  const permissions = object(call.permissions);
+  const required = new Map<string, string>([
+    ['contents', 'read'],
+    ['pull-requests', 'write'],
+    ...(command === 'lint' ? [] : [['copilot-requests', 'write'] as [string, string]]),
+  ]);
+  if (Object.keys(permissions).length !== required.size ||
+      [...required].some(([name, value]) => permissions[name] !== value)) {
+    throw new ReportingError('reusable-workflow-permission-ceiling-invalid');
+  }
+}
+
 function comment(value: unknown): Comment {
   const entry = object(value);
   const user = object(entry.user);
@@ -82,7 +133,9 @@ export async function postReport(
   if (source.encoding !== 'base64' || typeof source.content !== 'string' || source.content.length > 1_500_000) {
     throw new ReportingError('workflow-source-unavailable');
   }
-  assertSerializedReporter(Buffer.from(source.content, 'base64').toString('utf8'), context);
+  const sourceText = Buffer.from(source.content, 'base64').toString('utf8');
+  if (context.reusableWorkflow) assertSerializedReusableReporter(sourceText, context);
+  else assertSerializedReporter(sourceText, context);
   await currentPull(client, context, report.revision);
   const response = object(await client.request('POST', '/graphql', { query: 'query { viewer { databaseId login } }' }));
   if (response.errors !== undefined) throw new ReportingError('report-author-unavailable');

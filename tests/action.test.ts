@@ -112,6 +112,10 @@ it('reports the native failed verdict without initializing GitHub reporting', as
 
 it('downloads and posts a digest-bound report without acquiring or executing Vally', async () => {
   mocks.downloadReport = structuredReport(importedReport());
+  vi.stubEnv('EVALS_JOB_WORKFLOW_REF', `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`);
+  vi.stubEnv('EVALS_JOB_WORKFLOW_SHA', 'd'.repeat(40));
+  vi.stubEnv('EVALS_JOB_WORKFLOW_REPOSITORY', 'github/evals-action');
+  vi.stubEnv('EVALS_JOB_WORKFLOW_FILE_PATH', '.github/workflows/evals.yml');
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
     'source-artifact-digest': 'd'.repeat(64),
@@ -121,6 +125,10 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   expect(mocks.setSecret).toHaveBeenCalledWith('synthetic-report-token');
   expect(mocks.post).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
     repository: 'o/r', reportId: 'evals', selection: 'b'.repeat(64), runId: 100,
+    reusableWorkflow: {
+      ref: `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`,
+      sha: 'd'.repeat(40), repository: 'github/evals-action', filePath: '.github/workflows/evals.yml',
+    },
   }), expect.objectContaining({ outcome: 'passed' }), 123);
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeEnv).not.toHaveBeenCalled();

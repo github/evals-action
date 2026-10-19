@@ -87,6 +87,14 @@ export async function runAction(): Promise<void> {
           const outcome = await postReport(githubClient(reportToken, requiredEnv('RUNNER_TEMP')), {
             repository: report.repository, workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
             workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'), reportId: report.reportId,
+            ...(process.env.EVALS_JOB_WORKFLOW_REF || process.env.EVALS_JOB_WORKFLOW_SHA ||
+                process.env.EVALS_JOB_WORKFLOW_REPOSITORY || process.env.EVALS_JOB_WORKFLOW_FILE_PATH
+              ? { reusableWorkflow: {
+                ref: process.env.EVALS_JOB_WORKFLOW_REF ?? '',
+                sha: process.env.EVALS_JOB_WORKFLOW_SHA ?? '',
+                repository: process.env.EVALS_JOB_WORKFLOW_REPOSITORY ?? '',
+                filePath: process.env.EVALS_JOB_WORKFLOW_FILE_PATH ?? '',
+              } } : {}),
             selection: report.selection, pullNumber, runId: report.workflowRunId,
             order: { runNumber: positiveEnv('GITHUB_RUN_NUMBER'), attempt: report.workflowRunAttempt },
           }, report, inputs.sourceArtifactId);
