@@ -59,7 +59,11 @@ Keep reporting in a separate job with `contents: read` and
 `command: report` with the structured artifact ID and digest from the evaluation
 job. The report command downloads the current run's artifact itself, verifies its
 digest, never runs Vally, and validates repository/revision/run/attempt identity
-before writing. A separate verdict job preserves the native outcome.
+before writing. The reusable workflow preserves native failure through the
+evaluation job's own result; no permission-bearing verdict job is required.
+Its caller grants a permission ceiling to a SHA-pinned workflow, while the
+workflow narrows each actual job token to the permissions needed by that job.
+The reusable workflow does not accept inherited caller secrets.
 Do not assume this credential routing prevents prompt injection in reviewed
 evaluation content. Live Copilot authentication/billing requires a separately
 approved pilot; synthetic transport tests do not establish server acceptance.

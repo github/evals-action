@@ -29,6 +29,9 @@ describe('public inputs', () => {
   it.each(['RUN', 'bash', 'lint;echo secret', 'run --all'])('rejects command %s', (command) => {
     expect(() => parseValues({ command })).toThrow(/command/);
   });
+  it('keeps all as a reusable-workflow-only mode', () => {
+    expect(() => parseValues({ command: 'all' })).toThrow(/command/);
+  });
   it('preserves spaces, native selectors and omitted settings', () => {
     const inputs = parseValues({ suite: '', 'eval-paths': 'evals/path with spaces.eval.yaml\nother/**/*.yaml', tags: 'smoke\nrelease' });
     expect(inputs.evalPaths).toEqual(['evals/path with spaces.eval.yaml', 'other/**/*.yaml']);

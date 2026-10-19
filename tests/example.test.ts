@@ -27,54 +27,82 @@ describe('real Copilot example contract', () => {
     expect(result.stderr).not.toContain('COPILOT_GITHUB_TOKEN');
   }, 60_000);
 
-  it('keeps the automatic workflow bounded and least privilege', async () => {
-    const workflow = parse(await readFile('.github/workflows/copilot-e2e.yml', 'utf8')) as {
+  it('exposes the reusable workflow as a minimal bounded caller', async () => {
+    const caller = parse(await readFile('.github/workflows/copilot-e2e.yml', 'utf8')) as {
       on: { pull_request: { paths: string[] }; workflow_dispatch: unknown };
       permissions: Record<string, string>;
       concurrency: { group: string; 'cancel-in-progress': boolean };
       jobs: Record<string, {
-        if: string;
+        permissions?: Record<string, string>;
+        uses: string;
+        with: Record<string, unknown>;
+      }>;
+    };
+    expect(caller.on.pull_request.paths).toContain('examples/copilot-smoke/**');
+    expect(caller.on.pull_request.paths).toContain('.github/workflows/evals.yml');
+    expect(caller.permissions).toEqual({ contents: 'read' });
+    expect(caller.concurrency['cancel-in-progress']).toBe(true);
+    expect(Object.keys(caller.jobs)).toEqual(['evals']);
+    const call = caller.jobs.evals!;
+    expect(call.uses).toBe('./.github/workflows/evals.yml');
+    expect(call.with).toMatchObject({
+      'working-directory': 'examples/copilot-smoke',
+      suite: 'copilot-smoke',
+      'max-retries': '0',
+    });
+    expect(call.with).not.toHaveProperty('command');
+    expect(call.with).not.toHaveProperty('copilot-token');
+    expect(call.permissions).toEqual({
+      contents: 'read', 'copilot-requests': 'write', 'pull-requests': 'write',
+    });
+  });
+
+  it('keeps reusable modes permission-isolated and artifact reporting checkout-free', async () => {
+    const workflow = parse(await readFile('.github/workflows/evals.yml', 'utf8')) as {
+      on: { workflow_call: { inputs: Record<string, { default?: unknown; required?: boolean }> } };
+      jobs: Record<string, {
+        if?: string;
         permissions?: Record<string, string>;
         concurrency?: { group: string; 'cancel-in-progress': boolean };
         steps: Array<Record<string, unknown>>;
       }>;
     };
-    expect(workflow.on.pull_request.paths).toContain('examples/copilot-smoke/**');
-    expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(workflow.concurrency['cancel-in-progress']).toBe(true);
-    const run = workflow.jobs.evaluate!;
-    expect(run.if).toContain("head.repo.full_name == github.repository");
+    expect(workflow.on.workflow_call.inputs.command?.default).toBe('all');
+    expect(workflow.on.workflow_call.inputs['working-directory']?.required).toBe(true);
+    expect(workflow.jobs.validate!.permissions).toEqual({});
+    const lint = workflow.jobs.lint!;
+    const run = workflow.jobs.run!;
+    const all = workflow.jobs.all!;
+    expect(lint.permissions).toEqual({ contents: 'read' });
     expect(run.permissions).toEqual({ contents: 'read', 'copilot-requests': 'write' });
-    const action = run.steps.find((step) => step.uses === './')!;
-    expect(action.with).toMatchObject({
-      command: 'run',
-      'working-directory': 'examples/copilot-smoke',
-      suite: 'copilot-smoke',
-      'max-retries': 0,
-      'copilot-token': '${{ github.token }}',
-    });
-    for (const omitted of ['vally-version', 'runs', 'workers', 'timeout', 'credential-env', 'report-id']) {
-      expect(action.with).not.toHaveProperty(omitted);
+    expect(all.permissions).toEqual({ contents: 'read', 'copilot-requests': 'write' });
+    for (const job of [lint, run, all]) {
+      expect(job.if).toContain("github.event_name != 'pull_request_target'");
+      expect(job.if).toContain('head.repo.full_name == github.repository');
     }
-    expect(action).not.toHaveProperty('env');
-    expect(action.with).not.toHaveProperty('report-token');
-    expect(action.with).not.toHaveProperty('upload-transcripts');
+    expect([lint, run, all].map((job) =>
+      job.steps.filter((step) => step.uses === 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1').length))
+      .toEqual([1, 1, 1]);
+    expect(all.steps.find((step) => step.id === 'evals')?.if).toBe("${{ steps.lint.outcome == 'success' }}");
+    expect(all.steps.some((step) => step['continue-on-error'] === true)).toBe(false);
     const report = workflow.jobs.report!;
     expect(report.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' });
     expect(report.concurrency).toEqual({ group: 'evals-${{ github.workflow_ref }}', 'cancel-in-progress': false });
-    const reportAction = report.steps.find((step) => step.uses === './')!;
-    expect(reportAction.with).toMatchObject({
-      command: 'report',
-      'source-artifact-id': '${{ needs.evaluate.outputs.artifact-id }}',
-      'source-artifact-digest': '${{ needs.evaluate.outputs.artifact-digest }}',
-      'report-token': '${{ github.token }}',
-    });
-    expect(report.steps.some((step) => String(step.uses).startsWith('actions/download-artifact@'))).toBe(false);
-    expect(reportAction.with).not.toHaveProperty('copilot-token');
-    const verdict = workflow.jobs.verdict!;
-    expect(verdict.permissions).toEqual({});
-    expect(String(verdict.if)).toContain('always()');
-    expect(String(verdict.if)).toContain("head.repo.full_name == github.repository");
+    expect(report.steps.some((step) => String(step.uses).startsWith('actions/checkout@'))).toBe(false);
+    expect(report.steps).toHaveLength(2);
+    expect(String(report.if)).toContain('always()');
+    for (const step of report.steps) {
+      expect(step.with).toMatchObject({ command: 'report', 'report-token': '${{ github.token }}' });
+      expect(step.env).toMatchObject({
+        EVALS_JOB_WORKFLOW_REF: '${{ job.workflow_ref }}',
+        EVALS_JOB_WORKFLOW_SHA: '${{ job.workflow_sha }}',
+        EVALS_JOB_WORKFLOW_REPOSITORY: '${{ job.workflow_repository }}',
+        EVALS_JOB_WORKFLOW_FILE_PATH: '${{ job.workflow_file_path }}',
+      });
+      expect(step.with).not.toHaveProperty('copilot-token');
+      expect(String(step.uses)).toMatch(/^github\/evals-action@[a-f0-9]{40}$/);
+    }
+    expect(workflow.jobs).not.toHaveProperty('verdict');
   });
 
   it('loads one real skill and requires both invocation and exact output', async () => {

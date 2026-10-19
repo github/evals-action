@@ -32,6 +32,7 @@ same-repository origin by itself is not a general-purpose authorization policy.
 | `lint` | `vally lint --eval-spec=<working-directory>` | All evals discovered recursively under the project directory using native filename patterns. No selector required. |
 | `run` | `vally eval --require-pass --output=jsonl ...` | A named suite, explicit eval files, or native tags. |
 | `plan` | None | Explicit error: Vally 0.19.0 exposes no plan/dry-run CLI. It never falls back to a run. |
+| `all` | Reusable workflow only | Lint first, then run after successful lint; low-level Action has no `all` command. |
 
 `run` passes native options as argument-array values, never interpolated shell
 commands. It does not parse `.vally.yaml`, expand shell globs, install custom
@@ -47,10 +48,66 @@ The default is intentionally pinned so a privileged workflow does not execute a
 new mutable registry release without review. `vally-version: latest` remains an
 explicit opt-in; it is not a compatibility promise for future versions.
 
-## Workflow example
+## Simplest workflow: reusable workflow
 
-Replace `<reviewed-full-commit-sha>` with an actual reviewed Action commit.
-Only enable triggers selected by your team. This example starts manually:
+The reusable workflow defaults to `command: all`: it lints first, then runs the
+selected eval, and posts separate sticky lint and run statuses on pull requests.
+If lint fails, it skips the model-backed eval, reports the lint failure, and
+fails the workflow. Set `command: lint` to lint without Copilot permission or
+model use, or `command: run` to run without linting.
+
+```yaml
+name: Evaluations
+on:
+  pull_request:
+    paths:
+      - evals/**
+      - .github/workflows/evals.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    uses: github/evals-action/.github/workflows/evals.yml@<reviewed-full-workflow-sha>
+    with:
+      working-directory: evals
+      suite: smoke
+      # command defaults to all; optionally choose lint or run
+    permissions:
+      contents: read
+      copilot-requests: write
+      pull-requests: write
+```
+
+Pin the private reusable workflow to a reviewed full commit SHA. The caller's
+job permissions are the maximum authority delegated to that workflow. Its
+actual jobs narrow their tokens: lint receives contents read, the evaluator
+receives Copilot permission but no PR-write, and the report job receives
+PR-write but no Copilot permission. The report job downloads the digest-bound
+artifact itself; consumers do not write verdict scripts or artifact plumbing.
+Private repository sharing settings must allow the consumer repository.
+Do not use `secrets: inherit`; the reusable workflow needs no caller secrets.
+
+**The default `all` can consume Copilot credits.** The workflow calls the
+Action's `copilot-token` internally from `${{ github.token }}`; consumers do
+not pass a model token. The caller still controls triggers, and
+`command: lint` opts out of model use.
+
+For selector overrides, set `eval-paths` and/or `tags` instead of `suite`.
+The reusable workflow also accepts optional `model`, `runs`, `workers`,
+`timeout`, `max-retries`, and `vally-version` overrides. Quote numeric values
+such as `max-retries: '0'`. More complex workflow
+topologies can use the low-level Action below.
+
+## Low-level Action example (advanced)
+
+Use the low-level Action when you want to compose commands or permissions
+yourself. `command` remains required on the Action; it accepts `lint`, `run`,
+or `report` and does not have a default. Replace
+`<reviewed-full-commit-sha>` with a reviewed Action commit. This example starts
+manually and runs an eval:
 For organization-owned repositories, first enable the Copilot policy
 **Allow use of Copilot CLI billed to the organization**. No PAT or stored
 model secret is required for this workflow-token authentication path.
@@ -223,30 +280,35 @@ Live model/account compatibility is not claimed by the model-free controls.
 Custom native plugins, executor prerequisites and project dependencies remain
 explicit workflow preparation; the Action does not install them automatically.
 
-## Sticky PR reporting
+## PR status comments
 
-Reporting uses a separate job and invokes this same Action with
-`command: report`. Do not grant PR-write permission to the evaluation job.
+Prefer the reusable workflow above. It posts one sticky status comment per
+selected command from an isolated report job and preserves native job failures
+without a separate verdict job.
 
-1. The evaluation job has `contents: read` plus `copilot-requests: write`, runs
-   the Action with `continue-on-error: true`, and exposes `outcome` and
-   `artifact-id` and `artifact-digest` as job outputs.
-2. The report job has `contents: read` and `pull-requests: write`, but no
-   Copilot permission. It lets the Action download and verify the exact artifact:
+For advanced callers using the low-level Action, keep reporting in a distinct
+job with `contents: read` and `pull-requests: write`, but no
+`copilot-requests: write`. The evaluator job must not have PR-write permission.
+Expose `artifact-id` and `artifact-digest` from the evaluator step as job
+outputs, then use:
 
-   ```yaml
-   - uses: github/evals-action@<reviewed-sha>
-     with:
-       command: report
-       source-artifact-id: ${{ needs.evaluate.outputs.artifact-id }}
-       source-artifact-digest: ${{ needs.evaluate.outputs.artifact-digest }}
-       report-token: ${{ github.token }}
-   ```
+```yaml
+- uses: github/evals-action@<reviewed-action-sha>
+  with:
+    command: report
+    source-artifact-id: ${{ needs.evaluate.outputs.artifact-id }}
+    source-artifact-digest: ${{ needs.evaluate.outputs.artifact-digest }}
+    report-token: ${{ github.token }}
+```
 
-3. A final verdict job converts the recorded native outcome back into the
-   branch-protection result after reporting completes.
+Reporting automatically downloads the current run's exact artifact and
+verifies its digest; consumers do not add a separate download action. A failed
+evaluation job can still run the report job with `if: always()`. The evaluation
+job's failure already fails the workflow, so no custom verdict job is needed.
+On manual/non-PR events the report command is not used.
 
-The report job must be non-matrix and use job-level serialization:
+The report job must be non-matrix and use job-level serialization (already
+implemented by the reusable workflow):
 
 ```yaml
 concurrency:
@@ -262,10 +324,12 @@ run ID, attempt and artifact identity must match the current job. Unknown/raw ru
 recursive report commands, inconsistent verdict/count shapes, symlink escapes
 and stale PR revisions are rejected before a GitHub write.
 
-The immutable workflow source is checked before writing. Report steps require a
-unique literal report ID and literal report path. Recognized Action references
-are `github/evals-action@...` and root `./`. Unsupported or ambiguous topology
-fails the reporting job.
+The immutable caller workflow is checked before writing. Direct Action
+reporting requires a unique literal report ID in a non-matrix serialized job.
+Reusable-workflow reporting additionally validates the product workflow's
+system-provided repository, path and immutable source identity, plus the
+consumer's pinned reusable-workflow call and minimal permission ceiling.
+Unsupported or ambiguous topology fails before a GitHub write.
 
 The client reads all comments, verifies authenticated bot ownership, and creates
 once or updates in place. Identity includes repository, workflow path, job,
@@ -273,8 +337,8 @@ selection hash and report ID. Stored run/attempt ordering prevents stale
 replacement; the current PR revision is refreshed before writing. Human comments
 are never edited. Each report links the exact revision, run and structured
 artifact. Ambiguous writes are not retried. The evaluation's native outcome remains in
-its structured artifact even when reporting fails; the reporting and verdict
-jobs surface their own failures. Networking tests use synthetic GitHub
+its structured artifact even when reporting fails; the reporting job surfaces
+its own failure. Networking tests use synthetic GitHub
 responses, and the repository's Copilot E2E workflow qualifies the bot-token
 comment path independently from evaluator permissions.
 

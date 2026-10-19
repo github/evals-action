@@ -41,10 +41,11 @@ failures and readback. Installer tests use synthetic packages and exercise
 concurrent install/reuse and tampered files/receipts. `tests/native.test.ts`
 separately qualifies the real pinned Vally CLI with the built-in mock executor
 and deterministic graders. No test claims live GitHub bot-token qualification.
-The live `Copilot E2E` workflow additionally qualifies the split evaluate,
-report and verdict jobs: evaluator and PR-write permissions never coexist in
-one job, and the report job directly downloads and digest-verifies only the
-current run's structured artifact.
+The live `Copilot E2E` workflow exercises the reusable workflow with one
+consumer checkout. Its lint/eval job and report job have disjoint permissions;
+the report job directly downloads and digest-verifies only the current run's
+structured artifact. Lint failure skips the model-backed eval while still
+allowing the lint artifact to be reported.
 
 Commit `dist/index.cjs` and its generated license notices. This is an intentional
 JavaScript Action distribution exception: consumers execute committed `dist`
