@@ -104,7 +104,7 @@ jobs:
           persist-credentials: false
       - name: Lint evals
         id: lint
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
+        uses: github/evals-action@eb5a27dd3443b4249ff5d8cd01f1b9e78c74b1b5
         with:
           command: lint
           working-directory: ${{ inputs.working-directory }}
@@ -129,7 +129,7 @@ jobs:
           persist-credentials: false
       - name: Run evals
         id: evals
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
+        uses: github/evals-action@eb5a27dd3443b4249ff5d8cd01f1b9e78c74b1b5
         with:
           command: run
           working-directory: ${{ inputs.working-directory }}
@@ -165,7 +165,7 @@ jobs:
           persist-credentials: false
       - name: Lint evals
         id: lint
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
+        uses: github/evals-action@eb5a27dd3443b4249ff5d8cd01f1b9e78c74b1b5
         with:
           command: lint
           working-directory: ${{ inputs.working-directory }}
@@ -174,7 +174,7 @@ jobs:
       - name: Run evals after successful lint
         id: evals
         if: ${{ steps.lint.outcome == 'success' }}
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
+        uses: github/evals-action@eb5a27dd3443b4249ff5d8cd01f1b9e78c74b1b5
         with:
           command: run
           working-directory: ${{ inputs.working-directory }}
@@ -211,38 +211,15 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - name: Report lint status
-        if: >-
-          always() &&
-          (
-            needs.lint.outputs.artifact-id != '' ||
-            needs.all.outputs.lint-artifact-id != ''
-          )
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
+      - name: Update the Evals PR report
+        uses: github/evals-action@eb5a27dd3443b4249ff5d8cd01f1b9e78c74b1b5
         with:
           command: report
-          source-artifact-id: ${{ needs.lint.outputs.artifact-id || needs.all.outputs.lint-artifact-id }}
-          source-artifact-digest: ${{ needs.lint.outputs.artifact-digest || needs.all.outputs.lint-artifact-digest }}
-          report-id: ${{ inputs.report-id }}-lint
-          report-token: ${{ github.token }}
-        env:
-          EVALS_JOB_WORKFLOW_REF: ${{ job.workflow_ref }}
-          EVALS_JOB_WORKFLOW_SHA: ${{ job.workflow_sha }}
-          EVALS_JOB_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
-          EVALS_JOB_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
-      - name: Report evaluation status
-        if: >-
-          always() &&
-          (
-            needs.run.outputs.artifact-id != '' ||
-            needs.all.outputs.run-artifact-id != ''
-          )
-        uses: github/evals-action@ab0739e5e5127e160c934aa8eacebd740154f1df
-        with:
-          command: report
-          source-artifact-id: ${{ needs.run.outputs.artifact-id || needs.all.outputs.run-artifact-id }}
-          source-artifact-digest: ${{ needs.run.outputs.artifact-digest || needs.all.outputs.run-artifact-digest }}
-          report-id: ${{ inputs.report-id }}-run
+          source-artifact-id: ${{ needs.run.outputs.artifact-id || needs.all.outputs.run-artifact-id || needs.lint.outputs.artifact-id || needs.all.outputs.lint-artifact-id }}
+          source-artifact-digest: ${{ needs.run.outputs.artifact-digest || needs.all.outputs.run-artifact-digest || needs.lint.outputs.artifact-digest || needs.all.outputs.lint-artifact-digest }}
+          lint-artifact-id: ${{ (needs.run.outputs.artifact-id != '' || needs.all.outputs.run-artifact-id != '') && needs.all.outputs.lint-artifact-id || '' }}
+          lint-artifact-digest: ${{ (needs.run.outputs.artifact-id != '' || needs.all.outputs.run-artifact-id != '') && needs.all.outputs.lint-artifact-digest || '' }}
+          report-id: ${{ format('{0}-{1}', inputs.report-id, (needs.run.outputs.artifact-id != '' || needs.all.outputs.run-artifact-id != '') && 'run' || 'lint') }}
           report-token: ${{ github.token }}
         env:
           EVALS_JOB_WORKFLOW_REF: ${{ job.workflow_ref }}

@@ -8,6 +8,13 @@ Initial supported host: **Linux x64 GitHub-hosted runners, Node 24**. This is
 development code, not a published Marketplace release. Repository access is
 required while the repository is private. Pin a reviewed full commit SHA.
 
+There are two workflows with different jobs:
+[`evals.yml`](.github/workflows/evals.yml) is the **reusable consumer entry
+point** that runs a caller repository's evals and posts its PR status;
+[`copilot-e2e.yml`](.github/workflows/copilot-e2e.yml) is this repository's
+**end-to-end test** of that entry point using the bundled example. Neither
+workflow is an eval definition; the consumer keeps its own Vally eval files.
+
 ## Included real Copilot example
 
 [`examples/copilot-smoke`](examples/copilot-smoke) contains one real skill and
@@ -51,7 +58,7 @@ explicit opt-in; it is not a compatibility promise for future versions.
 ## Simplest workflow: reusable workflow
 
 The reusable workflow defaults to `command: all`: it lints first, then runs the
-selected eval, and posts separate sticky lint and run statuses on pull requests.
+selected eval, and updates **one sticky PR comment** with lint and run statuses.
 If lint fails, it skips the model-backed eval, reports the lint failure, and
 fails the workflow. Set `command: lint` to lint without Copilot permission or
 model use, or `command: run` to run without linting.
@@ -100,6 +107,13 @@ The reusable workflow also accepts optional `model`, `runs`, `workers`,
 `timeout`, `max-retries`, and `vally-version` overrides. Quote numeric values
 such as `max-retries: '0'`. More complex workflow
 topologies can use the low-level Action below.
+
+The comment shows the chosen suite, native eval names, executed trial counts,
+and each native verdict. For example, it displays `copilot-skill-smoke` rather
+than an opaque identity hash. Names are projected from Vally's trial results;
+full file paths, prompts, model output and transcripts remain excluded. When
+more than 100 eval groups run, the comment links to the complete structured
+artifact rather than flooding the PR.
 
 ## Low-level Action example (advanced)
 
@@ -176,6 +190,7 @@ grader plugins; it is not a sandbox for untrusted code.
 | `report-id` | Stable identity across evaluate/report jobs; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. |
 | `source-artifact-id` | Positive structured-report artifact ID. The report command downloads this artifact directly; required for report. |
 | `source-artifact-digest` | 64-character lowercase SHA-256 digest emitted with the artifact ID. The report command verifies it before reading evidence; required for report. |
+| `lint-artifact-id`, `lint-artifact-digest` | Optional paired lint evidence for a `*-run` report ID; the reusable workflow supplies these to combine lint and run into one PR comment. |
 | `upload-transcripts` | Default `false`. Opt in to native JSONL and stdout/stderr logs, potentially containing sensitive data. |
 | `artifact-retention-days` | 1-90, default 7; subject to repository retention policy. |
 
@@ -214,9 +229,11 @@ Outputs:
 | `result-path`, `artifact-id`, `artifact-digest` | Minimal structured report path plus its uploaded artifact identifier and SHA-256 digest. |
 | `native-diagnostics-path` | Local native logs/output directory under runner temporary storage. |
 
-Default artifacts contain only operation status, revision, selected engine and
-dependency identities, known counts, native verdicts and hashed group identities.
-They exclude prompts, source paths, raw runner JSON and exception text. Native
+Default artifacts contain only operation status, revision, selected suite,
+native eval names, selected engine and dependency identities, known counts,
+native verdicts and hashed group identities. Eval names and suite names are
+visible in PR comments; do not put secrets in either. Artifacts exclude prompts,
+source paths, raw runner JSON and exception text. Native
 JSONL remains the canonical local evidence; the projection is not a new run format.
 Run JSONL above 64 MiB is explicitly rejected by this adapter rather than
 partially parsed or treated as complete.
@@ -282,9 +299,11 @@ explicit workflow preparation; the Action does not install them automatically.
 
 ## PR status comments
 
-Prefer the reusable workflow above. It posts one sticky status comment per
-selected command from an isolated report job and preserves native job failures
-without a separate verdict job.
+Prefer the reusable workflow above. It maintains one sticky comment per caller
+workflow and report identity, with lint and evaluation sections when both ran.
+Switching among `lint`, `run` and `all` updates that same comment rather than
+creating separate status comments. Native job failures remain visible without
+a separate verdict job.
 
 For advanced callers using the low-level Action, keep reporting in a distinct
 job with `contents: read` and `pull-requests: write`, but no

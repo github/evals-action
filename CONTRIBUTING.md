@@ -44,7 +44,9 @@ and deterministic graders. No test claims live GitHub bot-token qualification.
 The live `Copilot E2E` workflow exercises the reusable workflow with one
 consumer checkout. Its lint/eval job and report job have disjoint permissions;
 the report job directly downloads and digest-verifies only the current run's
-structured artifact. Lint failure skips the model-backed eval while still
+structured artifacts before updating one sticky comment containing selected
+suite, named native eval rows and separate lint/run statuses. Lint failure
+skips the model-backed eval while still
 allowing the lint artifact to be reported.
 
 Commit `dist/index.cjs` and its generated license notices. This is an intentional

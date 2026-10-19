@@ -64,6 +64,9 @@ evaluation job's own result; no permission-bearing verdict job is required.
 Its caller grants a permission ceiling to a SHA-pinned workflow, while the
 workflow narrows each actual job token to the permissions needed by that job.
 The reusable workflow does not accept inherited caller secrets.
+PR comments show the selected suite and native eval names. These fields are
+untrusted and Markdown-escaped; do not put secrets in eval or suite names.
+Raw paths, prompts, transcripts and model output remain excluded from comments.
 Do not assume this credential routing prevents prompt injection in reviewed
 evaluation content. Live Copilot authentication/billing requires a separately
 approved pilot; synthetic transport tests do not establish server acceptance.

@@ -89,7 +89,11 @@ describe('real Copilot example contract', () => {
     expect(report.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' });
     expect(report.concurrency).toEqual({ group: 'evals-${{ github.workflow_ref }}', 'cancel-in-progress': false });
     expect(report.steps.some((step) => String(step.uses).startsWith('actions/checkout@'))).toBe(false);
-    expect(report.steps).toHaveLength(2);
+    expect(report.steps).toHaveLength(1);
+    expect(report.steps[0]?.with).toMatchObject({
+      'lint-artifact-id': expect.stringContaining('needs.all.outputs.lint-artifact-id'),
+      'lint-artifact-digest': expect.stringContaining('needs.all.outputs.lint-artifact-digest'),
+    });
     expect(String(report.if)).toContain('always()');
     for (const step of report.steps) {
       expect(step.with).toMatchObject({ command: 'report', 'report-token': '${{ github.token }}' });

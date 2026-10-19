@@ -49,7 +49,8 @@ who can push same-repository PR branches affecting the Action/example paths are
 the approved trust boundary. Protect that capability with repository write
 access and branch governance. Environment filtering is not a sandbox.
 
-The reusable workflow posts separate sticky lint and eval status comments on
-pull requests. A failed lint posts its status, skips model execution, and
+The reusable workflow updates one sticky PR comment with separate lint and
+eval sections. The eval section names `copilot-skill-smoke` and shows the
+selected `copilot-smoke` suite. A failed lint posts its status, skips model execution, and
 leaves the overall workflow failed. The JavaScript Action's own low-level
 `command: lint`, `command: run`, and `command: report` inputs are unchanged.
