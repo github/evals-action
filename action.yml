@@ -15,8 +15,8 @@ inputs:
   tags:
     description: Newline-separated native tag selectors for run. Ignored for lint.
   vally-version:
-    description: Latest stable or an exact stable semantic version.
-    default: latest
+    description: Reviewed stable version; default 0.19.0. latest/exact selections run only when the resolved version has a committed dependency lock.
+    default: '0.19.0'
   model:
     description: Explicit native model override; omitted preserves configuration.
   runs:
@@ -28,7 +28,9 @@ inputs:
   max-retries:
     description: Nonnegative integer native retry override.
   credential-env:
-    description: Explicit run-only credential environment names. For workflow-token auth, list COPILOT_GITHUB_TOKEN and set it to github.token with copilot-requests write permission. Never reuse report-token.
+    description: Advanced run-only credential environment names for BYOK or supported secrets. Use copilot-token for the workflow token. Never reuse report-token.
+  copilot-token:
+    description: Explicit Copilot token for run, normally github.token with copilot-requests write. Mapped to COPILOT_GITHUB_TOKEN; cannot combine with that credential-env name or report-token.
   comment:
     description: Opt in to a sticky PR report; requires report-token and verified workflow serialization.
     default: 'false'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseInputs } from '../src/inputs.js';
+import { DEFAULT_VALLY_VERSION, parseInputs } from '../src/inputs.js';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 
@@ -27,7 +27,7 @@ describe('public inputs', () => {
     expect(inputs.evalPaths).toEqual(['evals/path with spaces.eval.yaml', 'other/**/*.yaml']);
     expect(inputs.tags).toEqual(['smoke', 'release']);
     expect(inputs.overrides).toEqual({});
-    expect(inputs.vallyVersion).toBe('latest');
+    expect(inputs.vallyVersion).toBe(DEFAULT_VALLY_VERSION);
   });
   it('keeps explicit native overrides distinct from absence', () => {
     expect(parseValues({ model: 'native/model', runs: '2', workers: '3', timeout: '60', 'max-retries': '0' }).overrides)
@@ -51,11 +51,15 @@ describe('public inputs', () => {
     { 'report-id': '../unsafe' }, { suite: 'bad\0name' },
   ])('rejects malformed values %j', (values) => expect(() => parseValues(values)).toThrow());
   it('keeps the metadata input contract in sync with the parser', async () => {
-    const action = parse(await readFile('action.yml', 'utf8')) as { inputs: Record<string, unknown>; runs: { using: string; main: string } };
+    const action = parse(await readFile('action.yml', 'utf8')) as {
+      inputs: Record<string, { default?: unknown }>;
+      runs: { using: string; main: string };
+    };
     const read = new Set<string>();
     parseInputs((key) => { read.add(key); return base[key] ?? ''; });
     // The reporting secret is consumed separately and never retained in the parsed input DTO.
-    expect([...read].sort()).toEqual(Object.keys(action.inputs).filter((key) => key !== 'report-token').sort());
+    expect([...read].sort()).toEqual(Object.keys(action.inputs).filter((key) => !['report-token', 'copilot-token'].includes(key)).sort());
+    expect(action.inputs['vally-version']?.default).toBe(DEFAULT_VALLY_VERSION);
     expect(action.runs).toEqual({ using: 'node24', main: 'dist/index.cjs' });
   });
 });

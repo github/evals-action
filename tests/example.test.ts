@@ -45,14 +45,13 @@ describe('real Copilot example contract', () => {
       command: 'run',
       'working-directory': 'examples/copilot-smoke',
       suite: 'copilot-smoke',
-      'vally-version': '0.19.0',
-      runs: 1,
-      workers: 1,
       'max-retries': 0,
-      timeout: 60,
-      'credential-env': 'COPILOT_GITHUB_TOKEN',
+      'copilot-token': '${{ github.token }}',
     });
-    expect(action.env).toEqual({ COPILOT_GITHUB_TOKEN: '${{ github.token }}' });
+    for (const omitted of ['vally-version', 'runs', 'workers', 'timeout', 'credential-env', 'report-id']) {
+      expect(action.with).not.toHaveProperty(omitted);
+    }
+    expect(action).not.toHaveProperty('env');
     expect(action.with).not.toHaveProperty('report-token');
     expect(action.with).not.toHaveProperty('upload-transcripts');
   });

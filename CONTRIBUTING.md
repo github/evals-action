@@ -70,8 +70,15 @@ Before proposing a release, verify supported CLI versions and their native
 evidence contracts, run the Linux model-free controls, and qualify the optional
 reporting client with the supported hosted token. Do not advertise a plan
 operation or native selector combination the selected CLI does not expose.
+Keep the default Vally version pinned to the exact reviewed/qualified release.
+Updating that default requires dependency/evidence review and native controls;
+do not switch credentialed examples to the mutable `latest` selector.
+Each supported version needs its own committed runtime `package-lock.json`.
+Generate it with lifecycle scripts disabled and the public npm registry, review
+the complete dependency/integrity delta, update the embedded canonical digest,
+then qualify `npm ci` and native evidence before enabling the version.
 Workflow-token authentication controls must keep installation/lint/version
-credentials absent, pass the explicit token only as `COPILOT_GITHUB_TOKEN`,
+credentials absent, map `copilot-token` only to `COPILOT_GITHUB_TOKEN`,
 and preserve the prohibition on sharing `report-token` with model execution.
 Use synthetic tokens for repository tests. A live pilot in a separate consumer
 repository must separately verify subject and judge authentication, organization

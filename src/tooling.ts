@@ -6,10 +6,13 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { exactVersion } from './inputs.js';
 import { inertEnvironment, object } from './policy.js';
+import lockedManifest019 from '../tooling/vally-0.19.0/package.json' with { type: 'json' };
+import lockedGraph019 from '../tooling/vally-0.19.0/package-lock.json' with { type: 'json' };
 
 const packageName = '@microsoft/vally-cli';
 const registry = 'https://registry.npmjs.org';
 const execute = promisify(execFile);
+const lockedGraph019Sha256 = '6e9b4aeb64d0739f95fe6949dfa34c9a84fa7adc2e2eb03331e9b513fb19c8b8';
 export interface EngineRelease { version: string; integrity: string }
 export interface EngineIdentity extends EngineRelease {
   entry: string;
@@ -19,6 +22,11 @@ export interface EngineIdentity extends EngineRelease {
 }
 export type FetchMetadata = (url: string) => Promise<unknown>;
 export type InstallProcess = (args: string[], cwd: string, env: NodeJS.ProcessEnv) => Promise<void>;
+interface LockedToolchain {
+  manifest: Record<string, unknown>;
+  lock: Record<string, unknown>;
+  digest: string;
+}
 
 export function releaseMetadata(value: unknown, requested: string): EngineRelease {
   const metadata = object(value);
@@ -72,6 +80,19 @@ export function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function lockedToolchain(release: EngineRelease): LockedToolchain {
+  if (release.version !== '0.19.0') throw new Error(`Vally ${release.version} has no reviewed dependency lock in this Action.`);
+  const lock = lockedGraph019 as Record<string, unknown>;
+  const digest = sha256(JSON.stringify(lock));
+  if (digest !== lockedGraph019Sha256) throw new Error('Committed Vally dependency lock digest mismatch.');
+  const packages = object(lock.packages);
+  const installed = object(packages[`node_modules/${packageName}`]);
+  if (installed.version !== release.version || installed.integrity !== release.integrity) {
+    throw new Error('Registry Vally identity does not match the reviewed dependency lock.');
+  }
+  return { manifest: lockedManifest019 as Record<string, unknown>, lock, digest };
+}
+
 export async function dependencyDigest(directory: string): Promise<string> {
   const hash = createHash('sha256');
   const root = await realpath(directory);
@@ -101,8 +122,14 @@ export async function dependencyDigest(directory: string): Promise<string> {
   return hash.digest('hex');
 }
 
-export async function inspectInstallation(directory: string, release: EngineRelease): Promise<EngineIdentity> {
+export async function inspectInstallation(
+  directory: string, release: EngineRelease, expectedLockSha256?: string,
+): Promise<EngineIdentity> {
   const lockSource = await readFile(join(directory, 'package-lock.json'), 'utf8');
+  const lockSha256 = sha256(lockSource);
+  if (expectedLockSha256 !== undefined && lockSha256 !== expectedLockSha256) {
+    throw new Error('Installed Vally lockfile differs from the reviewed dependency graph.');
+  }
   const lock = object(JSON.parse(lockSource));
   const packages = object(lock.packages);
   const installed = object(packages[`node_modules/${packageName}`]);
@@ -124,7 +151,7 @@ export async function inspectInstallation(directory: string, release: EngineRele
   return {
     ...release, entry, sha256: sha256(await readFile(entry)),
     dependencySha256: await dependencyDigest(join(directory, 'node_modules')),
-    lockSha256: sha256(lockSource),
+    lockSha256,
   };
 }
 
@@ -137,7 +164,8 @@ export async function acquireEngine(
   },
 ): Promise<EngineIdentity> {
   releaseMetadata({ name: packageName, version: release.version, dist: { integrity: release.integrity } }, release.version);
-  const identity = sha256(JSON.stringify([release, process.platform, process.arch, process.version]));
+  const toolchain = lockedToolchain(release);
+  const identity = sha256(JSON.stringify([release, toolchain.digest, process.platform, process.arch, process.version]));
   await mkdir(jobDirectory, { recursive: true, mode: 0o700 });
   return withInstallationLock(jobDirectory, identity, async () => {
     const receipt = join(jobDirectory, `${identity}.json`);
@@ -154,6 +182,7 @@ export async function acquireEngine(
           cached.directory.includes('/') || cached.directory.includes('\\') ||
           recorded.version !== release.version || recorded.integrity !== release.integrity ||
           typeof recorded.entry !== 'string' ||
+          recorded.lockSha256 !== toolchain.digest ||
           ![recorded.sha256, recorded.dependencySha256, recorded.lockSha256].every((value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))) {
         throw new Error('Invalid installed-tool receipt; cache reuse is refused.');
       }
@@ -162,11 +191,11 @@ export async function acquireEngine(
       if (relative(root, await realpath(directory)) !== cached.directory) throw new Error('Cached installation escapes its job directory.');
       const expected: EngineIdentity = {
         ...release, entry: recorded.entry, sha256: String(recorded.sha256),
-        dependencySha256: String(recorded.dependencySha256), lockSha256: String(recorded.lockSha256),
+        dependencySha256: String(recorded.dependencySha256), lockSha256: toolchain.digest,
       };
       return verifyCachedEngine(directory, expected);
     }
-    const installed = await installEngine(release, jobDirectory, identity, install);
+    const installed = await installEngine(release, toolchain, jobDirectory, identity, install);
     const engine = installed.engine;
     const directory = relative(await realpath(jobDirectory), await realpath(installed.directory));
     const staged = join(jobDirectory, `receipt-${randomUUID()}.json`);
@@ -204,7 +233,7 @@ export async function withInstallationLock<T>(
 }
 
 async function installEngine(
-  release: EngineRelease, jobDirectory: string, identity: string, install: InstallProcess,
+  release: EngineRelease, toolchain: LockedToolchain, jobDirectory: string, identity: string, install: InstallProcess,
 ): Promise<{ directory: string; engine: EngineIdentity }> {
   const directory = await mkdtemp(join(jobDirectory, `${identity}-`));
   const userConfig = join(directory, 'user.npmrc');
@@ -212,22 +241,21 @@ async function installEngine(
   await Promise.all([
     writeFile(userConfig, '', { mode: 0o600 }),
     writeFile(globalConfig, '', { mode: 0o600 }),
-    writeFile(join(directory, 'package.json'), JSON.stringify({
-      name: 'evals-action-toolchain', private: true, dependencies: { [packageName]: release.version },
-    }), { mode: 0o600 }),
+    writeFile(join(directory, 'package.json'), JSON.stringify(toolchain.manifest), { mode: 0o600 }),
+    writeFile(join(directory, 'package-lock.json'), JSON.stringify(toolchain.lock), { mode: 0o600 }),
   ]);
   const env = inertEnvironment(process.env);
   env.HOME = directory;
   await install([
-    'install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress',
+    'ci', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress',
     '--registry', registry, '--userconfig', userConfig, '--globalconfig', globalConfig,
     '--cache', join(directory, 'cache'), '--prefix', directory,
   ], directory, env);
-  return { directory, engine: await inspectInstallation(directory, release) };
+  return { directory, engine: await inspectInstallation(directory, release, toolchain.digest) };
 }
 
 export async function verifyCachedEngine(directory: string, expected: EngineIdentity): Promise<EngineIdentity> {
-  const actual = await inspectInstallation(directory, expected);
+  const actual = await inspectInstallation(directory, expected, expected.lockSha256);
   if (actual.entry !== expected.entry || actual.sha256 !== expected.sha256 ||
       actual.dependencySha256 !== expected.dependencySha256 || actual.lockSha256 !== expected.lockSha256) {
     throw new Error('Cached Vally dependency graph changed; do not reuse this installation.');

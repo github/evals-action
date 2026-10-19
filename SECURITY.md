@@ -35,21 +35,22 @@ An explicit run step is the team's execution authorization. Use a protected
 GitHub environment when approval is required. No plan-preview approval token
 or reusable authorization is invented.
 
-Only run receives explicitly named `credential-env` values; list
-`COPILOT_GITHUB_TOKEN` there when Copilot authentication is needed. It is not
-implicitly inherited. Installation, version checks, plan and lint receive neither
-model nor reporting tokens. Reporting credentials are separate, and protected
-environment names cannot be forwarded through `credential-env`. Do not provide
-secrets to untrusted code. Environment filtering does not isolate processes under
-the same runner user.
+Only run receives `copilot-token` or explicitly named advanced `credential-env`
+values. Neither is implicitly inherited. Installation, version checks, plan and
+lint receive neither model nor reporting tokens. Reporting credentials are
+separate, and protected environment names cannot be forwarded through
+`credential-env`. Do not provide secrets to untrusted code. Environment
+filtering does not isolate processes under the same runner user.
 
 GitHub Actions installation tokens support Copilot when the workflow grants
 `copilot-requests: write` and the applicable account policy permits it. The
-Action accepts an explicitly selected `COPILOT_GITHUB_TOKEN` alias of the
-workflow token, including when the parent has the same `GITHUB_TOKEN` value.
-It never forwards `GITHUB_TOKEN` itself into Vally's SDK user-token option.
-This narrowly scoped alias exception does not allow artifact tokens, `GH_TOKEN`
-values, arbitrary credential aliases or a token also supplied as `report-token`.
+Action accepts the workflow token through the explicit `copilot-token` input,
+including when the parent has the same `GITHUB_TOKEN` value. It masks the input,
+deletes its `INPUT_COPILOT-TOKEN` variable, and maps the value only to
+`COPILOT_GITHUB_TOKEN` for the run child. It never forwards `GITHUB_TOKEN`
+itself into Vally's SDK user-token option. This narrowly scoped path does not
+allow artifact tokens, `GH_TOKEN` values, arbitrary aliases or a token also
+supplied as `report-token`.
 
 Do not grant PR-write or other unnecessary repository-write permissions to the
 model job. The Action cannot downscope an existing token or prove its permissions.
@@ -57,3 +58,8 @@ Keep optional reporting in a separate model-free job, or use summaries/artifacts
 Do not assume this credential routing prevents prompt injection in reviewed
 evaluation content. Live Copilot authentication/billing requires a separately
 approved pilot; synthetic transport tests do not establish server acceptance.
+
+The qualified Vally runtime uses a committed, reviewed package lock and `npm ci`.
+Pinning only the top-level CLI version is insufficient because its dependency
+ranges are mutable. A version without a committed lock is refused before
+installation or credentialed execution.

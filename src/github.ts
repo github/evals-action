@@ -9,13 +9,20 @@ export class ReportingError extends Error {
   constructor(public readonly code: string) { super(code); }
 }
 
-export function takeReportToken(
+export function takeSecretInput(
+  name: string,
   read: () => string, environment: NodeJS.ProcessEnv, mask: (token: string) => void,
 ): string {
   const token = read().trim();
   if (token) mask(token);
-  delete environment['INPUT_REPORT-TOKEN'];
+  delete environment[`INPUT_${name.toUpperCase()}`];
   return token;
+}
+
+export function takeReportToken(
+  read: () => string, environment: NodeJS.ProcessEnv, mask: (token: string) => void,
+): string {
+  return takeSecretInput('REPORT-TOKEN', read, environment, mask);
 }
 
 export function githubClient(token: string, temporaryDirectory: string, fetcher: typeof fetch = fetch): GitHubClient {

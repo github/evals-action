@@ -43,7 +43,7 @@ export function nativeArguments(inputs: Inputs, cwd: string, directory: string, 
 }
 
 export function nativeEnvironment(
-  inputs: Inputs, source: NodeJS.ProcessEnv, home: string, reportToken: string,
+  inputs: Inputs, source: NodeJS.ProcessEnv, home: string, reportToken: string, copilotToken = '',
 ): NodeJS.ProcessEnv {
   const env = inertEnvironment(source);
   env.HOME = home;
@@ -53,6 +53,11 @@ export function nativeEnvironment(
   if (inputs.command !== 'run') return env;
   const forbidden = /^(GITHUB_|GH_|ACTIONS_|RUNNER_|INPUT_|NODE_|NPM_|PNPM_|GIT_|LD_|DYLD_)|^(PATH|HOME|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|COMSPEC|SYSTEMROOT|WINDIR|TMP|TEMP|TMPDIR|PYTHONPATH|PYTHONHOME|RUBYOPT|PERL5OPT)$/;
   const reportingSecrets = [reportToken, source.GH_TOKEN, source.ACTIONS_RUNTIME_TOKEN].filter(Boolean);
+  if (copilotToken) {
+    if (inputs.credentialEnv.includes('COPILOT_GITHUB_TOKEN')) throw new NativeError('copilot-token-input-cannot-combine-with-credential-env');
+    if (reportingSecrets.includes(copilotToken)) throw new NativeError('reporting-token-cannot-be-an-evaluator-credential');
+    env.COPILOT_GITHUB_TOKEN = copilotToken;
+  }
   for (const name of new Set(inputs.credentialEnv)) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || forbidden.test(name)) throw new NativeError('protected-credential-environment-name');
     const value = source[name];

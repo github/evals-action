@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { githubClient, takeReportToken } from '../src/github.js';
+import { githubClient, takeReportToken, takeSecretInput } from '../src/github.js';
 import { inertEnvironment } from '../src/policy.js';
 
 const directories: string[] = [];
@@ -20,6 +20,10 @@ it('masks and removes the reporting credential from ambient input, never parsed 
   expect(env).not.toHaveProperty('INPUT_REPORT-TOKEN');
   expect(inertEnvironment(env)).toEqual({ PATH: '/bin', CI: 'true' });
   expect(takeReportToken(() => '', {}, mask)).toBe('');
+  const copilotEnvironment = { 'INPUT_COPILOT-TOKEN': 'copilot-token' };
+  expect(takeSecretInput('COPILOT-TOKEN', () => 'copilot-token', copilotEnvironment, mask)).toBe('copilot-token');
+  expect(copilotEnvironment).not.toHaveProperty('INPUT_COPILOT-TOKEN');
+  expect(mask).toHaveBeenCalledWith('copilot-token');
   expect(() => githubClient('', '/tmp')).toThrow(/report-token-required/);
 });
 

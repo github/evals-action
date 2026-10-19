@@ -39,11 +39,13 @@ project packages, or introduce a second evaluation runner. `--suite` cannot
 combine with paths or tags. Paths and tags can combine using Vally's semantics.
 Put native file patterns in a named suite rather than `eval-paths`.
 
-The adapter has model-free native qualification against Vally **0.19.0**,
+The adapter defaults to and has model-free native qualification against Vally
+**0.19.0**,
 including actual lint, suites, repetitions, multiple mock models, weighted
 threshold pass, failed verdict, skipped selection and missing-suite controls.
-Future CLI/evidence changes can fail explicitly; latest selection is not a
-promise of compatibility with every future Vally version.
+The default is intentionally pinned so a privileged workflow does not execute a
+new mutable registry release without review. `vally-version: latest` remains an
+explicit opt-in; it is not a compatibility promise for future versions.
 
 ## Workflow example
 
@@ -75,10 +77,7 @@ jobs:
           command: run
           working-directory: .
           suite: regression
-          vally-version: 0.19.0
-          credential-env: COPILOT_GITHUB_TOKEN
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          copilot-token: ${{ github.token }}
 ```
 
 Model-backed execution consumes account resources. Workflow-token usage in
@@ -110,11 +109,12 @@ grader plugins; it is not a sandbox for untrusted code.
 | `suite` | Native named suite for run; mutually exclusive with paths and tags. |
 | `eval-paths` | Newline-separated literal eval file paths for run. Spaces, including leading/trailing spaces, are preserved. Ignored for lint. |
 | `tags` | Newline-separated native filters, e.g. `cost=free` or `flaky!=yes`; run only. |
-| `vally-version` | `latest` stable by default, or an exact stable version such as `0.19.0`. |
+| `vally-version` | Exact stable version; default `0.19.0`, the currently qualified and dependency-locked CLI. `latest` is accepted only when it resolves to a version with a committed reviewed lock. |
 | `model` | Native model override, including Vally's comma-separated model list. |
 | `runs`, `workers`, `timeout` | Positive integer run overrides. Timeout is per trial in seconds. |
 | `max-retries` | Nonnegative native run override. Vally controls conditional retries and unsupported combinations. |
-| `credential-env` | Evaluator credential environment variable **names**, one per line, passed only to run. List `COPILOT_GITHUB_TOKEN` and set its step environment value to `${{ github.token }}` or a supported secret. Never put token values in this input. |
+| `credential-env` | Advanced evaluator credential environment variable **names**, one per line, passed only to run. Use for BYOK or a supported secret-backed token; never put values in this input. Cannot list `COPILOT_GITHUB_TOKEN` when `copilot-token` is supplied. |
+| `copilot-token` | Explicit Copilot token for run, normally `${{ github.token }}` with `copilot-requests: write`. The Action masks it and maps it to the SDK's `COPILOT_GITHUB_TOKEN` environment path. Cannot be reused as `report-token`. |
 | `comment` | Default `false`; opt in to a serialized bot-owned PR report. |
 | `report-token` | No default. Explicit reporting-only GitHub App/bot token, normally `${{ github.token }}`. Human/PAT reporters are refused. |
 | `report-id` | Stable identity within a job; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. Comments require unique literal values and non-matrix jobs. |
@@ -185,22 +185,21 @@ decision. This repository's bounded example documents an explicit exception for
 contributors with same-repository branch push access; consumers must choose and
 enforce their own authorization boundary. Do not pass secrets to untrusted code.
 
-`COPILOT_GITHUB_TOKEN` is forwarded to run only when explicitly listed in
-`credential-env`; it is not implicitly inherited. GitHub supports the automatic
-Actions token for Copilot with `copilot-requests: write` and the applicable
-organization policy. Explicitly alias `${{ github.token }}` to
-`COPILOT_GITHUB_TOKEN` as above. Do not list `GITHUB_TOKEN`, `GH_TOKEN` or
-`GITHUB_COPILOT_API_TOKEN`: these names remain blocked. This keeps installation
+`copilot-token` is never implicit. GitHub supports the automatic Actions token
+for Copilot with `copilot-requests: write` and the applicable organization
+policy. Pass `${{ github.token }}` through the input as shown above. The Action
+masks it, removes its Actions input environment variable, and maps it to
+`COPILOT_GITHUB_TOKEN` only for the Vally run child. It does not forward
+`GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_COPILOT_API_TOKEN`. This keeps installation
 tokens in the SDK's environment authentication path rather than its user-token
 option. Inspection of Vally 0.19.0's subject executor and LLM judge confirms
-they retain this environment path when the blocked token variables are absent.
+they retain this path when the blocked token variables are absent.
 See [the SDK server-to-server contract](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens).
 
-The explicit Copilot alias may have the same value as the parent process's
-`GITHUB_TOKEN`; that variable itself is never forwarded. The exception does not
-apply to arbitrary credential names. A credential equal to `report-token`,
-`GH_TOKEN` or the artifact-service token is still rejected. In particular, do not
-give the same token to both `report-token` and `COPILOT_GITHUB_TOKEN`.
+The explicit Copilot input may have the same value as the parent process's
+`GITHUB_TOKEN`; that variable itself is never forwarded. A token equal to
+`report-token`, `GH_TOKEN` or the artifact-service token is still rejected. In
+particular, do not give the same token to both `report-token` and `copilot-token`.
 The Action cannot remove permissions from a token or attest its scopes; the
 workflow author must grant only `contents: read` and `copilot-requests: write`
 to the model job, not `pull-requests: write` or `write-all`.
@@ -213,9 +212,10 @@ Vally usage telemetry is opted out for Action invocations.
 
 If workflow-token authentication is unavailable under your account's policy,
 an explicitly provisioned supported user token remains an alternative: replace
-`${{ github.token }}` in the example with `${{ secrets.EVALS_COPILOT_TOKEN }}`,
-keep `credential-env: COPILOT_GITHUB_TOKEN`, and omit the Copilot workflow
-permission when it is not used. There is no automatic fallback to stored
+`${{ github.token }}` in `copilot-token` with
+`${{ secrets.EVALS_COPILOT_TOKEN }}` and omit the Copilot workflow permission
+when it is not used. For custom provider variables or advanced environment
+contracts, use `credential-env`. There is no automatic fallback to stored
 personal credentials. Consult the
 [official authentication guidance](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli).
 Live model/account compatibility is not claimed by the model-free controls.
@@ -258,10 +258,17 @@ live bot-token qualification is separate.
 
 ## Acquisition and development
 
-Latest stable resolves once per private job directory; exact pins coexist.
-Installation is script-suppressed and isolated from customer manifests and npm
-configuration. Registry integrity must match the lockfile. Atomic receipts bind
-the CLI, Node/platform identity, exact dependency lock and installed tree.
+The Action currently carries one reviewed runtime graph:
+`tooling/vally-0.19.0/package-lock.json`. Installation uses `npm ci`, suppresses
+lifecycle scripts, and is isolated from customer manifests and npm
+configuration. The committed lock's canonical digest, top-level registry
+identity and every package integrity are verified before execution. A requested
+exact version or `latest` resolution is refused unless it maps to a committed
+reviewed lock; supporting another version requires adding and reviewing its
+lock first.
+
+Atomic receipts bind the CLI, Node/platform identity, committed dependency lock
+and installed tree.
 Every reuse verifies those hashes; stale/corrupt receipts or locks fail rather
 than silently downgrading or substituting a different graph. No cross-job cache
 is restored. Registry integrity is not publisher attestation.

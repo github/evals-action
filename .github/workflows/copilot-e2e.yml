@@ -35,8 +35,6 @@ jobs:
         with:
           command: lint
           working-directory: examples/copilot-smoke
-          vally-version: 0.19.0
-          report-id: copilot-example-lint
       - name: Verify lint result
         env:
           OUTCOME: ${{ steps.evals.outputs.outcome }}
@@ -67,15 +65,8 @@ jobs:
           command: run
           working-directory: examples/copilot-smoke
           suite: copilot-smoke
-          vally-version: 0.19.0
-          runs: 1
-          workers: 1
           max-retries: 0
-          timeout: 60
-          credential-env: COPILOT_GITHUB_TOKEN
-          report-id: copilot-example-run
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          copilot-token: ${{ github.token }}
       - name: Verify native Copilot result
         env:
           OUTCOME: ${{ steps.evals.outputs.outcome }}

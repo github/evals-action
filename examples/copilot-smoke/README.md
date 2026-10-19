@@ -7,8 +7,7 @@ grade the skill invocation and exact response, and publish structured evidence.
 It consumes Copilot AI credits. The repository workflow limits the run to:
 
 - Same-repository pull requests or manual dispatch.
-- One stimulus, one trial and one worker.
-- Zero retries and a 60-second native timeout.
+- One stimulus, with its trial count and 60-second timeout declared in the eval.
 - `contents: read` plus `copilot-requests: write`.
 - No PR-write permission, `report-token`, stored PAT or raw transcript upload.
 
@@ -34,14 +33,8 @@ with:
   command: run
   working-directory: examples/copilot-smoke
   suite: copilot-smoke
-  vally-version: 0.19.0
-  runs: 1
-  workers: 1
   max-retries: 0
-  timeout: 60
-  credential-env: COPILOT_GITHUB_TOKEN
-env:
-  COPILOT_GITHUB_TOKEN: ${{ github.token }}
+  copilot-token: ${{ github.token }}
 ```
 
 Fork PRs are excluded. For this repository's dedicated control, contributors

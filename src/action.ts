@@ -8,7 +8,7 @@ import { parseInputs } from './inputs.js';
 import { assertRevision, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
 import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
 import { renderSummary, structuredReport, type Report } from './reporting.js';
-import { githubClient, ReportingError, takeReportToken } from './github.js';
+import { githubClient, ReportingError, takeReportToken, takeSecretInput } from './github.js';
 import { postReport } from './reporter.js';
 import { acquireEngine, resolveRelease, sha256 } from './tooling.js';
 
@@ -16,6 +16,7 @@ const execute = promisify(execFile);
 
 export async function runAction(): Promise<void> {
   const reportToken = takeReportToken(() => core.getInput('report-token'), process.env, core.setSecret);
+  const copilotToken = takeSecretInput('COPILOT-TOKEN', () => core.getInput('copilot-token'), process.env, core.setSecret);
   const report: Report = {
     schemaVersion: 1, command: 'unknown', outcome: 'error', completeness: 'unknown',
     revision: /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? '') ? process.env.GITHUB_SHA! : 'unknown',
@@ -53,7 +54,7 @@ export async function runAction(): Promise<void> {
       nativeArguments(inputs, cwd, nativeDirectory, 'selection-check');
       const home = join(nativeDirectory, 'home');
       await mkdir(home, { mode: 0o700 });
-      const env = nativeEnvironment(inputs, process.env, home, reportToken);
+      const env = nativeEnvironment(inputs, process.env, home, reportToken, copilotToken);
       const tools = join(requiredEnv('RUNNER_TEMP'), `evals-tools-${sha256(JSON.stringify([
         requiredEnv('GITHUB_RUN_ID'), requiredEnv('GITHUB_RUN_ATTEMPT'), requiredEnv('GITHUB_JOB'),
       ]))}`);

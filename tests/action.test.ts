@@ -208,6 +208,32 @@ it('supports explicit workflow-token auth without reporting permissions or ambie
   expect(JSON.stringify(mocks.summaryRaw.mock.calls)).not.toContain(token);
 });
 
+it('maps the simple copilot-token input without retaining its Actions input variable', async () => {
+  const token = 'synthetic-copilot-input';
+  mocks.inputs.comment = 'false';
+  mocks.inputs['report-token'] = '';
+  mocks.inputs['copilot-token'] = token;
+  vi.stubEnv('INPUT_COPILOT-TOKEN', token);
+  await runAction();
+  expect(mocks.setSecret).toHaveBeenCalledWith(token);
+  expect(process.env['INPUT_COPILOT-TOKEN']).toBeUndefined();
+  expect(mocks.nativeEnv).toHaveBeenCalledWith(expect.objectContaining({ COPILOT_GITHUB_TOKEN: token }));
+  const childEnv = mocks.nativeEnv.mock.calls[0]?.[0] as NodeJS.ProcessEnv;
+  expect(childEnv).not.toHaveProperty('GITHUB_TOKEN');
+  expect(JSON.stringify(mocks.setOutput.mock.calls)).not.toContain(token);
+  expect(JSON.stringify(mocks.summaryRaw.mock.calls)).not.toContain(token);
+});
+
+it('rejects ambiguous copilot-token configuration before acquisition', async () => {
+  const token = 'synthetic-copilot-input';
+  mocks.inputs['copilot-token'] = token;
+  mocks.inputs['credential-env'] = 'COPILOT_GITHUB_TOKEN';
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('copilot-token-input-cannot-combine'));
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.nativeEnv).not.toHaveBeenCalled();
+});
+
 it('rejects shared reporting/model tokens before acquisition and never starts Vally for forks', async () => {
   const token = 'synthetic-shared-token';
   vi.stubEnv('GITHUB_TOKEN', token);

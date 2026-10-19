@@ -1,4 +1,5 @@
 export type Command = 'lint' | 'plan' | 'run';
+export const DEFAULT_VALLY_VERSION = '0.19.0';
 export type InputReader = (name: string) => string;
 export interface Inputs {
   command: Command;
@@ -55,7 +56,7 @@ export function parseInputs(read: InputReader): Inputs {
   const evalPaths = raw('eval-paths').split(/\r?\n/).filter((line) => line !== '');
   const tags = lines('tags');
   if (command !== 'lint' && !suite && !evalPaths.length && !tags.length) throw new Error('Explicit suite, eval-paths, or tags selection is required.');
-  const vallyVersion = text('vally-version') || 'latest';
+  const vallyVersion = text('vally-version') || DEFAULT_VALLY_VERSION;
   if (vallyVersion !== 'latest' && !exactVersion(vallyVersion)) throw new Error('vally-version must be latest or an exact stable version.');
   const reportId = text('report-id') || 'evals';
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(reportId)) throw new Error('report-id must be 1-64 letters, digits, underscores or hyphens.');
