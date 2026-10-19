@@ -22,6 +22,7 @@ export interface Report {
   workflowRunAttempt: number;
   sourceJob: string;
   selection: string;
+  suite?: string;
   command: string;
   outcome: 'error' | 'not-run' | 'planned' | 'validated' | 'passed' | 'failed' | 'cancelled';
   completeness: 'complete' | 'partial' | 'unknown';
@@ -33,7 +34,7 @@ export interface Report {
   failed?: number;
   engine?: { version: string; sha256: string; dependencySha256?: string; lockSha256?: string };
   nativeRunId?: string;
-  groups?: Array<{ identity: string; passed: boolean; trials: number; stimuliRun: number; stimuliTotal: number; skipped: number }>;
+  groups?: Array<{ identity: string; name?: string; passed: boolean; trials: number; stimuliRun: number; stimuliTotal: number; skipped: number }>;
 }
 export interface ReportExpectation {
   reportId: string;
@@ -66,13 +67,15 @@ export function renderMatrix(rows: readonly MatrixRow[], completeness: Report['c
 export function renderSummary(report: Report): string {
   return `# Evals: ${report.outcome}\n\n` +
     `Command: ${escapeMarkdown(report.command)}. Plan: ${report.completeness}.\n\n` +
+    (report.suite ? `Suite: ${escapeMarkdown(report.suite)}.\n\n` : '') +
     `Revision: ${escapeMarkdown(report.revision)}\n\n` +
     `Category: ${report.category}. Diagnostic: ${escapeMarkdown(report.code)}.\n\n` +
     (report.executed === undefined ? 'Executed: unknown.\n' : `Executed: ${report.executed}.\n`) +
     (report.outcome === 'not-run' ? '\n**Not an evaluation pass. A nonblocking not-run step can satisfy branch protection.**\n' : '') +
     (report.engine ? `\nVally: ${escapeMarkdown(report.engine.version)}. Executable SHA-256: ${escapeMarkdown(report.engine.sha256)}.\n` : '') +
-    (report.groups?.length ? '\n| Native eval identity | Trials executed | Stimuli run | Skipped | Native verdict |\n| --- | --- | --- | --- | --- |\n' +
-      report.groups.map((group) => `| ${group.identity.slice(0, 12)} | ${group.trials} | ${group.stimuliRun} | ${group.skipped} | ${group.trials === 0 ? 'not-run' : group.passed ? 'passed' : 'failed'} |`).join('\n') + '\n' : '');
+    (report.groups?.length ? '\n| Eval | Trials executed | Stimuli run | Skipped | Native verdict |\n| --- | --- | --- | --- | --- |\n' +
+      report.groups.slice(0, 100).map((group) => `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.stimuliRun} | ${group.skipped} | ${group.trials === 0 ? 'not-run' : group.passed ? 'passed' : 'failed'} |`).join('\n') +
+      (report.groups.length > 100 ? `\n\n${report.groups.length - 100} further groups are available in the structured artifact.` : '') + '\n' : '');
 }
 
 // Explicit projection excludes arbitrary runner JSON, paths, prompts and diagnostics.
@@ -81,6 +84,7 @@ export function structuredReport(report: Report): string {
     schemaVersion: 2, reportId: report.reportId, repository: report.repository,
     workflowRunId: report.workflowRunId, workflowRunAttempt: report.workflowRunAttempt,
     sourceJob: report.sourceJob, selection: report.selection,
+    ...(report.suite ? { suite: report.suite } : {}),
     command: report.command, outcome: report.outcome, completeness: report.completeness,
     revision: report.revision, category: report.category, code: report.code,
     ...(report.executed !== undefined ? { executed: report.executed } : {}),
@@ -91,8 +95,8 @@ export function structuredReport(report: Report): string {
       dependencySha256: report.engine.dependencySha256, lockSha256: report.engine.lockSha256,
     } } : {}),
     ...(report.nativeRunId ? { nativeRunId: report.nativeRunId } : {}),
-    ...(report.groups ? { groups: report.groups.map(({ identity, passed, trials, stimuliRun, stimuliTotal, skipped }) =>
-      ({ identity, passed, trials, stimuliRun, stimuliTotal, skipped })) } : {}),
+    ...(report.groups ? { groups: report.groups.map(({ identity, name, passed, trials, stimuliRun, stimuliTotal, skipped }) =>
+      ({ identity, ...(name ? { name } : {}), passed, trials, stimuliRun, stimuliTotal, skipped })) } : {}),
   }, null, 2) + '\n';
 }
 
@@ -123,7 +127,7 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
   const allowed = new Set([
     'schemaVersion', 'reportId', 'repository', 'workflowRunId', 'workflowRunAttempt', 'sourceJob', 'selection',
     'command', 'outcome', 'completeness', 'revision', 'category', 'code', 'executed', 'passed', 'failed',
-    'engine', 'nativeRunId', 'groups',
+    'engine', 'nativeRunId', 'groups', 'suite',
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw new Error('Structured report contains unsupported fields.');
   if (raw.schemaVersion !== 2) throw new Error('Unsupported Evals Action structured report version.');
@@ -139,6 +143,10 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
   }
   const command = string(raw.command, 'command');
   if (command !== 'lint' && command !== 'run') throw new Error('Structured report command is not reportable.');
+  const suite = raw.suite === undefined ? undefined : string(raw.suite, 'suite');
+  if (suite !== undefined && (command !== 'run' || suite.length > 256 || /[\r\n]/.test(suite))) {
+    throw new Error('Invalid structured report suite.');
+  }
   const outcomes: Report['outcome'][] = ['error', 'not-run', 'validated', 'passed', 'failed', 'cancelled'];
   const outcome = string(raw.outcome, 'outcome') as Report['outcome'];
   if (!outcomes.includes(outcome)) throw new Error('Invalid structured report outcome.');
@@ -177,8 +185,12 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
     if (!Array.isArray(raw.groups) || raw.groups.length > 10_000) throw new Error('Invalid structured report groups.');
     groups = raw.groups.map((entry) => {
       const value = record(entry);
-      if (Object.keys(value).some((key) => !['identity', 'passed', 'trials', 'stimuliRun', 'stimuliTotal', 'skipped'].includes(key)) ||
+      if (Object.keys(value).some((key) => !['identity', 'name', 'passed', 'trials', 'stimuliRun', 'stimuliTotal', 'skipped'].includes(key)) ||
           typeof value.passed !== 'boolean') throw new Error('Invalid structured report group.');
+      const name = value.name === undefined ? undefined : string(value.name, 'group.name');
+      if (name !== undefined && (name.length > 256 || /[\r\n]/.test(name))) {
+        throw new Error('Invalid structured report group name.');
+      }
       const trials = count(value.trials, 'group.trials');
       const stimuliRun = count(value.stimuliRun, 'group.stimuliRun');
       const stimuliTotal = count(value.stimuliTotal, 'group.stimuliTotal');
@@ -190,6 +202,7 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
       }
       return {
         identity: string(value.identity, 'group.identity', /^[a-f0-9]{64}$/),
+        ...(name ? { name } : {}),
         passed: value.passed,
         trials,
         stimuliRun, stimuliTotal, skipped,
@@ -217,6 +230,7 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
     schemaVersion: 2, reportId, repository, workflowRunId, workflowRunAttempt,
     sourceJob: string(raw.sourceJob, 'sourceJob', /^[A-Za-z0-9_.-]+$/),
     selection: string(raw.selection, 'selection', /^[a-f0-9]{64}$/),
+    ...(suite ? { suite } : {}),
     command, outcome, completeness, revision, category,
     code: string(raw.code, 'code', /^[a-z0-9-]+$/),
     ...(executed !== undefined ? { executed } : {}), ...(passed !== undefined ? { passed } : {}),

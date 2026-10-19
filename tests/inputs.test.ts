@@ -66,6 +66,19 @@ describe('public inputs', () => {
       command: 'run', 'source-artifact-id': '123',
       'source-artifact-digest': 'a'.repeat(64),
     })).toThrow(/only valid for report/);
+    expect(parseValues({
+      command: 'report', 'working-directory': '', suite: '', 'report-id': 'evals-run',
+      'source-artifact-id': '123', 'source-artifact-digest': 'a'.repeat(64),
+      'lint-artifact-id': '124', 'lint-artifact-digest': 'b'.repeat(64),
+    })).toMatchObject({ lintArtifactId: 124, lintArtifactDigest: 'b'.repeat(64) });
+    for (const extra of [
+      { 'lint-artifact-id': '124' },
+      { 'lint-artifact-digest': 'b'.repeat(64) },
+      { 'lint-artifact-id': '123', 'lint-artifact-digest': 'b'.repeat(64) },
+    ]) expect(() => parseValues({
+      command: 'report', 'working-directory': '', suite: '', 'report-id': 'evals-run',
+      'source-artifact-id': '123', 'source-artifact-digest': 'a'.repeat(64), ...extra,
+    })).toThrow();
   });
   it('preserves leading and trailing path spaces rather than selecting different files', () => {
     const inputs = parseValues({

@@ -35,6 +35,7 @@ export async function runAction(): Promise<void> {
     reportMode = inputs.command === 'report';
     report.command = inputs.command;
     report.reportId = inputs.reportId;
+    if (inputs.command === 'run' && inputs.suite) report.suite = inputs.suite;
     if (inputs.command === 'lint' && (inputs.suite || inputs.evalPaths.length || inputs.tags.length)) {
       core.warning('Lint scans all evals under working-directory. Suite, eval-paths and tags selectors are ignored for lint.');
     }
@@ -60,33 +61,25 @@ export async function runAction(): Promise<void> {
         if (inputs.sourceArtifactId === undefined || inputs.sourceArtifactDigest === undefined) {
           throw new NativeError('source-artifact-identity-required', 'configuration');
         }
-        const downloadDirectory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-report-download-'));
-        let imported: Report;
-        try {
-          const download = await new DefaultArtifactClient().downloadArtifact(inputs.sourceArtifactId, {
-            path: downloadDirectory, expectedHash: `sha256:${inputs.sourceArtifactDigest}`,
-          });
-          if (download.digestMismatch || download.downloadPath === undefined) {
-            throw new NativeError('source-artifact-digest-mismatch', 'evidence');
-          }
-          const entries = await readdir(downloadDirectory);
-          if (entries.length !== 1 || entries[0] !== 'report.json') {
-            throw new NativeError('source-artifact-content-invalid', 'evidence');
-          }
-          const path = await containedFile(downloadDirectory, 'report.json', 1024 * 1024);
-          imported = parseStructuredReport(await readFile(path, 'utf8'), {
-            reportId: inputs.reportId, repository: requiredEnv('GITHUB_REPOSITORY'),
-            workflowRunId: positiveEnv('GITHUB_RUN_ID'), workflowRunAttempt: positiveEnv('GITHUB_RUN_ATTEMPT'),
-            revision: requiredEnv('GITHUB_SHA'),
-          });
-        } finally {
-          await rm(downloadDirectory, { recursive: true, force: true });
+        const imported = await readReportArtifact(inputs.sourceArtifactId, inputs.sourceArtifactDigest, inputs.reportId);
+        let companion: { report: Report; artifactId: number } | undefined;
+        if (inputs.lintArtifactId !== undefined) {
+          if (!inputs.lintArtifactDigest) throw new NativeError('lint-artifact-identity-required', 'configuration');
+          companion = {
+            report: await readReportArtifact(inputs.lintArtifactId, inputs.lintArtifactDigest, `${inputs.reportId.slice(0, -4)}-lint`),
+            artifactId: inputs.lintArtifactId,
+          };
+        }
+        if (companion && (imported.command !== 'run' || companion.report.command !== 'lint')) {
+          throw new NativeError('inconsistent-report-commands', 'evidence');
         }
         Object.assign(report, imported);
         try {
           const outcome = await postReport(githubClient(reportToken, requiredEnv('RUNNER_TEMP')), {
             repository: report.repository, workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
-            workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'), reportId: report.reportId,
+            workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'),
+            reportId: process.env.EVALS_JOB_WORKFLOW_REF && /-(?:lint|run)$/.test(report.reportId)
+              ? report.reportId.replace(/-(?:lint|run)$/, '') : report.reportId,
             ...(process.env.EVALS_JOB_WORKFLOW_REF || process.env.EVALS_JOB_WORKFLOW_SHA ||
                 process.env.EVALS_JOB_WORKFLOW_REPOSITORY || process.env.EVALS_JOB_WORKFLOW_FILE_PATH
               ? { reusableWorkflow: {
@@ -97,14 +90,39 @@ export async function runAction(): Promise<void> {
               } } : {}),
             selection: report.selection, pullNumber, runId: report.workflowRunId,
             order: { runNumber: positiveEnv('GITHUB_RUN_NUMBER'), attempt: report.workflowRunAttempt },
-          }, report, inputs.sourceArtifactId);
+          }, report, inputs.sourceArtifactId, companion);
           if (outcome === 'stale') core.warning('A newer run or attempt already owns this report comment.');
         } catch (error) {
           throw new NativeError(error instanceof ReportingError ? error.code : 'comment-reporting-failed', 'execution');
         }
+
         publishOutputs(report);
         await core.summary.addRaw(renderSummary(report)).write();
         return;
+      }
+
+      async function readReportArtifact(artifactId: number, digest: string, reportId: string): Promise<Report> {
+        const directory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-report-download-'));
+        try {
+          const download = await new DefaultArtifactClient().downloadArtifact(artifactId, {
+            path: directory, expectedHash: `sha256:${digest}`,
+          });
+          if (download.digestMismatch || download.downloadPath !== directory) {
+            throw new NativeError('source-artifact-digest-mismatch', 'evidence');
+          }
+          const entries = await readdir(directory);
+          if (entries.length !== 1 || entries[0] !== 'report.json') {
+            throw new NativeError('source-artifact-content-invalid', 'evidence');
+          }
+          const path = await containedFile(directory, 'report.json', 1024 * 1024);
+          return parseStructuredReport(await readFile(path, 'utf8'), {
+            reportId, repository: requiredEnv('GITHUB_REPOSITORY'),
+            workflowRunId: positiveEnv('GITHUB_RUN_ID'), workflowRunAttempt: positiveEnv('GITHUB_RUN_ATTEMPT'),
+            revision: requiredEnv('GITHUB_SHA'),
+          });
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
       }
       if (reportToken) throw new NativeError('report-token-only-valid-for-report', 'configuration');
       const cwd = await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory);

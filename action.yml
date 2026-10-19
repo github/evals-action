@@ -39,6 +39,10 @@ inputs:
     description: Positive structured-report artifact ID; report command downloads it directly.
   source-artifact-digest:
     description: SHA-256 digest returned when the structured report artifact was uploaded; report command only.
+  lint-artifact-id:
+    description: Optional companion lint artifact ID when reporting a run and lint together; report command only.
+  lint-artifact-digest:
+    description: SHA-256 digest for the optional companion lint artifact; report command only.
   upload-transcripts:
     description: Opt in to native JSONL and stdout/stderr logs, which may contain sensitive content.
     default: 'false'

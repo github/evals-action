@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   setSecret: vi.fn(), setFailed: vi.fn(), warning: vi.fn(), setOutput: vi.fn(),
   summaryRaw: vi.fn(), summaryWrite: vi.fn(async () => {}),
   upload: vi.fn(async () => ({ id: 123, digest: 'd'.repeat(64) })),
-  download: vi.fn(), downloadReport: '',
+  download: vi.fn(), downloadReport: '', downloadReports: {} as Record<number, string>,
   post: vi.fn(async () => 'created'),
   revision: 'a'.repeat(40),
   nativeEnv: vi.fn(), acquire: vi.fn(),
@@ -59,6 +59,7 @@ beforeEach(async () => {
   mocks.post.mockResolvedValue('created');
   mocks.revision = 'a'.repeat(40);
   mocks.inputs = { command: 'run', 'working-directory': '.', suite: 'smoke' };
+  mocks.downloadReports = {};
   mocks.result = { outcome: 'failed', completeness: 'complete', category: 'none', code: 'native-verdict-failed', executed: 1, passed: 0, failed: 1 };
   root = await mkdtemp(join(tmpdir(), 'evals-action-control-'));
   await writeFile(join(root, 'event.json'), JSON.stringify({
@@ -73,8 +74,8 @@ beforeEach(async () => {
     GITHUB_WORKFLOW_SHA: 'b'.repeat(40), GITHUB_JOB: 'test', GITHUB_RUN_ID: '100',
     GITHUB_RUN_NUMBER: '10', GITHUB_RUN_ATTEMPT: '1',
   })) vi.stubEnv(name, value);
-  mocks.download.mockImplementation(async (_artifactId: number, options: { path: string; expectedHash: string }) => {
-    await writeFile(join(options.path, 'report.json'), mocks.downloadReport);
+  mocks.download.mockImplementation(async (artifactId: number, options: { path: string; expectedHash: string }) => {
+    await writeFile(join(options.path, 'report.json'), mocks.downloadReports[artifactId] ?? mocks.downloadReport);
     return { downloadPath: options.path, digestMismatch: false };
   });
 });
@@ -88,6 +89,13 @@ function importedReport(overrides: Partial<Report> = {}): Report {
     groups: [{ identity: 'c'.repeat(64), passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
     ...overrides,
   };
+}
+function importedLint(revision = 'a'.repeat(40)): Report {
+  const lint = importedReport({ reportId: 'evals-lint', command: 'lint', outcome: 'validated', executed: 0, revision });
+  delete lint.passed;
+  delete lint.failed;
+  delete lint.groups;
+  return lint;
 }
 afterEach(async () => {
   Object.defineProperty(process, 'platform', platform);
@@ -107,7 +115,7 @@ it('reports the native failed verdict without initializing GitHub reporting', as
   const directory = (await readdir(root)).find((name) => name.startsWith('evals-report-'))!;
   const stored = await readFile(join(root, directory, 'report.json'), 'utf8');
   expect(stored).toContain('"schemaVersion": 2');
-  expect(stored).not.toContain('smoke');
+  expect(stored).toContain('"suite": "smoke"');
 });
 
 it('downloads and posts a digest-bound report without acquiring or executing Vally', async () => {
@@ -129,7 +137,7 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
       ref: `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`,
       sha: 'd'.repeat(40), repository: 'github/evals-action', filePath: '.github/workflows/evals.yml',
     },
-  }), expect.objectContaining({ outcome: 'passed' }), 123);
+  }), expect.objectContaining({ outcome: 'passed' }), 123, undefined);
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeEnv).not.toHaveBeenCalled();
   expect(mocks.upload).not.toHaveBeenCalled();
@@ -137,6 +145,34 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
     expectedHash: `sha256:${'d'.repeat(64)}`,
   }));
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'passed');
+});
+
+it('validates both artifacts before updating one reusable workflow comment', async () => {
+  vi.stubEnv('EVALS_JOB_WORKFLOW_REF', `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`);
+  mocks.downloadReports = {
+    123: structuredReport(importedReport({ reportId: 'evals-run', suite: 'smoke' })),
+    124: structuredReport(importedLint()),
+  };
+  mocks.inputs = {
+    command: 'report', 'report-id': 'evals-run',
+    'source-artifact-id': '123', 'source-artifact-digest': 'd'.repeat(64),
+    'lint-artifact-id': '124', 'lint-artifact-digest': 'e'.repeat(64),
+    'report-token': 'synthetic-report-token',
+  };
+  await runAction();
+  expect(mocks.download).toHaveBeenCalledTimes(2);
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    reportId: 'evals',
+  }), expect.objectContaining({ reportId: 'evals-run', suite: 'smoke' }), 123, {
+    artifactId: 124, report: expect.objectContaining({ reportId: 'evals-lint', outcome: 'validated' }),
+  });
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  mocks.post.mockClear();
+  mocks.downloadReports[124] = structuredReport(importedLint('f'.repeat(40)));
+  await runAction();
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.setFailed).toHaveBeenCalled();
 });
 
 it('warns for stale report attempts without changing the imported verdict', async () => {

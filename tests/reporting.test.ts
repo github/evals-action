@@ -31,6 +31,26 @@ describe('minimal presentation projections', () => {
   it('escapes table injection, links, HTML and mentions', () => {
     expect(escapeMarkdown('<img>\n| [x](url) @team & `code`')).toBe('&lt;img&gt; \\| \\[x\\]\\(url\\) &#64;team &amp; \\`code\\`');
   });
+  it('renders native eval names and suite selection without raw source paths', () => {
+    const source = report({
+      outcome: 'passed', suite: 'smoke @team', executed: 1, passed: 1, failed: 0,
+      groups: [{
+        identity: 'c'.repeat(64), name: 'my-eval | @team', passed: true,
+        trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0,
+      }],
+    });
+    const text = structuredReport(source);
+    const parsed = parseStructuredReport(text, {
+      reportId: 'evals', repository: 'o/r', workflowRunId: 100,
+      workflowRunAttempt: 1, revision: 'a'.repeat(40),
+    });
+    expect(parsed.groups?.[0]?.name).toBe('my-eval | @team');
+    const summary = renderSummary(parsed);
+    expect(summary).toContain('Suite: smoke &#64;team');
+    expect(summary).toContain('my-eval \\| &#64;team');
+    expect(summary).not.toContain('c'.repeat(64));
+    expect(text).not.toContain('evalFilePath');
+  });
   it('does not turn unknown counts or not-run into a pass', () => {
     const notRun = report();
     expect(renderSummary(notRun)).toContain('Not an evaluation pass');
@@ -76,6 +96,8 @@ describe('minimal presentation projections', () => {
     for (const text of [
       'not-json', mutate({ schemaVersion: 1 }), mutate({ extra: 'raw runner data' }),
       mutate({ command: 'report' }), mutate({ outcome: 'passed', executed: 0, failed: 0 }),
+      mutate({ suite: 'bad\nsuite' }),
+      mutate({ suite: 'lint-only', command: 'lint' }),
       mutate({ outcome: 'failed', executed: 1, failed: 0 }),
       mutate({ outcome: 'not-run', executed: 1 }),
       mutate({ outcome: 'validated', command: 'run', executed: 0 }),
@@ -90,6 +112,10 @@ describe('minimal presentation projections', () => {
       mutate({
         outcome: 'passed', executed: 1, passed: 1, failed: 0,
         groups: [{ identity: 'c'.repeat(64), passed: true, trials: 1, stimuliRun: 2, stimuliTotal: 2, skipped: 0 }],
+      }),
+      mutate({
+        outcome: 'passed', executed: 1, passed: 1, failed: 0,
+        groups: [{ identity: 'c'.repeat(64), name: 'bad\nname', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
       }),
       mutate({
         outcome: 'not-run', executed: 0, passed: 0, failed: 0,

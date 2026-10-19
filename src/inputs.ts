@@ -12,6 +12,8 @@ export interface Inputs {
   reportId: string;
   sourceArtifactId?: number;
   sourceArtifactDigest?: string;
+  lintArtifactId?: number;
+  lintArtifactDigest?: string;
   uploadTranscripts: boolean;
   retentionDays: number;
   credentialEnv: string[];
@@ -66,14 +68,29 @@ export function parseInputs(read: InputReader): Inputs {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(reportId)) throw new Error('report-id must be 1-64 letters, digits, underscores or hyphens.');
   const sourceArtifactId = integer('source-artifact-id', 1);
   const sourceArtifactDigest = text('source-artifact-digest');
+  const lintArtifactId = integer('lint-artifact-id', 1);
+  const lintArtifactDigest = text('lint-artifact-digest');
   if (sourceArtifactDigest && !/^[a-f0-9]{64}$/.test(sourceArtifactDigest)) {
     throw new Error('Input source-artifact-digest must be a SHA-256 artifact digest.');
+  }
+  if (lintArtifactDigest && !/^[a-f0-9]{64}$/.test(lintArtifactDigest)) {
+    throw new Error('Input lint-artifact-digest must be a SHA-256 artifact digest.');
+  }
+  if ((lintArtifactId !== undefined) !== Boolean(lintArtifactDigest)) {
+    throw new Error('Inputs lint-artifact-id and lint-artifact-digest must be provided together.');
   }
   if (command === 'report' && (!sourceArtifactId || !sourceArtifactDigest)) {
     throw new Error('Inputs source-artifact-id and source-artifact-digest are required for report.');
   }
-  if (command !== 'report' && (sourceArtifactId !== undefined || sourceArtifactDigest)) {
-    throw new Error('Inputs source-artifact-id and source-artifact-digest are only valid for report.');
+  if (command !== 'report' && (sourceArtifactId !== undefined || sourceArtifactDigest ||
+      lintArtifactId !== undefined || lintArtifactDigest)) {
+    throw new Error('Artifact identity inputs are only valid for report.');
+  }
+  if (lintArtifactId !== undefined && lintArtifactId === sourceArtifactId) {
+    throw new Error('Lint and primary report artifacts must be distinct.');
+  }
+  if (lintArtifactId !== undefined && !reportId.endsWith('-run')) {
+    throw new Error('A companion lint artifact requires the primary report ID to end in -run.');
   }
   const retentionDays = integer('artifact-retention-days', 1) ?? 7;
   if (retentionDays > 90) throw new Error('artifact-retention-days must not exceed 90.');
@@ -90,6 +107,7 @@ export function parseInputs(read: InputReader): Inputs {
     command, workingDirectory, ...(suite ? { suite } : {}), evalPaths, tags, vallyVersion, overrides,
     reportId, ...(sourceArtifactId !== undefined ? { sourceArtifactId } : {}),
     ...(sourceArtifactDigest ? { sourceArtifactDigest } : {}),
+    ...(lintArtifactId !== undefined ? { lintArtifactId, lintArtifactDigest } : {}),
     uploadTranscripts: boolean('upload-transcripts'), retentionDays,
     credentialEnv: lines('credential-env'),
   };

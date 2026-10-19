@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import type { Inputs } from './inputs.js';
 import { inertEnvironment, object } from './policy.js';
 import type { Report } from './reporting.js';
@@ -151,7 +151,7 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
   }
   const trials = rows.slice(0, -1);
   const itemIds = new Set<string>();
-  const buckets = new Map<string, { trials: number; stimuli: Set<string>; skipped: number }>();
+  const buckets = new Map<string, { trials: number; stimuli: Set<string>; skipped: number; name?: string }>();
   let executionErrors = summary.hadExecutionErrors;
   for (const trial of trials) {
     if (trial.type !== 'trial-result' || typeof trial.itemId !== 'string' || itemIds.has(trial.itemId) ||
@@ -163,6 +163,13 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     itemIds.add(trial.itemId);
     const key = sha256(JSON.stringify([trial.evalFilePath, trial.variant, trial.model ?? '']));
     const bucket = buckets.get(key) ?? { trials: 0, stimuli: new Set<string>(), skipped: 0 };
+    if (trial.evalName !== undefined) {
+      if (typeof trial.evalName !== 'string' || !trial.evalName || trial.evalName.length > 256 ||
+          /[\r\n]/.test(trial.evalName) || (bucket.name !== undefined && bucket.name !== trial.evalName)) {
+        throw new NativeError('inconsistent-native-eval-name', 'evidence');
+      }
+      bucket.name = trial.evalName;
+    }
     if (trial.status === 'skipped') bucket.skipped++;
     else {
       bucket.trials++;
@@ -217,7 +224,9 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
       throw new NativeError('inconsistent-native-counts', 'evidence');
     }
     if (group.error !== undefined) executionErrors = true;
-    groups.push({ identity: key, passed: group.passed, trials: bucket.trials, stimuliRun, stimuliTotal, skipped });
+    const name = bucket.name ?? basename(group.evalFilePath);
+    if (!name || name.length > 256 || /[\r\n]/.test(name)) throw new NativeError('invalid-native-eval-name', 'evidence');
+    groups.push({ identity: key, name, passed: group.passed, trials: bucket.trials, stimuliRun, stimuliTotal, skipped });
   }
   if ([...buckets.keys()].some((key) => !seen.has(key)) || (summary.passed && groups.some((group) => !group.passed))) {
     throw new NativeError('inconsistent-native-verdict', 'evidence');

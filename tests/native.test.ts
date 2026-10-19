@@ -165,6 +165,17 @@ describe('native evidence projection', () => {
     expect(parseNativeEvidence(evidence().text, 'id', 1)).toMatchObject({ outcome: 'error', code: 'native-process-failed' });
     expect(JSON.stringify(parseNativeEvidence(evidence().text, 'id', 0))).not.toMatch(/private|prompt/);
   });
+  it('projects the real native trial eval name without leaking the eval file path', () => {
+    const { trial, summary } = evidence();
+    const result = parseNativeEvidence([
+      { ...trial, evalName: 'visible-eval' }, summary,
+    ].map((row) => JSON.stringify(row)).join('\n'), 'id', 0);
+    expect(result.groups?.[0]?.name).toBe('visible-eval');
+    expect(JSON.stringify(result)).not.toContain('/private/');
+    expect(() => parseNativeEvidence([
+      { ...trial, evalName: 'bad\nname' }, summary,
+    ].map((row) => JSON.stringify(row)).join('\n'), 'id', 0)).toThrow(/eval-name/);
+  });
   it('requires a unique complete terminal summary, identity and count consistency', () => {
     const { trial, summary } = evidence();
     for (const rows of [
@@ -229,6 +240,7 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     const actual = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 4, passed: 2, failed: 0 });
     expect(actual.result.groups).toHaveLength(2);
+    expect(actual.result.groups?.map((group) => group.name)).toEqual(['deterministic-pass', 'deterministic-pass']);
     expect(actual.files).toHaveLength(2);
   }, NATIVE_TEST_TIMEOUT_MS);
   it('preserves native include, exclude and comma-separated tag filters in real CLI execution', async () => {

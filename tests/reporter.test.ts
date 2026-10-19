@@ -232,10 +232,62 @@ jobs:
     });
     it('posts from a pinned reusable workflow while retaining caller workflow identity', async () => {
       const test = fixture({ source: reusableSource });
-      expect(await postReport(test.client, reusableContext, report, 123)).toBe('created');
+      const evaluation: Report = {
+        ...report, reportId: 'smoke-run', suite: 'selected-suite @team', outcome: 'passed', executed: 1,
+        passed: 1, failed: 0, groups: [{
+          identity: 'a'.repeat(64), name: 'named-eval | @team', passed: true,
+          trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0,
+        }],
+      };
+      const lint: Report = { ...report, reportId: 'smoke-lint', command: 'lint', outcome: 'validated', executed: 0 };
+      expect(await postReport(test.client, reusableContext, evaluation, 123, { report: lint, artifactId: 124 })).toBe('created');
+      expect(test.writes()).toHaveLength(1);
       const body = String(test.writes()[0]?.[2]?.body);
       expect(body).toContain('https://github.com/o/r/commit/');
       expect(body).toContain('https://github.com/o/r/actions/runs/1000/artifacts/123');
+      expect(body).toContain('/artifacts/124');
+      expect(body).toContain('Suite:** selected-suite &#64;team');
+      expect(body).toContain('named-eval \\| &#64;team');
+      expect(body).toContain('Lint:** validated');
+      expect(body).toContain('Run:** passed');
+      expect(body).not.toContain('a'.repeat(64));
+      const next = fixture({ source: reusableSource, comments: [owned()] });
+      expect(await postReport(next.client, reusableContext, { ...lint }, 124)).toBe('created');
+      const matching = { ...owned(), body: String(test.writes()[0]?.[2]?.body) };
+      const update = fixture({ source: reusableSource, comments: [matching] });
+      expect(await postReport(update.client, reusableContext, lint, 124)).toBe('updated');
+      expect(update.writes()[0]?.[0]).toBe('PATCH');
+    });
+    it('shows a failed native evaluation under one comment without treating lint as failed', async () => {
+      const test = fixture({ source: reusableSource });
+      const failure: Report = { ...report, reportId: 'smoke-run', outcome: 'failed', executed: 1, failed: 1, passed: 0 };
+      const lint: Report = { ...report, reportId: 'smoke-lint', command: 'lint', outcome: 'validated', executed: 0 };
+      expect(await postReport(test.client, reusableContext, failure, 123, { report: lint, artifactId: 124 })).toBe('created');
+      const body = String(test.writes()[0]?.[2]?.body);
+      expect(body).toContain('# Evals: failed');
+      expect(body).toContain('Lint:** validated');
+      expect(body).toContain('Run:** failed');
+    });
+    it('shows lint failure without inventing an evaluation status', async () => {
+      const test = fixture({ source: reusableSource });
+      const lint: Report = {
+        ...report, reportId: 'smoke-lint', command: 'lint', outcome: 'error',
+        category: 'configuration', code: 'native-lint-failed', executed: 0,
+      };
+      expect(await postReport(test.client, reusableContext, lint, 124)).toBe('created');
+      const body = String(test.writes()[0]?.[2]?.body);
+      expect(body).toContain('# Evals: error');
+      expect(body).toContain('Lint:** error');
+      expect(body).toContain('native-lint-failed');
+      expect(body).not.toContain('**Run:**');
+    });
+    it('rejects mismatched companion identities before any GitHub call', async () => {
+      const test = fixture({ source: reusableSource });
+      await expect(postReport(test.client, reusableContext, {
+        ...report, reportId: 'smoke-run',
+      }, 123, { report: { ...report, reportId: 'smoke-lint', command: 'lint', revision: 'f'.repeat(40) }, artifactId: 124 }))
+        .rejects.toThrow('inconsistent-reusable-report-evidence');
+      expect(test.request).not.toHaveBeenCalled();
     });
   });
   it.each([
