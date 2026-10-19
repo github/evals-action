@@ -8,6 +8,19 @@ Initial supported host: **Linux x64 GitHub-hosted runners, Node 24**. This is
 development code, not a published Marketplace release. Repository access is
 required while the repository is private. Pin a reviewed full commit SHA.
 
+## Included real Copilot example
+
+[`examples/copilot-smoke`](examples/copilot-smoke) contains one real skill and
+one tightly bounded eval. The
+[`Copilot E2E`](.github/workflows/copilot-e2e.yml) workflow automatically lints
+and runs it for same-repository pull requests that change the Action or example,
+and also supports manual dispatch.
+
+The run consumes Copilot AI credits. It uses the automatic workflow token with
+`copilot-requests: write`, one trial, one worker, zero retries, a 60-second
+native timeout, no PR-write permission, no report token and no transcript upload.
+Fork PRs do not run the jobs. See the example README for the exact contract.
+
 ## Commands
 
 | Action command | Native command | Supported selection |

@@ -1,0 +1,27 @@
+name: copilot-skill-smoke
+description: Minimal real-Copilot check that loads and invokes the example skill.
+type: capability
+defaults:
+  executor: copilot-sdk
+  runs: 1
+  timeout: 60s
+agent_environment:
+  skills:
+    - ./skills/evals-action-smoke
+scoring:
+  threshold: 1
+stimuli:
+  - name: invokes-the-example-skill
+    prompt: |
+      Use /evals-action-smoke.
+      Return only the exact text EVALS_ACTION_SKILL_OK.
+    graders:
+      - type: skill-invocation
+        name: example-skill-selected
+        config:
+          required:
+            - evals-action-smoke
+      - type: output-matches
+        name: exact-smoke-response
+        config:
+          pattern: '^EVALS_ACTION_SKILL_OK$(?![\s\S])'

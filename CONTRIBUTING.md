@@ -33,6 +33,7 @@ PR check names map directly to these commands:
 | Unit tests | `pnpm test:coverage`: input, policy, reporting, mocked GitHub, tool reuse, orchestration and real model-free native CLI tests with coverage thresholds. |
 | Bundle verification | `pnpm check:package`: committed bundle freshness and a clean consumer-directory packaged entry-point test. |
 | Action smoke test | Executes `uses: ./` on Ubuntu with actual acquisition, native mock-executor pass/fail, lint, installation reuse and artifact upload. No models run. |
+| Copilot E2E | For relevant same-repository PRs, lints the example and runs one real Copilot skill eval. This consumes organization Copilot AI credits. |
 
 Comment networking tests use synthetic GitHub responses, including serialized
 workflow guards, pagination, bot ownership, late runs/attempts, permission
@@ -53,6 +54,12 @@ copy native runtime behavior into the Action. New native capabilities require
 verified CLI arguments/output contracts and model-free integration controls.
 Only trusted own-repository code may eventually receive execution credentials;
 environment filtering is not an OS sandbox.
+
+The repository's `Copilot E2E` workflow is an explicitly approved live control
+for same-repository PRs affecting the Action or example. Keep it to one
+stimulus, one trial, one worker, zero retries and the documented timeout. Do not
+broaden its triggers, permissions, transcript upload or workload without a new
+approval. Never run that job for fork PRs or unreviewed native configuration.
 
 ## Release preparation
 

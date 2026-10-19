@@ -1,0 +1,93 @@
+name: Copilot E2E
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/copilot-e2e.yml
+      - action.yml
+      - dist/**
+      - src/**
+      - examples/copilot-smoke/**
+      - package.json
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copilot-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Example lint
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint all example evals
+        id: evals
+        uses: ./
+        with:
+          command: lint
+          working-directory: examples/copilot-smoke
+          vally-version: 0.19.0
+          report-id: copilot-example-lint
+      - name: Verify lint result
+        env:
+          OUTCOME: ${{ steps.evals.outputs.outcome }}
+          VERSION: ${{ steps.evals.outputs.vally-version }}
+          ARTIFACT_ID: ${{ steps.evals.outputs.artifact-id }}
+        run: |
+          test "$OUTCOME" = validated
+          test "$VERSION" = 0.19.0
+          test -n "$ARTIFACT_ID"
+
+  run:
+    name: Real Copilot skill eval
+    needs: lint
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      copilot-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the real Copilot example
+        id: evals
+        uses: ./
+        with:
+          command: run
+          working-directory: examples/copilot-smoke
+          suite: copilot-smoke
+          vally-version: 0.19.0
+          runs: 1
+          workers: 1
+          max-retries: 0
+          timeout: 60
+          credential-env: COPILOT_GITHUB_TOKEN
+          report-id: copilot-example-run
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+      - name: Verify native Copilot result
+        env:
+          OUTCOME: ${{ steps.evals.outputs.outcome }}
+          EXECUTED: ${{ steps.evals.outputs.executed }}
+          PASSED: ${{ steps.evals.outputs.passed }}
+          FAILED: ${{ steps.evals.outputs.failed }}
+          VERSION: ${{ steps.evals.outputs.vally-version }}
+          ARTIFACT_ID: ${{ steps.evals.outputs.artifact-id }}
+        run: |
+          test "$OUTCOME" = passed
+          test "$EXECUTED" = 1
+          test "$PASSED" = 1
+          test "$FAILED" = 0
+          test "$VERSION" = 0.19.0
+          test -n "$ARTIFACT_ID"

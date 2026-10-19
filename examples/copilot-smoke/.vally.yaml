@@ -1,0 +1,6 @@
+paths:
+  evals: [.]
+  evalFilenames: ['*.eval.yaml']
+suites:
+  copilot-smoke:
+    evals: [copilot-smoke.eval.yaml]
