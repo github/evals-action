@@ -39,6 +39,8 @@ describe('public inputs', () => {
     expect(inputs.tags).toEqual(['smoke', 'release']);
     expect(inputs.overrides).toEqual({});
     expect(inputs.vallyVersion).toBe(DEFAULT_VALLY_VERSION);
+    expect(inputs.vallyVersion).toBe('latest');
+    expect(parseValues({ 'vally-version': '0.20.0' }).vallyVersion).toBe('0.20.0');
   });
   it('keeps explicit native overrides distinct from absence', () => {
     expect(parseValues({ model: 'native/model', runs: '2', workers: '3', timeout: '60', 'max-retries': '0' }).overrides)

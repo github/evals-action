@@ -70,7 +70,14 @@ Do not assume this credential routing prevents prompt injection in reviewed
 evaluation content. Live Copilot authentication/billing requires a separately
 approved pilot; synthetic transport tests do not establish server acceptance.
 
-The qualified Vally runtime uses a committed, reviewed package lock and `npm ci`.
-Pinning only the top-level CLI version is insufficient because its dependency
-ranges are mutable. A version without a committed lock is refused before
-installation or credentialed execution.
+Vally defaults to npm's latest stable release, or an exact user-selected
+version. Acquisition validates registry package integrity, generates a fresh
+job-local dependency lock without lifecycle scripts, checks its dependency
+origins/integrities, then installs with `npm ci --ignore-scripts`. The recorded
+lock, executable, and installed-tree digests are verified on reuse.
+
+There is no Action-maintained version allowlist or reviewed dependency graph.
+Latest and transitive dependencies can change between jobs; even an exact CLI
+pin does not freeze its upstream dependency ranges. This deliberately trusts
+the registry and upstream packages. Runtime CLI/evidence checks detect contract
+mismatches, not arbitrary malicious behavior in installed code.

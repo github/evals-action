@@ -76,13 +76,15 @@ Before proposing a release, verify supported CLI versions and their native
 evidence contracts, run the Linux model-free controls, and qualify the optional
 reporting client with the supported hosted token. Do not advertise a plan
 operation or native selector combination the selected CLI does not expose.
-Keep the default Vally version pinned to the exact reviewed/qualified release.
-Updating that default requires dependency/evidence review and native controls;
-do not switch credentialed examples to the mutable `latest` selector.
-Each supported version needs its own committed runtime `package-lock.json`.
-Generate it with lifecycle scripts disabled and the public npm registry, review
-the complete dependency/integrity delta, update the embedded canonical digest,
-then qualify `npm ci` and native evidence before enabling the version.
+The runtime default is `latest`; users can pin any exact stable CLI version.
+Do not add a hardcoded version allowlist or require a committed Vally lock for
+each release. Acquisition generates a job-local lock with lifecycle scripts
+disabled, validates package integrity/dependency origins, installs with `npm ci`,
+and verifies the graph on reuse. Cover newly published versions synthetically
+without requiring that version to exist on npm during unit tests.
+Keep the development Vally dependency pinned for deterministic model-free
+contract tests, and the hosted model-free smoke on an explicit version.
+The Copilot example deliberately exercises the default `latest` interface.
 Workflow-token authentication controls must keep installation/lint/version
 subprocess credentials absent and map model auth only to `COPILOT_GITHUB_TOKEN`.
 Test the intentional shared token in all mode and explicit run's rejection of

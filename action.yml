@@ -17,8 +17,8 @@ inputs:
   tags:
     description: Newline-separated native tag selectors for run. Ignored for lint.
   vally-version:
-    description: Reviewed stable version; default 0.19.0. latest/exact selections run only when the resolved version has a committed dependency lock.
-    default: '0.19.0'
+    description: Default latest resolves the npm latest stable release once per job. Use an exact stable version to pin Vally. Native command and evidence contracts are verified at runtime.
+    default: latest
   model:
     description: Explicit native model override; omitted preserves configuration.
   runs:

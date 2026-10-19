@@ -1,5 +1,5 @@
 export type Command = 'all' | 'lint' | 'plan' | 'run' | 'report';
-export const DEFAULT_VALLY_VERSION = '0.19.0';
+export const DEFAULT_VALLY_VERSION = 'latest';
 export type InputReader = (name: string) => string;
 export interface Inputs {
   command: Command;

@@ -56,6 +56,23 @@ custom verdict script, artifact plumbing, or manually supplied token is needed.
 The Action's `github-token` input defaults to `${{ github.token }}`. The
 non-cancelling concurrency group serializes updates to the sticky comment.
 
+Vally defaults to the registry's **latest stable release**. To select an exact
+version instead, add `vally-version`:
+
+```yaml
+      - uses: github/evals-action@<reviewed-full-commit-sha>
+        with:
+          working-directory: evals
+          suite: smoke
+          vally-version: '0.20.0'
+```
+
+This requests that exact version once it is published; it does not require an
+Action update. New versions work while the native CLI and evidence contracts
+remain compatible. Unsupported behavior or malformed evidence fails explicitly;
+there is no silent downgrade. Stable exact versions and `latest` are supported,
+not version ranges or prereleases.
+
 **Default `all` mode can incur Copilot usage charges.** Organization repositories
 need the **Allow use of Copilot CLI billed to the organization** policy.
 Organization workflow-token usage is billed to the organization; personal
@@ -168,7 +185,7 @@ token, or an explicit `report-token` override.
 | `credential-env` | Advanced evaluator credential variable names, one per line, for BYOK/custom providers. Supplying these disables automatic model-token injection in all. Never put values here. Cannot list `COPILOT_GITHUB_TOKEN` with `copilot-token`. |
 | `report-token` | Optional bot/App comment token override for all/report. Human/PAT reporters are refused. Not valid on explicit lint/run. |
 | `report-id` | Stable report identity, default `evals`; letters/digits/underscore/hyphen. Maximum 64 characters (59-character prefix for all). Advanced `evals-run` / `evals-lint` share the `evals` comment. |
-| `vally-version` | Default `0.19.0`, qualified and dependency-locked. `latest` is accepted only when it resolves to a version with a committed reviewed lock. |
+| `vally-version` | Default `latest`, resolved once per job to the npm latest stable release. Set an exact stable version, e.g. `0.20.0`, to pin the CLI. No per-version Action update is required. |
 | `model` | Native model override, including comma-separated native model lists. |
 | `runs`, `workers`, `timeout` | Positive integer native run overrides. Timeout is per trial in seconds. |
 | `max-retries` | Nonnegative run override. All mode defaults to 0; explicit run preserves native default. |
@@ -261,12 +278,23 @@ but it can originate in a separate lint job.
 
 ## Development and acquisition
 
-The reviewed Vally 0.19.0 dependency graph is committed under
-`tooling/vally-0.19.0`. Acquisition uses `npm ci --ignore-scripts`, checks the
-reviewed lock digest, package integrity, executable identity and installed
-dependency tree, and reuses only matching job-local receipts. It never clones
-a product branch or installs from customer manifests. Supporting another
-version requires a reviewed lock and native qualification.
+Acquisition resolves `latest` or the exact requested version from npm and
+records the concrete version and SHA-512 package integrity once per job.
+It generates a dependency lock in a private runner temporary directory,
+validates registry origins and integrity metadata, and uses
+`npm ci --ignore-scripts` to install that graph. It verifies the package,
+executable, installed tree and unchanged lock before execution or cache reuse.
+It never clones a product branch or installs from customer manifests.
+
+No Vally-version-specific lockfile is committed to the Action. Dependency
+resolution is fresh in each job and fixed within that job; `latest` can change
+between jobs. An exact CLI pin fixes the top-level package but its transitive
+dependencies can still change between jobs according to upstream ranges.
+Both modes trust npm and the upstream dependency graph; recorded digests are
+provenance, not a claim that the graph was reviewed with the Action.
+
+The development dependency remains pinned to Vally 0.19.0 for deterministic,
+model-free CLI contract tests. It is a test fixture, not a runtime allowlist.
 
 Use Node 24 and the pinned pnpm version. Run `pnpm check`, rebuild and commit
 `dist/index.cjs`, and follow [CONTRIBUTING.md](CONTRIBUTING.md). Security reports
