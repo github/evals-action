@@ -5,17 +5,18 @@ sticky PR comment** with the suite, eval names, verdicts, and evidence links.
 Vally owns selection, execution and grading; the Action handles installation
 and GitHub integration.
 
-Supported host: **Linux x64 GitHub-hosted runners, Node 24**. Pin a reviewed
-full Action commit SHA. This repository is private development code, not a
-published Marketplace release; organization Actions access must permit your
-consumer repository.
+Use the [v0.1.0 prerelease](https://github.com/github/evals-action/releases/tag/v0.1.0).
+Supported host: **Linux x64 GitHub-hosted runners**; the Action uses Node 24
+without a Node setup step. The repository is private and shared with the GitHub
+organization; your repository's Actions policy must allow it.
 
 ## Quick start
 
 One job, one checkout, one Action step. `command` defaults to `all`:
 validate configuration, lint the project, run the selected evals if lint
 succeeds, and post the result on PRs. Manual runs produce summaries and
-artifacts without attempting to comment.
+artifacts without attempting to comment. Save this in your repository as
+`.github/workflows/evals-ci.yml`:
 
 ```yaml
 name: Evals
@@ -23,7 +24,7 @@ on:
   pull_request:
     paths:
       - evals/**
-      - .github/workflows/evals.yml
+      - .github/workflows/evals-ci.yml
   workflow_dispatch:
 
 permissions:
@@ -45,31 +46,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: github/evals-action@<reviewed-full-commit-sha>
+      - uses: github/evals-action@v0.1.0
         with:
           working-directory: evals
           suite: smoke
 ```
 
-Replace the SHA, project path and suite with your own. No reusable workflow,
-custom verdict script, artifact plumbing, or manually supplied token is needed.
-The Action's `github-token` input defaults to `${{ github.token }}`. The
-non-cancelling concurrency group serializes updates to the sticky comment.
+Replace `evals` with your Vally project directory and `smoke` with your suite.
+Adjust the trigger paths to include your evals, configuration, skills and other
+inputs. No command or token inputs are needed: the Action uses the job's
+automatic `${{ github.token }}`. Keep the concurrency block as shown so
+overlapping runs cannot create duplicate reports.
+
+Lint checks the entire project; the suite selects which evals run. Failed lint
+skips evaluation. A failed eval still updates the comment, and the job remains
+failed. The comment shows the suite, eval names, trial results and evidence links.
 
 Vally defaults to the registry's **latest stable release**. To select an exact
-version instead, add `vally-version`:
+version instead, add `vally-version`, for example:
 
 ```yaml
-      - uses: github/evals-action@<reviewed-full-commit-sha>
-        with:
-          working-directory: evals
-          suite: smoke
-          vally-version: '0.20.0'
+with:
+  working-directory: evals
+  suite: smoke
+  vally-version: '0.19.0' # Optional; omit for latest stable
 ```
 
-This requests that exact version once it is published; it does not require an
-Action update. New versions work while the native CLI and evidence contracts
-remain compatible. Unsupported behavior or malformed evidence fails explicitly;
+The Action version (`@v0.1.0`) and Vally version are independent. Selecting a
+published Vally release does not require an Action update. New versions work
+while the native CLI and evidence contracts remain compatible.
+Unsupported behavior or malformed evidence fails explicitly;
 there is no silent downgrade. Stable exact versions and `latest` are supported,
 not version ranges or prereleases.
 
@@ -86,36 +92,7 @@ may access that token. This is convenient, not credential isolation. Use only
 trusted reviewed sources, grant no unnecessary permissions, and use separate
 commands/jobs below when you need a narrower model token.
 
-## Included end-to-end example
-
-[`copilot-e2e.yml`](.github/workflows/copilot-e2e.yml) directly invokes this
-repository's Action (`uses: ./`) with `command` omitted. It tests the same
-simple interface consumers use against [`examples/copilot-smoke`](examples/copilot-smoke):
-one real skill, one trial, a 60-second native timeout, and zero retries.
-It runs for relevant same-repository PRs or manual dispatch, never forks.
-The skill invocation and exact response are both graded.
-
-This is a test of the Action, not a reusable workflow for consumers to call.
-There is no intermediate workflow wrapper.
-
-## Commands
-
-| `command` | Behavior |
-| --- | --- |
-| Omitted / `all` | Validate inputs, lint, run after successful lint, publish evidence, and update the PR comment. Lint failure skips the eval and reports the failure. |
-| `lint` | Native `vally lint --eval-spec=<working-directory>`. Scans all evals recursively, needs no selector or model credentials. Publishes a summary and artifact, without commenting. |
-| `run` | Native `vally eval --require-pass --output=jsonl ...`. Requires a suite, eval paths or tags. Publishes a summary and artifact, without commenting. |
-| `report` | Download and verify structured artifacts, then update the same sticky comment. Never installs Vally or runs a model. PR events only. |
-| `plan` | Explicit error: Vally 0.19.0 has no plan/dry-run CLI. Never falls back to a run. |
-
-Native arguments are separate argv values, never interpolated shell commands.
-The Action does not parse `.vally.yaml`, implement grading, expand shell globs,
-or install custom project dependencies. A suite cannot combine with paths/tags;
-paths and tags can combine using Vally's native syntax. Put native glob patterns
-in a suite rather than `eval-paths`. Lint ignores selectors with a warning;
-explicit lint rejects execution overrides.
-
-## Optional permission isolation
+## Advanced: separate jobs and permissions
 
 The **same Action** can be used in separate jobs. There is no custom verdict
 job: a failed lint or run job already makes the workflow fail, while
@@ -127,18 +104,76 @@ job: a failed lint or run job already makes the workflow fail, while
 | Evaluate | `run` | `contents: read`, `copilot-requests: write` |
 | Comment | `report` | `contents: read`, `pull-requests: write` |
 
-In the lint job, use `report-id: evals-lint`. In the run job use
-`report-id: evals-run`, `copilot-token: ${{ github.token }}`, and make it depend
-on successful lint. Each execution job checks out the consumer repository
-because GitHub jobs have separate filesystems. Expose each step's `artifact-id`
-and `artifact-digest` as job outputs. The reporting job needs **no checkout**
-and can use the following complete job (assuming job IDs `lint` and `run`):
+This complete alternative keeps PR-write permission out of the evaluator job.
+Each execution job needs a checkout because jobs have separate filesystems;
+the reporting job does not. All tokens below are GitHub-generated job tokens,
+not PATs or stored secrets.
+
+<details>
+<summary>Show the three-job workflow</summary>
 
 ```yaml
+name: Evals
+on:
+  pull_request:
+    paths:
+      - evals/**
+      - .github/workflows/evals-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.lint.outputs.artifact-id }}
+      artifact-digest: ${{ steps.lint.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/evals-action@v0.1.0
+        id: lint
+        with:
+          command: lint
+          working-directory: evals
+          report-id: evals-lint
+
+  run:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      copilot-requests: write
+    outputs:
+      artifact-id: ${{ steps.run.outputs.artifact-id }}
+      artifact-digest: ${{ steps.run.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/evals-action@v0.1.0
+        id: run
+        with:
+          command: run
+          working-directory: evals
+          suite: smoke
+          report-id: evals-run
+          copilot-token: ${{ github.token }}
+          max-retries: 0
+
   report:
     needs: [lint, run]
     if: always() && github.event_name == 'pull_request' && (needs.run.outputs.artifact-id != '' || needs.lint.outputs.artifact-id != '')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
@@ -146,7 +181,7 @@ and can use the following complete job (assuming job IDs `lint` and `run`):
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@<reviewed-full-commit-sha>
+      - uses: github/evals-action@v0.1.0
         with:
           command: report
           report-id: evals-run
@@ -155,7 +190,7 @@ and can use the following complete job (assuming job IDs `lint` and `run`):
           lint-artifact-id: ${{ needs.lint.outputs.artifact-id }}
           lint-artifact-digest: ${{ needs.lint.outputs.artifact-digest }}
         if: always() && needs.run.outputs.artifact-id != ''
-      - uses: github/evals-action@<reviewed-full-commit-sha>
+      - uses: github/evals-action@v0.1.0
         with:
           command: report
           report-id: evals-lint
@@ -164,12 +199,36 @@ and can use the following complete job (assuming job IDs `lint` and `run`):
         if: always() && needs.run.outputs.artifact-id == '' && needs.lint.outputs.artifact-id != ''
 ```
 
+</details>
+
 The two report steps are mutually exclusive: either report both results or
-report only the lint failure. Both use the same comment identity `evals`.
+report only the available lint evidence. Both use the same comment identity `evals`.
 Do not give the run job PR-write permission if you want isolation. Explicit
 `run` does not consume the automatic `github-token`; pass `copilot-token` or
 name advanced credentials explicitly. `report` uses its own automatic job
 token, or an explicit `report-token` override.
+
+The explicit `run` step sets `max-retries: 0` to match simple mode; otherwise
+explicit run retains Vally's retry default. If eval execution cannot produce an
+artifact, only the available lint evidence is reported; the failed run job is
+still visible in GitHub checks.
+
+## Commands
+
+| `command` | Behavior |
+| --- | --- |
+| Omitted / `all` | Validate inputs, lint, run after successful lint, publish evidence, and update the PR comment. |
+| `lint` | Native whole-project lint. No selector or model credentials needed. Publishes a summary and artifact, without commenting. |
+| `run` | Native `vally eval --require-pass --output=jsonl ...`. Requires a suite, eval paths or tags. Publishes a summary and artifact, without commenting. |
+| `report` | Verify structured artifacts and update the sticky comment. Never installs Vally or runs a model. PR events only. |
+| `plan` | Reserved and unsupported; fails explicitly, never runs an eval. |
+
+Native arguments are separate argv values, never interpolated shell commands.
+The Action does not parse `.vally.yaml`, implement grading, expand shell globs,
+or install custom project dependencies. A suite cannot combine with paths/tags;
+paths and tags can combine using Vally's native syntax. Put native glob patterns
+in a suite rather than `eval-paths`. Lint ignores selectors with a warning;
+explicit lint rejects execution overrides.
 
 ## Inputs
 
@@ -185,7 +244,7 @@ token, or an explicit `report-token` override.
 | `credential-env` | Advanced evaluator credential variable names, one per line, for BYOK/custom providers. Supplying these disables automatic model-token injection in all. Never put values here. Cannot list `COPILOT_GITHUB_TOKEN` with `copilot-token`. |
 | `report-token` | Optional bot/App comment token override for all/report. Human/PAT reporters are refused. Not valid on explicit lint/run. |
 | `report-id` | Stable report identity, default `evals`; letters/digits/underscore/hyphen. Maximum 64 characters (59-character prefix for all). Advanced `evals-run` / `evals-lint` share the `evals` comment. |
-| `vally-version` | Default `latest`, resolved once per job to the npm latest stable release. Set an exact stable version, e.g. `0.20.0`, to pin the CLI. No per-version Action update is required. |
+| `vally-version` | Default `latest`, resolved once per job to the npm latest stable release. Set an exact published stable version to pin the CLI. No per-version Action update is required. |
 | `model` | Native model override, including comma-separated native model lists. |
 | `runs`, `workers`, `timeout` | Positive integer native run overrides. Timeout is per trial in seconds. |
 | `max-retries` | Nonnegative run override. All mode defaults to 0; explicit run preserves native default. |
@@ -275,6 +334,18 @@ Report mode downloads its artifacts itself, verifies digests and current
 repository/revision/run/attempt identity, and accepts only a bounded
 `report.json`. A companion must be successful lint from the same run/revision,
 but it can originate in a separate lint job.
+
+## Example skill and eval
+
+[`examples/copilot-smoke`](examples/copilot-smoke) contains a real skill and an
+eval that checks both skill invocation and exact output. This repository's
+[`Copilot E2E` workflow](.github/workflows/copilot-e2e.yml) tests it with one
+checkout and one `uses: ./` step, using the Action's defaults. In your repository,
+use `github/evals-action@v0.1.0` instead.
+
+The Action prerelease is private and not listed on Marketplace. Organizations
+that require full-SHA Action references can pin the release commit
+`83fa12332c3e44ad899f347eaf153a0d9b6432dc` instead of `v0.1.0`.
 
 ## Development and acquisition
 

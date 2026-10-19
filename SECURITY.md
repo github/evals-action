@@ -31,9 +31,8 @@ executors and graders. Fork jobs and `pull_request_target` are excluded.
 The checkout revision is checked before acquisition and again before execution.
 Workflow preparation can still intentionally change files in that checkout;
 the reported Git revision is not a claim that all working files are unchanged.
-The default `all` step, or an explicit `run` step, is the team's execution authorization. Use a protected
-GitHub environment when approval is required. No plan-preview approval token
-or reusable authorization is invented.
+The default `all` step, or an explicit `run` step, is the team's execution
+authorization. Use a protected GitHub environment when approval is required.
 
 Only the run phase receives model credentials. In default `all` mode, the
 `github-token` input defaults to `${{ github.token }}` for both Copilot and
@@ -63,12 +62,14 @@ run rejects `report-token`. Reporting downloads and digest-verifies the current
 run's structured artifacts and checks repository/revision/run/attempt identity.
 It never invokes Vally. Separate jobs reduce evaluator access to PR-write
 authority; they are optional, not a platform requirement.
+
 PR comments show the selected suite and native eval names. These fields are
 untrusted and Markdown-escaped; do not put secrets in eval or suite names.
 Raw paths, prompts, transcripts and model output remain excluded from comments.
 Do not assume this credential routing prevents prompt injection in reviewed
-evaluation content. Live Copilot authentication/billing requires a separately
-approved pilot; synthetic transport tests do not establish server acceptance.
+evaluation content. Copilot availability and billing depend on the consumer's
+account policy and entitlements; synthetic transport tests do not establish
+server acceptance.
 
 Vally defaults to npm's latest stable release, or an exact user-selected
 version. Acquisition validates registry package integrity, generates a fresh

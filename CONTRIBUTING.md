@@ -21,8 +21,9 @@ source-to-bundle comparison, and a clean consumer-directory packaging control.
 The clean consumer-directory packaging control deliberately lacks artifact
 credentials and verifies invalid-input failure. Linux CI separately exercises
 the packaged Action with real Vally acquisition, native mock-executor pass/fail
-and lint, plus hosted artifact upload. No model credentials belong in CI or
-test fixtures.
+and lint, plus hosted artifact upload. Do not add model credentials to the
+model-free workflow or unit-test fixtures. The separate Copilot E2E workflow
+uses its automatic job token for the approved live example.
 
 PR check names map directly to these commands:
 
@@ -33,14 +34,14 @@ PR check names map directly to these commands:
 | Unit tests | `pnpm test:coverage`: input, policy, reporting, mocked GitHub, tool reuse, orchestration and real model-free native CLI tests with coverage thresholds. |
 | Bundle verification | `pnpm check:package`: committed bundle freshness and a clean consumer-directory packaged entry-point test. |
 | Action smoke test | Executes `uses: ./` on Ubuntu with actual acquisition, native mock-executor pass/fail, lint, installation reuse and artifact upload. No models run. |
-| Copilot E2E | For relevant same-repository PRs, lints the example and runs one real Copilot skill eval. This consumes organization Copilot AI credits. |
+| evals (Copilot E2E workflow) | For relevant same-repository PRs, directly invokes the default Action on the example. This consumes organization Copilot AI credits. |
 
 Comment networking tests use synthetic GitHub responses, including serialized
 workflow guards, pagination, bot ownership, late runs/attempts, permission
 failures and readback. Installer tests use synthetic packages and exercise
 concurrent install/reuse and tampered files/receipts. `tests/native.test.ts`
 separately qualifies the real pinned Vally CLI with the built-in mock executor
-and deterministic graders. No test claims live GitHub bot-token qualification.
+and deterministic graders. Unit tests do not establish live GitHub token acceptance.
 The live `Copilot E2E` workflow directly exercises the default Action with one
 checkout and one `uses: ./` step. It deliberately uses combined Copilot and
 PR-write permissions in one job, just like the simplest consumer setup.
@@ -58,7 +59,7 @@ Use strict TypeScript, argument-array process invocation, exact dependencies,
 and SHA-pinned third-party Actions. Do not log raw evaluator/process output or
 copy native runtime behavior into the Action. New native capabilities require
 verified CLI arguments/output contracts and model-free integration controls.
-Only trusted own-repository code may eventually receive execution credentials;
+Only trusted same-repository code may receive execution credentials;
 environment filtering is not an OS sandbox.
 
 The repository's `Copilot E2E` workflow is an explicitly approved live control
@@ -71,6 +72,11 @@ workflow/example paths as trusted to trigger this live control. Protect that
 capability through repository write access and branch governance.
 
 ## Release preparation
+
+The first prerelease is [`v0.1.0`](https://github.com/github/evals-action/releases/tag/v0.1.0).
+Keep published version tags unchanged. For future releases, verify the packaged
+Action at the target commit and update consumer examples to the intended tag.
+Action release versions are independent of the selected Vally version.
 
 Before proposing a release, verify supported CLI versions and their native
 evidence contracts, run the Linux model-free controls, and qualify the optional
