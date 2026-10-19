@@ -28,7 +28,7 @@ inputs:
   max-retries:
     description: Nonnegative integer native retry override.
   credential-env:
-    description: Newline-separated evaluator credential environment variable names for run only, including COPILOT_GITHUB_TOKEN when needed. Values stay in environment secrets.
+    description: Explicit run-only credential environment names. For workflow-token auth, list COPILOT_GITHUB_TOKEN and set it to github.token with copilot-requests write permission. Never reuse report-token.
   comment:
     description: Opt in to a sticky PR report; requires report-token and verified workflow serialization.
     default: 'false'

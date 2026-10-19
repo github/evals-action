@@ -60,6 +60,12 @@ Before proposing a release, verify supported CLI versions and their native
 evidence contracts, run the Linux model-free controls, and qualify the optional
 reporting client with the supported hosted token. Do not advertise a plan
 operation or native selector combination the selected CLI does not expose.
+Workflow-token authentication controls must keep installation/lint/version
+credentials absent, pass the explicit token only as `COPILOT_GITHUB_TOKEN`,
+and preserve the prohibition on sharing `report-token` with model execution.
+Use synthetic tokens for repository tests. A live pilot in a separate consumer
+repository must separately verify subject and judge authentication, organization
+policy and billing with `copilot-requests: write` and no stored personal secret.
 Run `pnpm check` from a clean checkout, review dependency provenance and the
 packaged delta, and document support and limitations.
 

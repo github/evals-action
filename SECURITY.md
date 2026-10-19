@@ -42,3 +42,18 @@ model nor reporting tokens. Reporting credentials are separate, and protected
 environment names cannot be forwarded through `credential-env`. Do not provide
 secrets to untrusted code. Environment filtering does not isolate processes under
 the same runner user.
+
+GitHub Actions installation tokens support Copilot when the workflow grants
+`copilot-requests: write` and the applicable account policy permits it. The
+Action accepts an explicitly selected `COPILOT_GITHUB_TOKEN` alias of the
+workflow token, including when the parent has the same `GITHUB_TOKEN` value.
+It never forwards `GITHUB_TOKEN` itself into Vally's SDK user-token option.
+This narrowly scoped alias exception does not allow artifact tokens, `GH_TOKEN`
+values, arbitrary credential aliases or a token also supplied as `report-token`.
+
+Do not grant PR-write or other unnecessary repository-write permissions to the
+model job. The Action cannot downscope an existing token or prove its permissions.
+Keep optional reporting in a separate model-free job, or use summaries/artifacts.
+Do not assume this credential routing prevents prompt injection in reviewed
+evaluation content. Live Copilot authentication/billing requires a separately
+approved pilot; synthetic transport tests do not establish server acceptance.

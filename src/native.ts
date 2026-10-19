@@ -52,12 +52,16 @@ export function nativeEnvironment(
   env.OTEL_SDK_DISABLED = 'true';
   if (inputs.command !== 'run') return env;
   const forbidden = /^(GITHUB_|GH_|ACTIONS_|RUNNER_|INPUT_|NODE_|NPM_|PNPM_|GIT_|LD_|DYLD_)|^(PATH|HOME|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|COMSPEC|SYSTEMROOT|WINDIR|TMP|TEMP|TMPDIR|PYTHONPATH|PYTHONHOME|RUBYOPT|PERL5OPT)$/;
-  const reportingSecrets = [reportToken, source.GITHUB_TOKEN, source.GH_TOKEN, source.ACTIONS_RUNTIME_TOKEN].filter(Boolean);
+  const reportingSecrets = [reportToken, source.GH_TOKEN, source.ACTIONS_RUNTIME_TOKEN].filter(Boolean);
   for (const name of new Set(inputs.credentialEnv)) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || forbidden.test(name)) throw new NativeError('protected-credential-environment-name');
     const value = source[name];
     if (value) {
-      if (reportingSecrets.includes(value)) throw new NativeError('reporting-token-cannot-be-an-evaluator-credential');
+      // Actions tokens can grant copilot-requests:write. Allow that explicit alias only;
+      // keep GITHUB_TOKEN itself out of Vally's SDK user-token option and reject reporting-token reuse.
+      if (reportingSecrets.includes(value) || (name !== 'COPILOT_GITHUB_TOKEN' && value === source.GITHUB_TOKEN)) {
+        throw new NativeError('reporting-token-cannot-be-an-evaluator-credential');
+      }
       env[name] = value;
     }
   }

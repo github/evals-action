@@ -191,3 +191,39 @@ it('warns when lint selectors are ignored and keeps the full-project comment ide
   expect(calls[1]?.[1]).toEqual(firstContext);
   expect(mocks.setFailed).not.toHaveBeenCalled();
 });
+
+it('supports explicit workflow-token auth without reporting permissions or ambient fallback', async () => {
+  const token = 'synthetic-workflow-token';
+  vi.stubEnv('GITHUB_TOKEN', token);
+  vi.stubEnv('COPILOT_GITHUB_TOKEN', token);
+  mocks.inputs.comment = 'false';
+  mocks.inputs['report-token'] = '';
+  mocks.inputs['credential-env'] = 'COPILOT_GITHUB_TOKEN';
+  await runAction();
+  expect(mocks.nativeEnv).toHaveBeenCalledWith(expect.objectContaining({ COPILOT_GITHUB_TOKEN: token }));
+  const childEnv = mocks.nativeEnv.mock.calls[0]?.[0] as NodeJS.ProcessEnv;
+  expect(childEnv).not.toHaveProperty('GITHUB_TOKEN');
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(JSON.stringify(mocks.setOutput.mock.calls)).not.toContain(token);
+  expect(JSON.stringify(mocks.summaryRaw.mock.calls)).not.toContain(token);
+});
+
+it('rejects shared reporting/model tokens before acquisition and never starts Vally for forks', async () => {
+  const token = 'synthetic-shared-token';
+  vi.stubEnv('GITHUB_TOKEN', token);
+  vi.stubEnv('COPILOT_GITHUB_TOKEN', token);
+  mocks.inputs['credential-env'] = 'COPILOT_GITHUB_TOKEN';
+  mocks.inputs['report-token'] = token;
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('reporting-token-cannot-be-an-evaluator-credential'));
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.nativeEnv).not.toHaveBeenCalled();
+  mocks.inputs['report-token'] = '';
+  await writeFile(join(root, 'event.json'), JSON.stringify({
+    pull_request: { head: { repo: { full_name: 'other/r', fork: true } }, base: { repo: { full_name: 'o/r' } } },
+  }));
+  await runAction();
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.nativeEnv).not.toHaveBeenCalled();
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'not-run');
+});

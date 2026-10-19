@@ -88,6 +88,51 @@ describe('direct CLI translation', () => {
     expect(() => nativeEnvironment(inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' }), { COPILOT_GITHUB_TOKEN: 'report' }, '/home', 'report'))
       .toThrow(/reporting-token/);
   });
+  it('allows explicit workflow-token authentication only through the Copilot environment alias', () => {
+    const token = 'synthetic-actions-token';
+    const source = {
+      GITHUB_TOKEN: token, COPILOT_GITHUB_TOKEN: token, OPENAI_API_KEY: token,
+      GH_TOKEN: 'separate-gh-token', ACTIONS_RUNTIME_TOKEN: 'artifact-token', PATH: '/bin',
+    };
+    const selected = inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' });
+    const env = nativeEnvironment(selected, source, '/isolated-home', '');
+    expect(env.COPILOT_GITHUB_TOKEN).toBe(token);
+    for (const name of ['GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'GITHUB_COPILOT_API_TOKEN']) {
+      expect(env).not.toHaveProperty(name);
+    }
+    expect(nativeEnvironment(inputs(), source, '/isolated-home', '')).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+    for (const command of ['lint', 'plan']) {
+      expect(nativeEnvironment(inputs({ command, 'credential-env': 'COPILOT_GITHUB_TOKEN' }), source, '/isolated-home', ''))
+        .not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+    }
+    expect(() => nativeEnvironment(selected, source, '/isolated-home', token)).toThrow(/reporting-token/);
+    expect(() => nativeEnvironment(inputs({ 'credential-env': 'OPENAI_API_KEY' }), source, '/isolated-home', '')).toThrow(/reporting-token/);
+    expect(() => nativeEnvironment(selected, { ...source, COPILOT_GITHUB_TOKEN: source.ACTIONS_RUNTIME_TOKEN }, '/isolated-home', '')).toThrow(/reporting-token/);
+    expect(() => nativeEnvironment(selected, { ...source, COPILOT_GITHUB_TOKEN: source.GH_TOKEN }, '/isolated-home', '')).toThrow(/reporting-token/);
+  });
+  it('transports a workflow token through the child environment, never argv or the version check', async () => {
+    const root = await temporary();
+    const entry = join(root, 'auth-control.cjs');
+    const token = 'synthetic-workflow-token';
+    await writeFile(entry, [
+      "const assert = require('node:assert/strict');",
+      "assert.ok(!JSON.stringify(process.argv).includes('synthetic-workflow-token'));",
+      "for (const name of ['GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'GITHUB_COPILOT_API_TOKEN']) assert.equal(process.env[name], undefined);",
+      "if (process.argv[2] === '--version') {",
+      "  assert.equal(process.env.COPILOT_GITHUB_TOKEN, undefined); console.log('0.19.0');",
+      "} else {",
+      "  assert.equal(process.env.COPILOT_GITHUB_TOKEN, 'synthetic-workflow-token');",
+      "  const runId = process.argv.find(arg => arg.startsWith('--run-id=')).slice('--run-id='.length);",
+      "  console.log(JSON.stringify({type: 'run-summary', runId, passed: true, hadExecutionErrors: false, evals: []}));",
+      "}",
+    ].join('\n'));
+    const engine: EngineIdentity = { entry, version: '0.19.0', integrity: 'synthetic', sha256: sha256(await readFile(entry)), dependencySha256: '', lockSha256: '' };
+    const selected = inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' });
+    const env = nativeEnvironment(selected, { ...inertEnvironment(process.env), COPILOT_GITHUB_TOKEN: token, GITHUB_TOKEN: token }, root, '');
+    const actual = await runNative(selected, engine, root, root, env);
+    expect(actual.result).toMatchObject({ outcome: 'not-run', code: 'native-empty-selection' });
+    for (const path of actual.files) expect(await readFile(path, 'utf8')).not.toContain(token);
+  });
 });
 
 function evidence(passed = true) {

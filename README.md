@@ -32,6 +32,9 @@ promise of compatibility with every future Vally version.
 
 Replace `<reviewed-full-commit-sha>` with an actual reviewed Action commit.
 Only enable triggers selected by your team. This example starts manually:
+For organization-owned repositories, first enable the Copilot policy
+**Allow use of Copilot CLI billed to the organization**. No PAT or stored
+model secret is required for this workflow-token authentication path.
 
 ```yaml
 name: Evaluations
@@ -43,6 +46,9 @@ jobs:
   evals:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      copilot-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,12 +61,21 @@ jobs:
           vally-version: 0.19.0
           credential-env: COPILOT_GITHUB_TOKEN
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.EVALS_COPILOT_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
 ```
 
-Model-backed execution consumes the team's account resources. Use a protected
-GitHub environment if approval is required. For a model-free suite using Vally's
-`mock` executor and deterministic graders, omit the token.
+Model-backed execution consumes account resources. Workflow-token usage in
+organization repositories is billed directly to the organization, not an
+individual user's budget; in personal repositories it is billed to the owner's
+Copilot seat. Use a protected GitHub environment if approval is required.
+For a model-free suite using Vally's `mock` executor and deterministic graders,
+omit both the token and `copilot-requests` permission.
+
+The example leaves PR commenting disabled and does not grant PR-write access.
+The runtime must be recent enough to support installation tokens. The
+model-free checks verify credential transport, not organization policy,
+entitlement, model availability or actual billing; those need a separately
+approved live pilot. See [GitHub's Actions authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions).
 
 For lint, use only `command: lint` and `working-directory: .`. It always scans
 all evals under that directory using Vally's configured filename patterns.
@@ -82,7 +97,7 @@ grader plugins; it is not a sandbox for untrusted code.
 | `model` | Native model override, including Vally's comma-separated model list. |
 | `runs`, `workers`, `timeout` | Positive integer run overrides. Timeout is per trial in seconds. |
 | `max-retries` | Nonnegative native run override. Vally controls conditional retries and unsupported combinations. |
-| `credential-env` | Evaluator credential environment variable **names**, one per line, passed only to run. Include `COPILOT_GITHUB_TOKEN` to opt in to Copilot authentication. Values belong in workflow secret references, never this input. |
+| `credential-env` | Evaluator credential environment variable **names**, one per line, passed only to run. List `COPILOT_GITHUB_TOKEN` and set its step environment value to `${{ github.token }}` or a supported secret. Never put token values in this input. |
 | `comment` | Default `false`; opt in to a serialized bot-owned PR report. |
 | `report-token` | No default. Explicit reporting-only GitHub App/bot token, normally `${{ github.token }}`. Human/PAT reporters are refused. |
 | `report-id` | Stable identity within a job; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. Comments require unique literal values and non-matrix jobs. |
@@ -152,14 +167,37 @@ filtering is not an OS sandbox and same-repository origin alone is not a trust
 decision. Do not pass secrets to unreviewed code.
 
 `COPILOT_GITHUB_TOKEN` is forwarded to run only when explicitly listed in
-`credential-env`; it is not implicitly inherited. The automatic Actions token is
-not model authentication. For BYOK/custom native providers, explicitly list
-their credential variable names in `credential-env`. Reporting tokens and
-protected process/GitHub environment variables cannot be forwarded this way.
+`credential-env`; it is not implicitly inherited. GitHub supports the automatic
+Actions token for Copilot with `copilot-requests: write` and the applicable
+organization policy. Explicitly alias `${{ github.token }}` to
+`COPILOT_GITHUB_TOKEN` as above. Do not list `GITHUB_TOKEN`, `GH_TOKEN` or
+`GITHUB_COPILOT_API_TOKEN`: these names remain blocked. This keeps installation
+tokens in the SDK's environment authentication path rather than its user-token
+option. Inspection of Vally 0.19.0's subject executor and LLM judge confirms
+they retain this environment path when the blocked token variables are absent.
+See [the SDK server-to-server contract](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens).
+
+The explicit Copilot alias may have the same value as the parent process's
+`GITHUB_TOKEN`; that variable itself is never forwarded. The exception does not
+apply to arbitrary credential names. A credential equal to `report-token`,
+`GH_TOKEN` or the artifact-service token is still rejected. In particular, do not
+give the same token to both `report-token` and `COPILOT_GITHUB_TOKEN`.
+The Action cannot remove permissions from a token or attest its scopes; the
+workflow author must grant only `contents: read` and `copilot-requests: write`
+to the model job, not `pull-requests: write` or `write-all`.
+
+For BYOK/custom native providers, explicitly list their credential variable
+names in `credential-env`. Reporting tokens and protected process/GitHub
+environment variables cannot be forwarded this way.
 Version checks, lint and installation receive neither evaluator nor PR tokens.
 Vally usage telemetry is opted out for Action invocations.
 
-Copilot-backed execution needs a customer-managed supported token. Consult the
+If workflow-token authentication is unavailable under your account's policy,
+an explicitly provisioned supported user token remains an alternative: replace
+`${{ github.token }}` in the example with `${{ secrets.EVALS_COPILOT_TOKEN }}`,
+keep `credential-env: COPILOT_GITHUB_TOKEN`, and omit the Copilot workflow
+permission when it is not used. There is no automatic fallback to stored
+personal credentials. Consult the
 [official authentication guidance](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli).
 Live model/account compatibility is not claimed by the model-free controls.
 Custom native plugins, executor prerequisites and project dependencies remain
@@ -176,6 +214,13 @@ concurrency:
   group: evals-${{ github.workflow_ref }}
   cancel-in-progress: false
 ```
+
+The automatic token is shared across steps in one job: using different
+environment variable names does not create separate permissions. For the
+workflow-token model example, keep `comment: false` and use summaries/artifacts.
+Exercise comments in a separate model-free job with a separate job token and
+no Copilot permission. The current Action comments on its own operation; it
+does not provide a report-only command to post a different job's saved result.
 
 The immutable workflow source is checked before writing. Comments support
 non-matrix/non-reusable jobs and unique literal report IDs. Parallel jobs have
