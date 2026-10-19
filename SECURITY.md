@@ -54,7 +54,12 @@ supplied as `report-token`.
 
 Do not grant PR-write or other unnecessary repository-write permissions to the
 model job. The Action cannot downscope an existing token or prove its permissions.
-Keep optional reporting in a separate model-free job, or use summaries/artifacts.
+Keep reporting in a separate job with `contents: read` and
+`pull-requests: write`, but no `copilot-requests: write`. That job invokes
+`command: report` with the structured artifact ID and digest from the evaluation
+job. The report command downloads the current run's artifact itself, verifies its
+digest, never runs Vally, and validates repository/revision/run/attempt identity
+before writing. A separate verdict job preserves the native outcome.
 Do not assume this credential routing prevents prompt injection in reviewed
 evaluation content. Live Copilot authentication/billing requires a separately
 approved pilot; synthetic transport tests do not establish server acceptance.

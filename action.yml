@@ -3,11 +3,10 @@ description: Acquire Vally and run native lint or evaluations with structured Gi
 author: GitHub
 inputs:
   command:
-    description: Lint all evals under working-directory, or run a native selection. Plan is reserved and unsupported.
+    description: Lint all evals, run a native selection, or report a downloaded structured result. Plan is reserved and unsupported.
     required: true
   working-directory:
-    description: Project directory relative to the checked-out workspace.
-    required: true
+    description: Project directory relative to checkout. Required for lint/run; omitted for report.
   suite:
     description: Native named suite for run. Cannot combine with eval-paths or tags. Ignored for lint.
   eval-paths:
@@ -31,14 +30,15 @@ inputs:
     description: Advanced run-only credential environment names for BYOK or supported secrets. Use copilot-token for the workflow token. Never reuse report-token.
   copilot-token:
     description: Explicit Copilot token for run, normally github.token with copilot-requests write. Mapped to COPILOT_GITHUB_TOKEN; cannot combine with that credential-env name or report-token.
-  comment:
-    description: Opt in to a sticky PR report; requires report-token and verified workflow serialization.
-    default: 'false'
   report-token:
-    description: Explicit reporting-only GitHub token with contents read and pull-requests write. No default.
+    description: Reporting-only GitHub token with contents read and pull-requests write; report command only.
   report-id:
-    description: Stable unique identity within a job. PR comments require a literal unique value and a non-matrix job.
+    description: Stable report identity. Report jobs require a literal unique value and a non-matrix job.
     default: evals
+  source-artifact-id:
+    description: Positive structured-report artifact ID; report command downloads it directly.
+  source-artifact-digest:
+    description: SHA-256 digest returned when the structured report artifact was uploaded; report command only.
   upload-transcripts:
     description: Opt in to native JSONL and stdout/stderr logs, which may contain sensitive content.
     default: 'false'
@@ -62,6 +62,8 @@ outputs:
     description: Local minimal structured report path.
   artifact-id:
     description: Uploaded structured report artifact identifier.
+  artifact-digest:
+    description: SHA-256 digest of the uploaded structured report artifact.
   native-diagnostics-path:
     description: Local native output directory. Raw logs are uploaded only when upload-transcripts is true.
 runs:

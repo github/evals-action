@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { displayCount, escapeMarkdown, renderMatrix, renderSummary, structuredReport, type Report } from '../src/reporting.js';
+import {
+  displayCount, escapeMarkdown, parseStructuredReport, renderMatrix, renderSummary, structuredReport, type Report,
+} from '../src/reporting.js';
 import { commentMarker, orderedBody, selectComment } from '../src/comments.js';
 
 describe('minimal presentation projections', () => {
+  const report = (overrides: Partial<Report> = {}): Report => ({
+    schemaVersion: 2, reportId: 'evals', repository: 'o/r', workflowRunId: 100, workflowRunAttempt: 1,
+    sourceJob: 'evaluate', selection: 'b'.repeat(64), command: 'run', outcome: 'not-run',
+    completeness: 'complete', revision: 'a'.repeat(40), category: 'none',
+    code: 'native-empty-selection', executed: 0, ...overrides,
+  });
   it('preserves count certainty and does not multiply heterogeneous rows', () => {
     expect(displayCount({ kind: 'exact', value: 4, unit: 'trials' })).toBe('4 trials');
     expect(displayCount({ kind: 'bounded', minimum: 0, maximum: 8, unit: 'retries', reason: 'conditional' })).toBe('0-8 retries (conditional)');
@@ -24,22 +32,76 @@ describe('minimal presentation projections', () => {
     expect(escapeMarkdown('<img>\n| [x](url) @team & `code`')).toBe('&lt;img&gt; \\| \\[x\\]\\(url\\) &#64;team &amp; \\`code\\`');
   });
   it('does not turn unknown counts or not-run into a pass', () => {
-    const report: Report = {
-      schemaVersion: 1, command: 'run', outcome: 'not-run', completeness: 'unknown',
-      revision: 'a'.repeat(40), category: 'policy', code: 'fork-execution-excluded', executed: 0,
-    };
-    expect(renderSummary(report)).toContain('Not an evaluation pass');
-    expect(renderSummary(report)).toContain('Executed: 0');
-    const unknown: Report = { ...report };
+    const notRun = report();
+    expect(renderSummary(notRun)).toContain('Not an evaluation pass');
+    expect(renderSummary(notRun)).toContain('Executed: 0');
+    const unknown: Report = { ...notRun };
     delete unknown.executed;
     expect(renderSummary(unknown)).toContain('Executed: unknown');
-    const serialized = structuredReport({ ...report, secret: 'must not appear', transcript: 'private' } as Report);
+    const serialized = structuredReport({ ...notRun, secret: 'must not appear', transcript: 'private' } as Report);
     expect(serialized).not.toMatch(/secret|private|transcript/);
     expect(JSON.parse(serialized)).not.toHaveProperty('passed');
     expect(JSON.parse(structuredReport({
-      ...report, passed: 0, failed: 0,
+      ...notRun, passed: 0, failed: 0,
       engine: { version: '0.19.0', sha256: 'engine' },
     }))).toMatchObject({ passed: 0, failed: 0, engine: { version: '0.19.0' } });
+  });
+  it('validates a downloaded report against the exact workflow identity', () => {
+    const source = report({
+      outcome: 'passed', executed: 1, passed: 1, failed: 0,
+      groups: [{ identity: 'c'.repeat(64), passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
+      engine: { version: '0.19.0', sha256: 'd'.repeat(64), dependencySha256: 'e'.repeat(64), lockSha256: 'f'.repeat(64) },
+    });
+    const text = structuredReport(source);
+    expect(parseStructuredReport(text, {
+      reportId: 'evals', repository: 'o/r', workflowRunId: 100,
+      workflowRunAttempt: 1, revision: 'a'.repeat(40),
+    })).toEqual(source);
+    for (const expected of [
+      { reportId: 'other' }, { repository: 'other/r' }, { workflowRunId: 101 },
+      { workflowRunAttempt: 2 }, { revision: '9'.repeat(40) },
+    ]) {
+      expect(() => parseStructuredReport(text, {
+        reportId: 'evals', repository: 'o/r', workflowRunId: 100,
+        workflowRunAttempt: 1, revision: 'a'.repeat(40), ...expected,
+      })).toThrow(/identity/);
+    }
+  });
+  it('rejects arbitrary, malformed, inconsistent, oversized or recursively reportable data', () => {
+    const expectation = {
+      reportId: 'evals', repository: 'o/r', workflowRunId: 100,
+      workflowRunAttempt: 1, revision: 'a'.repeat(40),
+    };
+    const mutate = (change: Record<string, unknown>) => JSON.stringify({ ...report(), ...change });
+    for (const text of [
+      'not-json', mutate({ schemaVersion: 1 }), mutate({ extra: 'raw runner data' }),
+      mutate({ command: 'report' }), mutate({ outcome: 'passed', executed: 0, failed: 0 }),
+      mutate({ outcome: 'failed', executed: 1, failed: 0 }),
+      mutate({ outcome: 'not-run', executed: 1 }),
+      mutate({ outcome: 'validated', command: 'run', executed: 0 }),
+      mutate({
+        outcome: 'passed', executed: 1, passed: 1, failed: 0,
+        groups: [{ identity: 'c'.repeat(64), passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
+      }),
+      mutate({
+        outcome: 'failed', executed: 1, passed: 1, failed: 0,
+        groups: [{ identity: 'c'.repeat(64), passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
+      }),
+      mutate({
+        outcome: 'passed', executed: 1, passed: 1, failed: 0,
+        groups: [{ identity: 'c'.repeat(64), passed: true, trials: 1, stimuliRun: 2, stimuliTotal: 2, skipped: 0 }],
+      }),
+      mutate({
+        outcome: 'not-run', executed: 0, passed: 0, failed: 0,
+        groups: [{ identity: 'c'.repeat(64), passed: true, trials: 0, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
+      }),
+      mutate({
+        outcome: 'failed', executed: 1, passed: 0, failed: 1,
+        groups: [{ identity: 'c'.repeat(64), passed: false, trials: 1, stimuliRun: 0, stimuliTotal: 1, skipped: 1 }],
+      }),
+      mutate({ outcome: 'not-run', executed: 0, groups: undefined }),
+      mutate({ groups: Array.from({ length: 10_001 }, () => ({})) }),
+    ]) expect(() => parseStructuredReport(text, expectation)).toThrow();
   });
 });
 

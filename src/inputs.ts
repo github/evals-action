@@ -1,4 +1,4 @@
-export type Command = 'lint' | 'plan' | 'run';
+export type Command = 'lint' | 'plan' | 'run' | 'report';
 export const DEFAULT_VALLY_VERSION = '0.19.0';
 export type InputReader = (name: string) => string;
 export interface Inputs {
@@ -9,8 +9,9 @@ export interface Inputs {
   tags: string[];
   vallyVersion: string;
   overrides: { model?: string; runs?: number; workers?: number; timeout?: number; maxRetries?: number };
-  comment: boolean;
   reportId: string;
+  sourceArtifactId?: number;
+  sourceArtifactDigest?: string;
   uploadTranscripts: boolean;
   retentionDays: number;
   credentialEnv: string[];
@@ -48,18 +49,32 @@ export function parseInputs(read: InputReader): Inputs {
     return value === 'true';
   };
   const lines = (name: string) => text(name).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const command = required('command');
-  if (command !== 'lint' && command !== 'plan' && command !== 'run') throw new Error('Invalid command; use lint, plan, or run.');
+  const commandValue = required('command');
+  if (!['lint', 'plan', 'run', 'report'].includes(commandValue)) throw new Error('Invalid command; use lint, plan, run, or report.');
+  const command = commandValue as Command;
   const workingDirectory = raw('working-directory');
-  if (!workingDirectory) throw new Error('Input working-directory is required.');
+  if (command !== 'report' && !workingDirectory) throw new Error('Input working-directory is required.');
   const suite = text('suite');
   const evalPaths = raw('eval-paths').split(/\r?\n/).filter((line) => line !== '');
   const tags = lines('tags');
-  if (command !== 'lint' && !suite && !evalPaths.length && !tags.length) throw new Error('Explicit suite, eval-paths, or tags selection is required.');
+  if (command !== 'lint' && command !== 'report' && !suite && !evalPaths.length && !tags.length) {
+    throw new Error('Explicit suite, eval-paths, or tags selection is required.');
+  }
   const vallyVersion = text('vally-version') || DEFAULT_VALLY_VERSION;
   if (vallyVersion !== 'latest' && !exactVersion(vallyVersion)) throw new Error('vally-version must be latest or an exact stable version.');
   const reportId = text('report-id') || 'evals';
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(reportId)) throw new Error('report-id must be 1-64 letters, digits, underscores or hyphens.');
+  const sourceArtifactId = integer('source-artifact-id', 1);
+  const sourceArtifactDigest = text('source-artifact-digest');
+  if (sourceArtifactDigest && !/^sha256:[a-f0-9]{64}$/.test(sourceArtifactDigest)) {
+    throw new Error('Input source-artifact-digest must be a SHA-256 artifact digest.');
+  }
+  if (command === 'report' && (!sourceArtifactId || !sourceArtifactDigest)) {
+    throw new Error('Inputs source-artifact-id and source-artifact-digest are required for report.');
+  }
+  if (command !== 'report' && (sourceArtifactId !== undefined || sourceArtifactDigest)) {
+    throw new Error('Inputs source-artifact-id and source-artifact-digest are only valid for report.');
+  }
   const retentionDays = integer('artifact-retention-days', 1) ?? 7;
   if (retentionDays > 90) throw new Error('artifact-retention-days must not exceed 90.');
   const overrides: Inputs['overrides'] = {};
@@ -73,7 +88,9 @@ export function parseInputs(read: InputReader): Inputs {
   }
   return {
     command, workingDirectory, ...(suite ? { suite } : {}), evalPaths, tags, vallyVersion, overrides,
-    comment: boolean('comment'), reportId, uploadTranscripts: boolean('upload-transcripts'), retentionDays,
+    reportId, ...(sourceArtifactId !== undefined ? { sourceArtifactId } : {}),
+    ...(sourceArtifactDigest ? { sourceArtifactDigest } : {}),
+    uploadTranscripts: boolean('upload-transcripts'), retentionDays,
     credentialEnv: lines('credential-env'),
   };
 }

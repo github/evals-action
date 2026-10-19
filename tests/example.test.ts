@@ -32,12 +32,17 @@ describe('real Copilot example contract', () => {
       on: { pull_request: { paths: string[] }; workflow_dispatch: unknown };
       permissions: Record<string, string>;
       concurrency: { group: string; 'cancel-in-progress': boolean };
-      jobs: Record<string, { if: string; permissions?: Record<string, string>; steps: Array<Record<string, unknown>> }>;
+      jobs: Record<string, {
+        if: string;
+        permissions?: Record<string, string>;
+        concurrency?: { group: string; 'cancel-in-progress': boolean };
+        steps: Array<Record<string, unknown>>;
+      }>;
     };
     expect(workflow.on.pull_request.paths).toContain('examples/copilot-smoke/**');
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(workflow.concurrency['cancel-in-progress']).toBe(true);
-    const run = workflow.jobs.run!;
+    const run = workflow.jobs.evaluate!;
     expect(run.if).toContain("head.repo.full_name == github.repository");
     expect(run.permissions).toEqual({ contents: 'read', 'copilot-requests': 'write' });
     const action = run.steps.find((step) => step.uses === './')!;
@@ -54,6 +59,22 @@ describe('real Copilot example contract', () => {
     expect(action).not.toHaveProperty('env');
     expect(action.with).not.toHaveProperty('report-token');
     expect(action.with).not.toHaveProperty('upload-transcripts');
+    const report = workflow.jobs.report!;
+    expect(report.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' });
+    expect(report.concurrency).toEqual({ group: 'evals-${{ github.workflow_ref }}', 'cancel-in-progress': false });
+    const reportAction = report.steps.find((step) => step.uses === './')!;
+    expect(reportAction.with).toMatchObject({
+      command: 'report',
+      'source-artifact-id': '${{ needs.evaluate.outputs.artifact-id }}',
+      'source-artifact-digest': '${{ needs.evaluate.outputs.artifact-digest }}',
+      'report-token': '${{ github.token }}',
+    });
+    expect(report.steps.some((step) => String(step.uses).startsWith('actions/download-artifact@'))).toBe(false);
+    expect(reportAction.with).not.toHaveProperty('copilot-token');
+    const verdict = workflow.jobs.verdict!;
+    expect(verdict.permissions).toEqual({});
+    expect(String(verdict.if)).toContain('always()');
+    expect(String(verdict.if)).toContain("head.repo.full_name == github.repository");
   });
 
   it('loads one real skill and requires both invocation and exact output', async () => {

@@ -16,7 +16,14 @@ describe('public inputs', () => {
     expect(parseValues({ command: 'lint', suite: '' })).toMatchObject({ command: 'lint', evalPaths: [], tags: [] });
     expect(() => parseValues({ command: 'run', suite: '' })).toThrow(/selection/);
   });
-  it.each(['lint', 'plan', 'run'])('accepts only explicit %s routing', (command) => {
+  it.each(['lint', 'plan', 'run', 'report'])('accepts only explicit %s routing', (command) => {
+    if (command === 'report') {
+      expect(parseValues({
+        command, 'working-directory': '', 'source-artifact-id': '123',
+        'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+      }).command).toBe(command);
+      return;
+    }
     expect(parseValues({ command }).command).toBe(command);
   });
   it.each(['RUN', 'bash', 'lint;echo secret', 'run --all'])('rejects command %s', (command) => {
@@ -32,8 +39,30 @@ describe('public inputs', () => {
   it('keeps explicit native overrides distinct from absence', () => {
     expect(parseValues({ model: 'native/model', runs: '2', workers: '3', timeout: '60', 'max-retries': '0' }).overrides)
       .toEqual({ model: 'native/model', runs: 2, workers: 3, timeout: 60, maxRetries: 0 });
-    expect(parseValues({ comment: 'true', 'upload-transcripts': 'true', 'vally-version': '0.19.0' }))
-      .toMatchObject({ comment: true, uploadTranscripts: true, vallyVersion: '0.19.0' });
+    expect(parseValues({ 'upload-transcripts': 'true', 'vally-version': '0.19.0' }))
+      .toMatchObject({ uploadTranscripts: true, vallyVersion: '0.19.0' });
+  });
+  it('requires report inputs without requiring execution inputs', () => {
+    expect(parseValues({
+      command: 'report', 'working-directory': '', suite: '',
+      'source-artifact-id': '123', 'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+    })).toMatchObject({
+      command: 'report', workingDirectory: '', sourceArtifactId: 123,
+      sourceArtifactDigest: `sha256:${'a'.repeat(64)}`,
+    });
+    expect(() => parseValues({ command: 'report', 'working-directory': '', suite: '' })).toThrow(/source-artifact/);
+    expect(() => parseValues({
+      command: 'report', 'working-directory': '', suite: '',
+      'source-artifact-id': '0', 'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+    })).toThrow(/source-artifact-id/);
+    expect(() => parseValues({
+      command: 'report', 'working-directory': '', suite: '',
+      'source-artifact-id': '123', 'source-artifact-digest': 'sha256:invalid',
+    })).toThrow(/source-artifact-digest/);
+    expect(() => parseValues({
+      command: 'run', 'source-artifact-id': '123',
+      'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+    })).toThrow(/only valid for report/);
   });
   it('preserves leading and trailing path spaces rather than selecting different files', () => {
     const inputs = parseValues({
@@ -45,7 +74,7 @@ describe('public inputs', () => {
   });
   it.each([
     { runs: '0' }, { workers: '-1' }, { timeout: '1.2' }, { runs: '9007199254740992' }, { runs: '01' },
-    { 'max-retries': '-1' }, { comment: 'yes' }, { 'upload-transcripts': '1' },
+    { 'max-retries': '-1' }, { 'upload-transcripts': '1' },
     { 'vally-version': '^0.19.0' }, { 'vally-version': '0.19.0-beta.1' }, { 'vally-version': 'file:/tmp/x' },
     { 'artifact-retention-days': '91' }, { 'artifact-retention-days': '0' },
     { 'report-id': '../unsafe' }, { suite: 'bad\0name' },

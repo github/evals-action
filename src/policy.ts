@@ -37,6 +37,18 @@ export async function projectDirectory(workspace: string, input: string): Promis
   return project;
 }
 
+export async function containedFile(directory: string, input: string, maximumBytes: number): Promise<string> {
+  if (!input || isAbsolute(input)) throw new Error('File path must be relative to its trusted directory.');
+  const root = await realpath(directory);
+  const file = await realpath(resolve(root, input));
+  const rel = relative(root, file);
+  const info = await stat(file);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !info.isFile() || info.size > maximumBytes) {
+    throw new Error('File path must resolve to a bounded regular file inside its trusted directory.');
+  }
+  return file;
+}
+
 // An allowlist is deliberate: no evaluator, reporting, npm, Git or Node injection variables.
 // This is process hygiene, not isolation from other processes under the same runner user.
 export function inertEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -104,8 +104,8 @@ grader plugins; it is not a sandbox for untrusted code.
 
 | Input | Meaning |
 | --- | --- |
-| `command` | Required: `lint` or `run`. Reserved `plan` explicitly errors. No implicit run. |
-| `working-directory` | Required project path relative to checkout, resolving inside it. Use `.` for the root. |
+| `command` | Required: `lint`, `run`, or `report`. Reserved `plan` explicitly errors. No implicit run. |
+| `working-directory` | Project path relative to checkout, resolving inside it. Required for lint/run; omitted for report. |
 | `suite` | Native named suite for run; mutually exclusive with paths and tags. |
 | `eval-paths` | Newline-separated literal eval file paths for run. Spaces, including leading/trailing spaces, are preserved. Ignored for lint. |
 | `tags` | Newline-separated native filters, e.g. `cost=free` or `flaky!=yes`; run only. |
@@ -115,9 +115,10 @@ grader plugins; it is not a sandbox for untrusted code.
 | `max-retries` | Nonnegative native run override. Vally controls conditional retries and unsupported combinations. |
 | `credential-env` | Advanced evaluator credential environment variable **names**, one per line, passed only to run. Use for BYOK or a supported secret-backed token; never put values in this input. Cannot list `COPILOT_GITHUB_TOKEN` when `copilot-token` is supplied. |
 | `copilot-token` | Explicit Copilot token for run, normally `${{ github.token }}` with `copilot-requests: write`. The Action masks it and maps it to the SDK's `COPILOT_GITHUB_TOKEN` environment path. Cannot be reused as `report-token`. |
-| `comment` | Default `false`; opt in to a serialized bot-owned PR report. |
-| `report-token` | No default. Explicit reporting-only GitHub App/bot token, normally `${{ github.token }}`. Human/PAT reporters are refused. |
-| `report-id` | Stable identity within a job; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. Comments require unique literal values and non-matrix jobs. |
+| `report-token` | No default. Reporting-only GitHub App/bot token, normally `${{ github.token }}` in a separate report job. Human/PAT reporters are refused. |
+| `report-id` | Stable identity across evaluate/report jobs; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. |
+| `source-artifact-id` | Positive structured-report artifact ID. The report command downloads this artifact directly; required for report. |
+| `source-artifact-digest` | `sha256:` digest emitted with the artifact ID. The report command verifies it before reading evidence; required for report. |
 | `upload-transcripts` | Default `false`. Opt in to native JSONL and stdout/stderr logs, potentially containing sensitive data. |
 | `artifact-retention-days` | 1-90, default 7; subject to repository retention policy. |
 
@@ -153,7 +154,7 @@ Outputs:
 | `executed` | Number of non-skipped trial records, including repetitions; absent when unknown. |
 | `passed`, `failed` | Counts of executed native eval/variant/model **groups**, using native verdicts; absent when unknown. |
 | `vally-version` | Concrete acquired CLI version. |
-| `result-path`, `artifact-id` | Minimal structured report and uploaded artifact identifier. |
+| `result-path`, `artifact-id`, `artifact-digest` | Minimal structured report path plus its uploaded artifact identifier and SHA-256 digest. |
 | `native-diagnostics-path` | Local native logs/output directory under runner temporary storage. |
 
 Default artifacts contain only operation status, revision, selected engine and
@@ -222,11 +223,30 @@ Live model/account compatibility is not claimed by the model-free controls.
 Custom native plugins, executor prerequisites and project dependencies remain
 explicit workflow preparation; the Action does not install them automatically.
 
-## Optional sticky PR reporting
+## Sticky PR reporting
 
-Use literal `comment: true`, explicit `report-token: ${{ github.token }}`, and
-job permissions `contents: read` plus `pull-requests: write`. Keep this token
-separate from evaluator credentials. The exact workflow-level policy is:
+Reporting uses a separate job and invokes this same Action with
+`command: report`. Do not grant PR-write permission to the evaluation job.
+
+1. The evaluation job has `contents: read` plus `copilot-requests: write`, runs
+   the Action with `continue-on-error: true`, and exposes `outcome` and
+   `artifact-id` and `artifact-digest` as job outputs.
+2. The report job has `contents: read` and `pull-requests: write`, but no
+   Copilot permission. It lets the Action download and verify the exact artifact:
+
+   ```yaml
+   - uses: github/evals-action@<reviewed-sha>
+     with:
+       command: report
+       source-artifact-id: ${{ needs.evaluate.outputs.artifact-id }}
+       source-artifact-digest: ${{ needs.evaluate.outputs.artifact-digest }}
+       report-token: ${{ github.token }}
+   ```
+
+3. A final verdict job converts the recorded native outcome back into the
+   branch-protection result after reporting completes.
+
+The report job must be non-matrix and use job-level serialization:
 
 ```yaml
 concurrency:
@@ -234,27 +254,29 @@ concurrency:
   cancel-in-progress: false
 ```
 
-The automatic token is shared across steps in one job: using different
-environment variable names does not create separate permissions. For the
-workflow-token model example, keep `comment: false` and use summaries/artifacts.
-Exercise comments in a separate model-free job with a separate job token and
-no Copilot permission. The current Action comments on its own operation; it
-does not provide a report-only command to post a different job's saved result.
+`command: report` never acquires Vally or starts an evaluator. It downloads the
+current run's artifact by ID, verifies the upload digest, requires the artifact
+to contain exactly one bounded `report.json` (maximum 1 MiB), and accepts only
+the Action's structured schema. The report ID, repository, revision, workflow
+run ID, attempt and artifact identity must match the current job. Unknown/raw runner fields,
+recursive report commands, inconsistent verdict/count shapes, symlink escapes
+and stale PR revisions are rejected before a GitHub write.
 
-The immutable workflow source is checked before writing. Comments support
-non-matrix/non-reusable jobs and unique literal report IDs. Parallel jobs have
-distinct identities. Recognized Action references are
-`github/evals-action@...` and root `./`. Unsupported or ambiguous topology warns
-without a write.
+The immutable workflow source is checked before writing. Report steps require a
+unique literal report ID and literal report path. Recognized Action references
+are `github/evals-action@...` and root `./`. Unsupported or ambiguous topology
+fails the reporting job.
 
 The client reads all comments, verifies authenticated bot ownership, and creates
 once or updates in place. Identity includes repository, workflow path, job,
 selection hash and report ID. Stored run/attempt ordering prevents stale
 replacement; the current PR revision is refreshed before writing. Human comments
 are never edited. Each report links the exact revision, run and structured
-artifact. Ambiguous writes are not retried. Optional failures warn without
-changing the evaluation outcome. Networking tests use synthetic GitHub responses;
-live bot-token qualification is separate.
+artifact. Ambiguous writes are not retried. The evaluation's native outcome remains in
+its structured artifact even when reporting fails; the reporting and verdict
+jobs surface their own failures. Networking tests use synthetic GitHub
+responses, and the repository's Copilot E2E workflow qualifies the bot-token
+comment path independently from evaluator permissions.
 
 ## Acquisition and development
 

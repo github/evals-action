@@ -6,22 +6,24 @@ import { type Report } from '../src/reporting.js';
 
 const context: CommentContext = {
   repository: 'o/r', workflowRef: 'o/r/.github/workflows/evals.yml@refs/pull/3/merge',
-  workflowSha: 'b'.repeat(40), job: 'evals', reportId: 'smoke', selection: 'selection-hash',
+  workflowSha: 'b'.repeat(40), job: 'report', reportId: 'smoke', selection: 'c'.repeat(64),
   pullNumber: 3, runId: 1000, order: { runNumber: 10, attempt: 2 },
 };
 const report: Report = {
-  schemaVersion: 1, command: 'plan', outcome: 'error', completeness: 'unknown',
+  schemaVersion: 2, reportId: 'smoke', repository: 'o/r', workflowRunId: 1000,
+  workflowRunAttempt: 2, sourceJob: 'evaluate', selection: context.selection,
+  command: 'run', outcome: 'error', completeness: 'unknown',
   revision: 'a'.repeat(40), category: 'dependency', code: 'headless-runtime-unavailable',
 };
-const source = `concurrency:
-  group: '${commentConcurrencyGroup}'
-  cancel-in-progress: false
-jobs:
-  evals:
+const source = `jobs:
+  report:
+    concurrency:
+      group: '${commentConcurrencyGroup}'
+      cancel-in-progress: false
     steps:
       - uses: github/evals-action@${'c'.repeat(40)}
         with:
-          comment: true
+          command: report
           report-id: smoke
 `;
 const identity = { repository: context.repository, workflow: '.github/workflows/evals.yml', job: context.job, report: context.reportId, selection: context.selection };
@@ -129,15 +131,14 @@ describe('serialized sticky GitHub networking', () => {
 describe('verified workflow serialization guard', () => {
   it('accepts the exact non-cancelling workflow group and distinct literal report steps', () => {
     assertSerializedReporter(source, context);
-    assertSerializedReporter(source + '      - uses: github/evals-action@abc\n        with:\n          comment: true\n          report-id: other\n', context);
+    assertSerializedReporter(source + '      - uses: github/evals-action@abc\n        with:\n          command: report\n          report-id: other\n', context);
   });
   it.each([
     source.replace('cancel-in-progress: false', 'cancel-in-progress: true'),
     source.replace(commentConcurrencyGroup, 'unrelated'),
     source.replace('steps:', 'strategy: {matrix: {os: [linux, windows]}}\n    steps:'),
     source.replace('report-id: smoke', "report-id: '${{ matrix.os }}'"),
-    source.replace('comment: true', "comment: '${{ always() }}'"),
-    source + '      - uses: github/evals-action@abc\n        with:\n          comment: true\n          report-id: smoke\n',
+    source + '      - uses: github/evals-action@abc\n        with:\n          command: report\n          report-id: smoke\n',
     source.replace('report-id: smoke', 'report-id: missing'),
     'invalid: [',
   ])('refuses unsafe or ambiguous workflow topology without any write', async (workflow) => {

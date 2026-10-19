@@ -2,12 +2,12 @@ import * as core from '@actions/core';
 import { DefaultArtifactClient } from '@actions/artifact';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { lstat, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseInputs } from './inputs.js';
-import { assertRevision, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
+import { assertRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
 import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
-import { renderSummary, structuredReport, type Report } from './reporting.js';
+import { parseStructuredReport, renderSummary, structuredReport, type Report } from './reporting.js';
 import { githubClient, ReportingError, takeReportToken, takeSecretInput } from './github.js';
 import { postReport } from './reporter.js';
 import { acquireEngine, resolveRelease, sha256 } from './tooling.js';
@@ -18,17 +18,23 @@ export async function runAction(): Promise<void> {
   const reportToken = takeReportToken(() => core.getInput('report-token'), process.env, core.setSecret);
   const copilotToken = takeSecretInput('COPILOT-TOKEN', () => core.getInput('copilot-token'), process.env, core.setSecret);
   const report: Report = {
-    schemaVersion: 1, command: 'unknown', outcome: 'error', completeness: 'unknown',
+    schemaVersion: 2, reportId: 'invalid', repository: process.env.GITHUB_REPOSITORY ?? 'unknown/unknown',
+    workflowRunId: Number(process.env.GITHUB_RUN_ID ?? 0), workflowRunAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 0),
+    sourceJob: process.env.GITHUB_JOB ?? 'unknown', selection: '0'.repeat(64),
+    command: 'unknown', outcome: 'error', completeness: 'unknown',
     revision: /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? '') ? process.env.GITHUB_SHA! : 'unknown',
     category: 'configuration', code: 'invalid-input-or-context',
   };
   let inputs: ReturnType<typeof parseInputs> | undefined;
+  let reportMode = false;
   let pullNumber: number | undefined;
   let nativeFiles: string[] = [];
   let nativeDirectory: string | undefined;
   try {
     inputs = parseInputs((name) => core.getInput(name, { trimWhitespace: false }));
+    reportMode = inputs.command === 'report';
     report.command = inputs.command;
+    report.reportId = inputs.reportId;
     if (inputs.command === 'lint' && (inputs.suite || inputs.evalPaths.length || inputs.tags.length)) {
       core.warning('Lint scans all evals under working-directory. Suite, eval-paths and tags selectors are ignored for lint.');
     }
@@ -41,15 +47,66 @@ export async function runAction(): Promise<void> {
       report.executed = 0;
       core.warning('Fork pull requests are excluded. No evaluator or installer was started.');
     } else {
+      if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
+        const number = object(payload).number;
+        if (typeof number === 'number' && Number.isSafeInteger(number) && number > 0) pullNumber = number;
+      }
+      if (inputs.command === 'report') {
+        if (copilotToken || inputs.credentialEnv.length || inputs.suite || inputs.evalPaths.length || inputs.tags.length ||
+            Object.keys(inputs.overrides).length || inputs.uploadTranscripts || inputs.workingDirectory) {
+          throw new NativeError('report-command-does-not-accept-execution-inputs', 'configuration');
+        }
+        if (pullNumber === undefined) throw new NativeError('report-command-requires-pull-request', 'policy');
+        if (inputs.sourceArtifactId === undefined || inputs.sourceArtifactDigest === undefined) {
+          throw new NativeError('source-artifact-identity-required', 'configuration');
+        }
+        const downloadDirectory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-report-download-'));
+        let imported: Report;
+        try {
+          const download = await new DefaultArtifactClient().downloadArtifact(inputs.sourceArtifactId, {
+            path: downloadDirectory, expectedHash: inputs.sourceArtifactDigest,
+          });
+          if (download.digestMismatch || download.downloadPath === undefined) {
+            throw new NativeError('source-artifact-digest-mismatch', 'evidence');
+          }
+          const entries = await readdir(downloadDirectory);
+          if (entries.length !== 1 || entries[0] !== 'report.json') {
+            throw new NativeError('source-artifact-content-invalid', 'evidence');
+          }
+          const path = await containedFile(downloadDirectory, 'report.json', 1024 * 1024);
+          imported = parseStructuredReport(await readFile(path, 'utf8'), {
+            reportId: inputs.reportId, repository: requiredEnv('GITHUB_REPOSITORY'),
+            workflowRunId: positiveEnv('GITHUB_RUN_ID'), workflowRunAttempt: positiveEnv('GITHUB_RUN_ATTEMPT'),
+            revision: requiredEnv('GITHUB_SHA'),
+          });
+        } finally {
+          await rm(downloadDirectory, { recursive: true, force: true });
+        }
+        Object.assign(report, imported);
+        try {
+          const outcome = await postReport(githubClient(reportToken, requiredEnv('RUNNER_TEMP')), {
+            repository: report.repository, workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
+            workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'), reportId: report.reportId,
+            selection: report.selection, pullNumber, runId: report.workflowRunId,
+            order: { runNumber: positiveEnv('GITHUB_RUN_NUMBER'), attempt: report.workflowRunAttempt },
+          }, report, inputs.sourceArtifactId);
+          if (outcome === 'stale') core.warning('A newer run or attempt already owns this report comment.');
+        } catch (error) {
+          throw new NativeError(error instanceof ReportingError ? error.code : 'comment-reporting-failed', 'execution');
+        }
+        publishOutputs(report);
+        await core.summary.addRaw(renderSummary(report)).write();
+        return;
+      }
+      if (reportToken) throw new NativeError('report-token-only-valid-for-report', 'configuration');
       const cwd = await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory);
       const revision = await execute('git', ['-C', cwd, 'rev-parse', 'HEAD'], {
         env: inertEnvironment(process.env), timeout: 10_000, maxBuffer: 4096,
       });
       assertRevision(revision.stdout, requiredEnv('GITHUB_SHA'));
-      if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
-        const number = object(payload).number;
-        if (typeof number === 'number' && Number.isSafeInteger(number) && number > 0) pullNumber = number;
-      }
+      report.selection = sha256(JSON.stringify(inputs.command === 'lint'
+        ? ['lint', inputs.workingDirectory]
+        : [inputs.suite ?? '', inputs.evalPaths, inputs.tags]));
       nativeDirectory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-native-'));
       nativeArguments(inputs, cwd, nativeDirectory, 'selection-check');
       const home = join(nativeDirectory, 'home');
@@ -83,12 +140,11 @@ export async function runAction(): Promise<void> {
   }
   if (report.outcome === 'error' || report.outcome === 'failed' || report.outcome === 'cancelled') core.setFailed(`Evals ${report.outcome}: ${report.code}. See the documented command requirements and local native diagnostics.`);
   if (report.code === 'native-empty-selection') core.warning('Native evidence reports zero executed trials. This is not an evaluation pass.');
-  core.setOutput('outcome', report.outcome);
-  core.setOutput('plan-completeness', report.completeness);
-  if (report.executed !== undefined) core.setOutput('executed', report.executed);
-  if (report.passed !== undefined) core.setOutput('passed', report.passed);
-  if (report.failed !== undefined) core.setOutput('failed', report.failed);
-  if (report.engine) core.setOutput('vally-version', report.engine.version);
+  publishOutputs(report);
+  if (reportMode) {
+    await core.summary.addRaw(renderSummary(report)).write();
+    return;
+  }
   if (nativeDirectory) core.setOutput('native-diagnostics-path', nativeDirectory);
   await core.summary.addRaw(renderSummary(report)).write();
   const directory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-report-'));
@@ -99,7 +155,12 @@ export async function runAction(): Promise<void> {
     `evals-${inputs?.reportId ?? 'invalid'}-${process.env.GITHUB_RUN_ATTEMPT ?? '1'}-${directory.slice(-6)}`,
     [path], directory, { retentionDays: inputs?.retentionDays ?? 7 },
   );
-  if (artifact.id !== undefined) core.setOutput('artifact-id', artifact.id);
+  if (artifact.id === undefined || artifact.digest === undefined) {
+    core.setFailed('Evals evidence upload did not return an artifact ID and digest.');
+    return;
+  }
+  core.setOutput('artifact-id', artifact.id);
+  core.setOutput('artifact-digest', artifact.digest);
   if (inputs?.uploadTranscripts && nativeDirectory && nativeFiles.length) {
     core.warning('Opt-in native JSONL/logs may contain prompts, source, tool output and secrets. Perfect redaction is not guaranteed.');
     try {
@@ -114,39 +175,25 @@ export async function runAction(): Promise<void> {
       core.warning('Optional transcript upload failed. The native operation outcome is unchanged.');
     }
   }
-  if (inputs?.comment) {
-    let warning: string | undefined;
-    if (pullNumber === undefined) {
-      warning = 'comment-context-excluded: only a verified same-repository pull request can receive a report.';
-    } else {
-      try {
-        const outcome = await postReport(githubClient(reportToken, requiredEnv('RUNNER_TEMP')), {
-          repository: requiredEnv('GITHUB_REPOSITORY'), workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
-          workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'), reportId: inputs.reportId,
-          selection: sha256(JSON.stringify(inputs.command === 'lint'
-            ? ['lint', inputs.workingDirectory]
-            : [inputs.suite ?? '', inputs.evalPaths, inputs.tags])),
-          pullNumber, runId: Number(requiredEnv('GITHUB_RUN_ID')),
-          order: { runNumber: Number(requiredEnv('GITHUB_RUN_NUMBER')), attempt: Number(requiredEnv('GITHUB_RUN_ATTEMPT')) },
-        }, report, artifact.id);
-        if (outcome === 'stale') warning = 'stale-report-skipped: a newer run or attempt already owns the report.';
-      } catch (error) {
-        warning = `${error instanceof ReportingError ? error.code : 'comment-reporting-failed'}: optional PR reporting did not complete.`;
-      }
-    }
-    if (warning) {
-      core.warning(warning);
-      try {
-        await core.summary.addRaw(`\nReporting warning: ${warning} The operation outcome is unchanged.\n`).write();
-      } catch {
-        core.warning('Optional PR reporting warning could not be appended to the summary. The operation outcome is unchanged.');
-      }
-    }
-  }
 }
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Required environment variable ${name} is missing.`);
   return value;
+}
+
+function positiveEnv(name: string): number {
+  const value = Number(requiredEnv(name));
+  if (!Number.isSafeInteger(value) || value < 1) throw new NativeError(`invalid-${name.toLowerCase().replaceAll('_', '-')}`, 'policy');
+  return value;
+}
+
+function publishOutputs(report: Report): void {
+  core.setOutput('outcome', report.outcome);
+  core.setOutput('plan-completeness', report.completeness);
+  if (report.executed !== undefined) core.setOutput('executed', report.executed);
+  if (report.passed !== undefined) core.setOutput('passed', report.passed);
+  if (report.failed !== undefined) core.setOutput('failed', report.failed);
+  if (report.engine) core.setOutput('vally-version', report.engine.version);
 }

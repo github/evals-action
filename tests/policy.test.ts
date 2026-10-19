@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertRevision, eventEligibility, inertEnvironment, object, projectDirectory } from '../src/policy.js';
+import { assertRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from '../src/policy.js';
 
 const directories: string[] = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
@@ -48,6 +48,22 @@ describe('trust and inert operations', () => {
     await expect(projectDirectory(workspace, 'file')).rejects.toThrow(/inside/);
     await expect(projectDirectory(workspace, root)).rejects.toThrow(/relative/);
     await expect(projectDirectory(workspace, 'missing')).rejects.toThrow();
+  });
+  it('contains downloaded report files and rejects directories, symlink escapes and oversized files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'evals-report-policy-')); directories.push(root);
+    const workspace = join(root, 'workspace');
+    const outside = join(root, 'outside');
+    await mkdir(join(workspace, 'reports'), { recursive: true });
+    await mkdir(outside);
+    await writeFile(join(workspace, 'reports', 'report.json'), '{}');
+    await writeFile(join(workspace, 'reports', 'large.json'), '12345');
+    await writeFile(join(outside, 'report.json'), '{}');
+    await symlink(outside, join(workspace, 'reports', 'escape-dir'), process.platform === 'win32' ? 'junction' : 'dir');
+    expect(await containedFile(workspace, 'reports/report.json', 4)).toBe(join(workspace, 'reports', 'report.json'));
+    await expect(containedFile(workspace, 'reports', 100)).rejects.toThrow(/regular file/);
+    await expect(containedFile(workspace, 'reports/large.json', 4)).rejects.toThrow(/bounded/);
+    await expect(containedFile(workspace, 'reports/escape-dir/report.json', 100)).rejects.toThrow(/trusted directory/);
+    await expect(containedFile(workspace, '../outside/report.json', 100)).rejects.toThrow(/trusted directory/);
   });
   it('rejects malformed object boundaries', () => {
     expect(() => object(null)).toThrow();

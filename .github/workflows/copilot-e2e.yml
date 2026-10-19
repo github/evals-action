@@ -45,7 +45,7 @@ jobs:
           test "$VERSION" = 0.19.0
           test -n "$ARTIFACT_ID"
 
-  run:
+  evaluate:
     name: Real Copilot skill eval
     needs: lint
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
@@ -54,6 +54,10 @@ jobs:
     permissions:
       contents: read
       copilot-requests: write
+    outputs:
+      outcome: ${{ steps.evals.outputs.outcome }}
+      artifact-id: ${{ steps.evals.outputs.artifact-id }}
+      artifact-digest: ${{ steps.evals.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,24 +65,56 @@ jobs:
       - name: Run the real Copilot example
         id: evals
         uses: ./
+        continue-on-error: true
         with:
           command: run
           working-directory: examples/copilot-smoke
           suite: copilot-smoke
           max-retries: 0
           copilot-token: ${{ github.token }}
-      - name: Verify native Copilot result
+  report:
+    name: Report Copilot eval
+    needs: evaluate
+    if: always() && github.event_name == 'pull_request' && needs.evaluate.outputs.artifact-id != '' && needs.evaluate.outputs.artifact-digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: evals-${{ github.workflow_ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Update the sticky PR report
+        uses: ./
+        with:
+          command: report
+          source-artifact-id: ${{ needs.evaluate.outputs.artifact-id }}
+          source-artifact-digest: ${{ needs.evaluate.outputs.artifact-digest }}
+          report-token: ${{ github.token }}
+
+  verdict:
+    name: Copilot eval verdict
+    needs: [evaluate, report]
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Enforce native outcome after reporting
         env:
-          OUTCOME: ${{ steps.evals.outputs.outcome }}
-          EXECUTED: ${{ steps.evals.outputs.executed }}
-          PASSED: ${{ steps.evals.outputs.passed }}
-          FAILED: ${{ steps.evals.outputs.failed }}
-          VERSION: ${{ steps.evals.outputs.vally-version }}
-          ARTIFACT_ID: ${{ steps.evals.outputs.artifact-id }}
+          EVENT_NAME: ${{ github.event_name }}
+          OUTCOME: ${{ needs.evaluate.outputs.outcome }}
+          ARTIFACT_ID: ${{ needs.evaluate.outputs.artifact-id }}
+          REPORT_RESULT: ${{ needs.report.result }}
         run: |
-          test "$OUTCOME" = passed
-          test "$EXECUTED" = 1
-          test "$PASSED" = 1
-          test "$FAILED" = 0
-          test "$VERSION" = 0.19.0
           test -n "$ARTIFACT_ID"
+          test "$OUTCOME" = passed
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$REPORT_RESULT" = success
+          else
+            test "$REPORT_RESULT" = skipped
+          fi

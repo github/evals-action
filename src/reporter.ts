@@ -37,24 +37,20 @@ export function assertSerializedReporter(source: string, context: CommentContext
   const document = parseDocument(source, { uniqueKeys: true });
   if (document.errors.length) throw new ReportingError('invalid-workflow-document');
   const workflow = object(document.toJS({ maxAliasCount: 0 }));
-  const concurrency = object(workflow.concurrency);
+  const job = object(object(workflow.jobs)[context.job]);
+  const concurrency = object(job.concurrency);
   if (concurrency.group !== commentConcurrencyGroup || concurrency['cancel-in-progress'] !== false) {
     throw new ReportingError('workflow-report-serialization-required');
   }
-  const job = object(object(workflow.jobs)[context.job]);
   if (job.strategy !== undefined || !Array.isArray(job.steps)) throw new ReportingError('matrix-or-reusable-report-job-unsupported');
   const actionSteps = job.steps.map(object).filter((step) =>
     typeof step.uses === 'string' && (/^github\/evals-action@[A-Za-z0-9_./-]+$/i.test(step.uses) || step.uses === './'));
-  const reports = actionSteps.map((step) => object(step.with ?? {})).filter((inputs) => inputs.comment === true || inputs.comment === 'true');
+  const reports = actionSteps.map((step) => object(step.with ?? {})).filter((inputs) => inputs.command === 'report');
   if (reports.some((inputs) => typeof (inputs['report-id'] ?? 'evals') !== 'string' || String(inputs['report-id'] ?? 'evals').includes('${{'))) {
     throw new ReportingError('literal-report-identity-required');
   }
   if (reports.filter((inputs) => (inputs['report-id'] ?? 'evals') === context.reportId).length !== 1) {
     throw new ReportingError('unique-report-step-required');
-  }
-  // Expression-driven commenting cannot establish whether a second step shares this identity.
-  if (actionSteps.some((step) => String(object(step.with ?? {}).comment ?? '').includes('${{'))) {
-    throw new ReportingError('literal-comment-opt-in-required');
   }
 }
 
