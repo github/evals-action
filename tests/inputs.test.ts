@@ -20,7 +20,7 @@ describe('public inputs', () => {
     if (command === 'report') {
       expect(parseValues({
         command, 'working-directory': '', 'source-artifact-id': '123',
-        'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+        'source-artifact-digest': 'a'.repeat(64),
       }).command).toBe(command);
       return;
     }
@@ -45,23 +45,23 @@ describe('public inputs', () => {
   it('requires report inputs without requiring execution inputs', () => {
     expect(parseValues({
       command: 'report', 'working-directory': '', suite: '',
-      'source-artifact-id': '123', 'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+      'source-artifact-id': '123', 'source-artifact-digest': 'a'.repeat(64),
     })).toMatchObject({
       command: 'report', workingDirectory: '', sourceArtifactId: 123,
-      sourceArtifactDigest: `sha256:${'a'.repeat(64)}`,
+      sourceArtifactDigest: 'a'.repeat(64),
     });
     expect(() => parseValues({ command: 'report', 'working-directory': '', suite: '' })).toThrow(/source-artifact/);
     expect(() => parseValues({
       command: 'report', 'working-directory': '', suite: '',
-      'source-artifact-id': '0', 'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+      'source-artifact-id': '0', 'source-artifact-digest': 'a'.repeat(64),
     })).toThrow(/source-artifact-id/);
     expect(() => parseValues({
       command: 'report', 'working-directory': '', suite: '',
-      'source-artifact-id': '123', 'source-artifact-digest': 'sha256:invalid',
+      'source-artifact-id': '123', 'source-artifact-digest': 'invalid',
     })).toThrow(/source-artifact-digest/);
     expect(() => parseValues({
       command: 'run', 'source-artifact-id': '123',
-      'source-artifact-digest': `sha256:${'a'.repeat(64)}`,
+      'source-artifact-digest': 'a'.repeat(64),
     })).toThrow(/only valid for report/);
   });
   it('preserves leading and trailing path spaces rather than selecting different files', () => {

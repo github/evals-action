@@ -66,7 +66,7 @@ export function parseInputs(read: InputReader): Inputs {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(reportId)) throw new Error('report-id must be 1-64 letters, digits, underscores or hyphens.');
   const sourceArtifactId = integer('source-artifact-id', 1);
   const sourceArtifactDigest = text('source-artifact-digest');
-  if (sourceArtifactDigest && !/^sha256:[a-f0-9]{64}$/.test(sourceArtifactDigest)) {
+  if (sourceArtifactDigest && !/^[a-f0-9]{64}$/.test(sourceArtifactDigest)) {
     throw new Error('Input source-artifact-digest must be a SHA-256 artifact digest.');
   }
   if (command === 'report' && (!sourceArtifactId || !sourceArtifactDigest)) {

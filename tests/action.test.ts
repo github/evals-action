@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   inputs: {} as Record<string, string>,
   setSecret: vi.fn(), setFailed: vi.fn(), warning: vi.fn(), setOutput: vi.fn(),
   summaryRaw: vi.fn(), summaryWrite: vi.fn(async () => {}),
-  upload: vi.fn(async () => ({ id: 123, digest: `sha256:${'d'.repeat(64)}` })),
+  upload: vi.fn(async () => ({ id: 123, digest: 'd'.repeat(64) })),
   download: vi.fn(), downloadReport: '',
   post: vi.fn(async () => 'created'),
   revision: 'a'.repeat(40),
@@ -102,7 +102,7 @@ it('reports the native failed verdict without initializing GitHub reporting', as
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('native-verdict-failed'));
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'failed');
   expect(mocks.setOutput).toHaveBeenCalledWith('artifact-id', 123);
-  expect(mocks.setOutput).toHaveBeenCalledWith('artifact-digest', `sha256:${'d'.repeat(64)}`);
+  expect(mocks.setOutput).toHaveBeenCalledWith('artifact-digest', 'd'.repeat(64));
   expect(mocks.post).not.toHaveBeenCalled();
   const directory = (await readdir(root)).find((name) => name.startsWith('evals-report-'))!;
   const stored = await readFile(join(root, directory, 'report.json'), 'utf8');
@@ -114,7 +114,7 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   mocks.downloadReport = structuredReport(importedReport());
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
-    'source-artifact-digest': `sha256:${'d'.repeat(64)}`,
+    'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
   await runAction();
@@ -135,7 +135,7 @@ it('warns for stale report attempts without changing the imported verdict', asyn
   mocks.downloadReport = structuredReport(importedReport());
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
-    'source-artifact-digest': `sha256:${'d'.repeat(64)}`,
+    'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
   mocks.post.mockResolvedValue('stale');
@@ -149,7 +149,7 @@ it('rejects an artifact digest mismatch before reading evidence or writing a com
   mocks.downloadReport = structuredReport(importedReport());
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
-    'source-artifact-digest': `sha256:${'d'.repeat(64)}`,
+    'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
   mocks.download.mockResolvedValue({ downloadPath: root, digestMismatch: true });
@@ -157,6 +157,19 @@ it('rejects an artifact digest mismatch before reading evidence or writing a com
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('source-artifact-digest-mismatch'));
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.acquire).not.toHaveBeenCalled();
+});
+
+it('does not upload replacement evidence when report inputs are invalid', async () => {
+  mocks.inputs = {
+    command: 'report', 'source-artifact-id': '123',
+    'source-artifact-digest': 'invalid',
+    'report-token': 'synthetic-report-token',
+  };
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
+  expect(mocks.download).not.toHaveBeenCalled();
+  expect(mocks.upload).not.toHaveBeenCalled();
+  expect(mocks.post).not.toHaveBeenCalled();
 });
 
 it('does not initialize a reporting client for forks or invalid checkouts', async () => {
@@ -204,7 +217,7 @@ it('fails report-only networking without rerunning Vally or uploading a replacem
   mocks.downloadReport = structuredReport(importedReport());
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
-    'source-artifact-digest': `sha256:${'d'.repeat(64)}`,
+    'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
   mocks.post.mockRejectedValue(new Error('private exception text'));
@@ -218,7 +231,7 @@ it('fails report-only networking without rerunning Vally or uploading a replacem
 it('rejects malformed, stale-identity and execution-shaped report commands before GitHub writes', async () => {
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
-    'source-artifact-digest': `sha256:${'d'.repeat(64)}`,
+    'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
   for (const body of [

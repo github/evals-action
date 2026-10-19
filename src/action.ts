@@ -26,7 +26,7 @@ export async function runAction(): Promise<void> {
     category: 'configuration', code: 'invalid-input-or-context',
   };
   let inputs: ReturnType<typeof parseInputs> | undefined;
-  let reportMode = false;
+  let reportMode = core.getInput('command').trim() === 'report';
   let pullNumber: number | undefined;
   let nativeFiles: string[] = [];
   let nativeDirectory: string | undefined;
@@ -64,7 +64,7 @@ export async function runAction(): Promise<void> {
         let imported: Report;
         try {
           const download = await new DefaultArtifactClient().downloadArtifact(inputs.sourceArtifactId, {
-            path: downloadDirectory, expectedHash: inputs.sourceArtifactDigest,
+            path: downloadDirectory, expectedHash: `sha256:${inputs.sourceArtifactDigest}`,
           });
           if (download.digestMismatch || download.downloadPath === undefined) {
             throw new NativeError('source-artifact-digest-mismatch', 'evidence');

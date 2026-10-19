@@ -118,7 +118,7 @@ grader plugins; it is not a sandbox for untrusted code.
 | `report-token` | No default. Reporting-only GitHub App/bot token, normally `${{ github.token }}` in a separate report job. Human/PAT reporters are refused. |
 | `report-id` | Stable identity across evaluate/report jobs; default `evals`. Letters, digits, `_`, `-`; 1-64 characters. |
 | `source-artifact-id` | Positive structured-report artifact ID. The report command downloads this artifact directly; required for report. |
-| `source-artifact-digest` | `sha256:` digest emitted with the artifact ID. The report command verifies it before reading evidence; required for report. |
+| `source-artifact-digest` | 64-character lowercase SHA-256 digest emitted with the artifact ID. The report command verifies it before reading evidence; required for report. |
 | `upload-transcripts` | Default `false`. Opt in to native JSONL and stdout/stderr logs, potentially containing sensitive data. |
 | `artifact-retention-days` | 1-90, default 7; subject to repository retention policy. |
 
