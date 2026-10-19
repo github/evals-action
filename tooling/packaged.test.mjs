@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-test('packaged Action rejects missing command from a clean consumer directory without dependencies', async () => {
+test('packaged Action rejects missing project configuration from a clean consumer directory without dependencies', async () => {
   const root = await mkdtemp(join(tmpdir(), 'evals-packaged-'));
   try {
     const entry = join(root, 'index.cjs');

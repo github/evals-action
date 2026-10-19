@@ -41,13 +41,12 @@ failures and readback. Installer tests use synthetic packages and exercise
 concurrent install/reuse and tampered files/receipts. `tests/native.test.ts`
 separately qualifies the real pinned Vally CLI with the built-in mock executor
 and deterministic graders. No test claims live GitHub bot-token qualification.
-The live `Copilot E2E` workflow exercises the reusable workflow with one
-consumer checkout. Its lint/eval job and report job have disjoint permissions;
-the report job directly downloads and digest-verifies only the current run's
-structured artifacts before updating one sticky comment containing selected
-suite, named native eval rows and separate lint/run statuses. Lint failure
-skips the model-backed eval while still
-allowing the lint artifact to be reported.
+The live `Copilot E2E` workflow directly exercises the default Action with one
+checkout and one `uses: ./` step. It deliberately uses combined Copilot and
+PR-write permissions in one job, just like the simplest consumer setup.
+Default mode validates, lints, runs only after successful lint, and updates one
+sticky comment containing suite, native eval names, and lint/run statuses.
+Unit tests also cover explicit commands for users who choose isolated jobs.
 
 Commit `dist/index.cjs` and its generated license notices. This is an intentional
 JavaScript Action distribution exception: consumers execute committed `dist`
@@ -85,8 +84,10 @@ Generate it with lifecycle scripts disabled and the public npm registry, review
 the complete dependency/integrity delta, update the embedded canonical digest,
 then qualify `npm ci` and native evidence before enabling the version.
 Workflow-token authentication controls must keep installation/lint/version
-credentials absent, map `copilot-token` only to `COPILOT_GITHUB_TOKEN`,
-and preserve the prohibition on sharing `report-token` with model execution.
+subprocess credentials absent and map model auth only to `COPILOT_GITHUB_TOKEN`.
+Test the intentional shared token in all mode and explicit run's rejection of
+`report-token`. The Action's `github-token` metadata default must be exercised
+in the hosted example without adding a token input to the example step.
 Use synthetic tokens for repository tests. A live pilot in a separate consumer
 repository must separately verify subject and judge authentication, organization
 policy and billing with `copilot-requests: write` and no stored personal secret.

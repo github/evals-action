@@ -1,56 +1,38 @@
 # Real Copilot smoke example
 
-This example proves that the packaged Action can acquire Vally, authenticate
-with the GitHub Actions token, load a real skill, execute one Copilot stimulus,
-grade the skill invocation and exact response, and publish structured evidence.
-
-It consumes Copilot AI credits. The repository workflow calls the reusable
-workflow with only the example path and suite configured. `command` defaults
-to `all`, which lints first and runs the eval only after lint succeeds. Users
-can select `command: lint` to avoid model use or `command: run` to skip lint.
-The repository workflow limits the run to:
-
-- Same-repository pull requests or manual dispatch.
-- One stimulus, with its trial count and 60-second timeout declared in the eval.
-- The evaluate job has `contents: read` plus `copilot-requests: write`.
-- A separate report job has PR-write permission but no Copilot permission.
-- The report job verifies the structured artifact directly; there is no extra
-  checkout of the example in the report job or custom verdict script.
-- No stored PAT or raw transcript upload.
-
-Organization-owned repositories require the Copilot policy
-**Allow use of Copilot CLI billed to the organization**.
-
-The low-level Action remains available for custom jobs:
+[`copilot-e2e.yml`](../../.github/workflows/copilot-e2e.yml) demonstrates the
+consumer's simplest usage: one job, one checkout, and one direct Action call:
 
 ```yaml
-with:
-  command: lint
-  working-directory: examples/copilot-smoke
+- uses: ./
+  with:
+    working-directory: examples/copilot-smoke
+    suite: copilot-smoke
 ```
 
-The real run uses the suite:
+`command` is omitted. The Action defaults to `all`: validate configuration,
+lint, run the real eval after successful lint, and update one sticky PR comment.
+There is no reusable workflow, separate reporting job, or custom verdict script.
+Consumers replace `./` with `github/evals-action@<reviewed-sha>`.
 
-```yaml
-permissions:
-  contents: read
-  copilot-requests: write
+The job grants contents read, Copilot access, and PR-comment write permission.
+The Action uses `${{ github.token }}` automatically. This combined-permission
+token is available to the evaluator; use trusted eval content. Advanced callers
+can use explicit `lint`, `run` and `report` commands in separate jobs instead.
 
-with:
-  command: run
-  working-directory: examples/copilot-smoke
-  suite: copilot-smoke
-  max-retries: 0
-  copilot-token: ${{ github.token }}
-```
+This control consumes Copilot AI credits. It runs one stimulus and one trial,
+with a 60-second native timeout from the eval file and zero retries from the
+Action's default all mode. It checks real invocation of the `evals-action-smoke`
+skill and the exact output `EVALS_ACTION_SKILL_OK`. No stored PAT or raw
+transcript upload is needed. Organization-owned repositories require the
+**Allow use of Copilot CLI billed to the organization** policy.
 
-Fork PRs are excluded. For this repository's dedicated control, contributors
-who can push same-repository PR branches affecting the Action/example paths are
-the approved trust boundary. Protect that capability with repository write
-access and branch governance. Environment filtering is not a sandbox.
+Same-repository PRs affecting the Action/example paths and manual dispatch are
+supported; forks are excluded. Contributors able to push those same-repository
+branches are the approved trust boundary for this repository's live control.
+Environment filtering is not a sandbox.
 
-The reusable workflow updates one sticky PR comment with separate lint and
-eval sections. The eval section names `copilot-skill-smoke` and shows the
-selected `copilot-smoke` suite. A failed lint posts its status, skips model execution, and
-leaves the overall workflow failed. The JavaScript Action's own low-level
-`command: lint`, `command: run`, and `command: report` inputs are unchanged.
+The sticky comment displays suite `copilot-smoke`, native eval
+`copilot-skill-smoke`, lint and run outcomes, and links to the structured
+evidence. Failed lint skips model execution and still reports the failure;
+failed native evals remain failed even if comment publication succeeds.

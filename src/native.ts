@@ -26,6 +26,7 @@ export interface NativeResult {
 
 export function nativeArguments(inputs: Inputs, cwd: string, directory: string, runId: string): string[][] {
   if (inputs.command === 'plan') throw new NativeError('vally-plan-not-supported');
+  if (inputs.command === 'all' || inputs.command === 'report') throw new NativeError('command-requires-action-orchestration');
   if (inputs.command === 'lint') {
     if (Object.keys(inputs.overrides).length) throw new NativeError('vally-lint-does-not-support-execution-overrides');
     return [['lint', `--eval-spec=${resolve(cwd)}`]];

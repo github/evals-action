@@ -3,10 +3,13 @@ description: Acquire Vally and run native lint or evaluations with structured Gi
 author: GitHub
 inputs:
   command:
-    description: Lint all evals, run a native selection, or report a downloaded structured result. Plan is reserved and unsupported.
-    required: true
+    description: Default all validates, lints, runs the selected evals, and updates one PR comment. Use lint, run, or report for separate jobs. Plan is unsupported.
+    default: all
+  github-token:
+    description: Automatic job token for Copilot and PR commenting in all mode, or commenting in report mode. The all job token has combined permissions; use separate commands for isolation.
+    default: ${{ github.token }}
   working-directory:
-    description: Project directory relative to checkout. Required for lint/run; omitted for report.
+    description: Project directory relative to checkout. Required for all/lint/run; omitted for report.
   suite:
     description: Native named suite for run. Cannot combine with eval-paths or tags. Ignored for lint.
   eval-paths:
@@ -31,7 +34,7 @@ inputs:
   copilot-token:
     description: Explicit Copilot token for run, normally github.token with copilot-requests write. Mapped to COPILOT_GITHUB_TOKEN; cannot combine with that credential-env name or report-token.
   report-token:
-    description: Reporting-only GitHub token with contents read and pull-requests write; report command only.
+    description: Optional comment token override for all/report; defaults to github-token. Never pass it to explicit run jobs.
   report-id:
     description: Stable report identity. Report jobs require a literal unique value and a non-matrix job.
     default: evals
@@ -40,7 +43,7 @@ inputs:
   source-artifact-digest:
     description: SHA-256 digest returned when the structured report artifact was uploaded; report command only.
   lint-artifact-id:
-    description: Optional companion lint artifact ID when reporting a run and lint together; report command only.
+    description: Optional companion lint artifact ID when reporting a run and lint together; report command only. Its report ID is the primary ID prefix plus -lint.
   lint-artifact-digest:
     description: SHA-256 digest for the optional companion lint artifact; report command only.
   upload-transcripts:
@@ -68,6 +71,10 @@ outputs:
     description: Uploaded structured report artifact identifier.
   artifact-digest:
     description: SHA-256 digest of the uploaded structured report artifact.
+  lint-artifact-id:
+    description: Companion lint artifact identifier in all mode after successful lint.
+  lint-artifact-digest:
+    description: SHA-256 digest of the companion lint artifact in all mode.
   native-diagnostics-path:
     description: Local native output directory. Raw logs are uploaded only when upload-transcripts is true.
 runs:

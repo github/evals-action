@@ -31,39 +31,38 @@ executors and graders. Fork jobs and `pull_request_target` are excluded.
 The checkout revision is checked before acquisition and again before execution.
 Workflow preparation can still intentionally change files in that checkout;
 the reported Git revision is not a claim that all working files are unchanged.
-An explicit run step is the team's execution authorization. Use a protected
+The default `all` step, or an explicit `run` step, is the team's execution authorization. Use a protected
 GitHub environment when approval is required. No plan-preview approval token
 or reusable authorization is invented.
 
-Only run receives `copilot-token` or explicitly named advanced `credential-env`
-values. Neither is implicitly inherited. Installation, version checks, plan and
-lint receive neither model nor reporting tokens. Reporting credentials are
-separate, and protected environment names cannot be forwarded through
-`credential-env`. Do not provide secrets to untrusted code. Environment
-filtering does not isolate processes under the same runner user.
+Only the run phase receives model credentials. In default `all` mode, the
+`github-token` input defaults to `${{ github.token }}` for both Copilot and
+PR reporting. This intentionally shares the combined-permission job token.
+Explicit `run` requires `copilot-token` or advanced `credential-env` opt-in
+instead of using `github-token`. Installation, version checks and lint are not
+passed model tokens, but environment filtering does not isolate processes under
+the same runner user. Do not provide any job credentials to untrusted code.
 
 GitHub Actions installation tokens support Copilot when the workflow grants
 `copilot-requests: write` and the applicable account policy permits it. The
-Action accepts the workflow token through the explicit `copilot-token` input,
-including when the parent has the same `GITHUB_TOKEN` value. It masks the input,
-deletes its `INPUT_COPILOT-TOKEN` variable, and maps the value only to
-`COPILOT_GITHUB_TOKEN` for the run child. It never forwards `GITHUB_TOKEN`
-itself into Vally's SDK user-token option. This narrowly scoped path does not
-allow artifact tokens, `GH_TOKEN` values, arbitrary aliases or a token also
-supplied as `report-token`.
+Action accepts it automatically in `all`, or through an explicit `copilot-token`
+override. It masks token inputs, deletes their `INPUT_*` environment variables,
+and maps model authentication to `COPILOT_GITHUB_TOKEN` for the run child. It
+does not forward `GITHUB_TOKEN` into Vally's SDK user-token option, nor forward
+artifact-service tokens, `GH_TOKEN` values or protected process variables.
 
-Do not grant PR-write or other unnecessary repository-write permissions to the
-model job. The Action cannot downscope an existing token or prove its permissions.
-Keep reporting in a separate job with `contents: read` and
-`pull-requests: write`, but no `copilot-requests: write`. That job invokes
-`command: report` with the structured artifact ID and digest from the evaluation
-job. The report command downloads the current run's artifact itself, verifies its
-digest, never runs Vally, and validates repository/revision/run/attempt identity
-before writing. The reusable workflow preserves native failure through the
-evaluation job's own result; no permission-bearing verdict job is required.
-Its caller grants a permission ceiling to a SHA-pinned workflow, while the
-workflow narrows each actual job token to the permissions needed by that job.
-The reusable workflow does not accept inherited caller secrets.
+The simple one-job example grants `contents: read`, `copilot-requests: write`,
+and `pull-requests: write`. Eval setup, plugins, and model tools may obtain
+this token and use its PR-write permission. This is a documented convenience
+trade-off, not proof of isolation. The Action cannot downscope a token.
+
+For stronger separation, use the same Action in independent lint, run, and
+report jobs. Grant the run job only contents read and Copilot permission; grant
+the report job contents read and PR-write, but no Copilot permission. Explicit
+run rejects `report-token`. Reporting downloads and digest-verifies the current
+run's structured artifacts and checks repository/revision/run/attempt identity.
+It never invokes Vally. Separate jobs reduce evaluator access to PR-write
+authority; they are optional, not a platform requirement.
 PR comments show the selected suite and native eval names. These fields are
 untrusted and Markdown-escaped; do not put secrets in eval or suite names.
 Raw paths, prompts, transcripts and model output remain excluded from comments.

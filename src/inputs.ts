@@ -1,4 +1,4 @@
-export type Command = 'lint' | 'plan' | 'run' | 'report';
+export type Command = 'all' | 'lint' | 'plan' | 'run' | 'report';
 export const DEFAULT_VALLY_VERSION = '0.19.0';
 export type InputReader = (name: string) => string;
 export interface Inputs {
@@ -31,11 +31,6 @@ export function parseInputs(read: InputReader): Inputs {
     return value;
   };
   const text = (name: string) => raw(name).trim();
-  const required = (name: string) => {
-    const value = text(name);
-    if (!value) throw new Error(`Input ${name} is required.`);
-    return value;
-  };
   const integer = (name: string, minimum: number): number | undefined => {
     const value = text(name);
     if (!value) return undefined;
@@ -51,8 +46,8 @@ export function parseInputs(read: InputReader): Inputs {
     return value === 'true';
   };
   const lines = (name: string) => text(name).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const commandValue = required('command');
-  if (!['lint', 'plan', 'run', 'report'].includes(commandValue)) throw new Error('Invalid command; use lint, plan, run, or report.');
+  const commandValue = text('command') || 'all';
+  if (!['all', 'lint', 'plan', 'run', 'report'].includes(commandValue)) throw new Error('Invalid command; use all, lint, plan, run, or report.');
   const command = commandValue as Command;
   const workingDirectory = raw('working-directory');
   if (command !== 'report' && !workingDirectory) throw new Error('Input working-directory is required.');
@@ -66,6 +61,9 @@ export function parseInputs(read: InputReader): Inputs {
   if (vallyVersion !== 'latest' && !exactVersion(vallyVersion)) throw new Error('vally-version must be latest or an exact stable version.');
   const reportId = text('report-id') || 'evals';
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(reportId)) throw new Error('report-id must be 1-64 letters, digits, underscores or hyphens.');
+  if (command === 'all' && reportId.replace(/-(?:lint|run)$/, '').length > 59) {
+    throw new Error('report-id prefix must be at most 59 characters for all mode.');
+  }
   const sourceArtifactId = integer('source-artifact-id', 1);
   const sourceArtifactDigest = text('source-artifact-digest');
   const lintArtifactId = integer('lint-artifact-id', 1);
@@ -88,9 +86,6 @@ export function parseInputs(read: InputReader): Inputs {
   }
   if (lintArtifactId !== undefined && lintArtifactId === sourceArtifactId) {
     throw new Error('Lint and primary report artifacts must be distinct.');
-  }
-  if (lintArtifactId !== undefined && !reportId.endsWith('-run')) {
-    throw new Error('A companion lint artifact requires the primary report ID to end in -run.');
   }
   const retentionDays = integer('artifact-retention-days', 1) ?? 7;
   if (retentionDays > 90) throw new Error('artifact-retention-days must not exceed 90.');

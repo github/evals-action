@@ -7,8 +7,9 @@ const base: Record<string, string> = { command: 'plan', 'working-directory': '.'
 const parseValues = (values: Record<string, string> = {}) => parseInputs((key) => ({ ...base, ...values })[key] ?? '');
 
 describe('public inputs', () => {
-  it('never chooses a command or selection implicitly', () => {
-    expect(() => parseValues({ command: '' })).toThrow(/required/);
+  it('defaults to all while requiring explicit project and selection', () => {
+    expect(parseValues({ command: '' }).command).toBe('all');
+    expect(() => parseValues({ command: '', suite: '' })).toThrow(/selection/);
     expect(() => parseValues({ suite: '' })).toThrow(/selection/);
     expect(() => parseValues({ 'working-directory': '' })).toThrow(/required/);
   });
@@ -16,7 +17,7 @@ describe('public inputs', () => {
     expect(parseValues({ command: 'lint', suite: '' })).toMatchObject({ command: 'lint', evalPaths: [], tags: [] });
     expect(() => parseValues({ command: 'run', suite: '' })).toThrow(/selection/);
   });
-  it.each(['lint', 'plan', 'run', 'report'])('accepts only explicit %s routing', (command) => {
+  it.each(['all', 'lint', 'plan', 'run', 'report'])('accepts explicit %s routing', (command) => {
     if (command === 'report') {
       expect(parseValues({
         command, 'working-directory': '', 'source-artifact-id': '123',
@@ -29,8 +30,8 @@ describe('public inputs', () => {
   it.each(['RUN', 'bash', 'lint;echo secret', 'run --all'])('rejects command %s', (command) => {
     expect(() => parseValues({ command })).toThrow(/command/);
   });
-  it('keeps all as a reusable-workflow-only mode', () => {
-    expect(() => parseValues({ command: 'all' })).toThrow(/command/);
+  it('reserves enough report-id space for companion lint evidence', () => {
+    expect(() => parseValues({ command: 'all', 'report-id': 'a'.repeat(60) })).toThrow(/prefix/);
   });
   it('preserves spaces, native selectors and omitted settings', () => {
     const inputs = parseValues({ suite: '', 'eval-paths': 'evals/path with spaces.eval.yaml\nother/**/*.yaml', tags: 'smoke\nrelease' });
@@ -103,7 +104,9 @@ describe('public inputs', () => {
     const read = new Set<string>();
     parseInputs((key) => { read.add(key); return base[key] ?? ''; });
     // The reporting secret is consumed separately and never retained in the parsed input DTO.
-    expect([...read].sort()).toEqual(Object.keys(action.inputs).filter((key) => !['report-token', 'copilot-token'].includes(key)).sort());
+    expect([...read].sort()).toEqual(Object.keys(action.inputs).filter((key) => !['report-token', 'copilot-token', 'github-token'].includes(key)).sort());
+    expect(action.inputs.command?.default).toBe('all');
+    expect(action.inputs['github-token']?.default).toBe('${{ github.token }}');
     expect(action.inputs['vally-version']?.default).toBe(DEFAULT_VALLY_VERSION);
     expect(action.runs).toEqual({ using: 'node24', main: 'dist/index.cjs' });
   });

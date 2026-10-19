@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { runAction } from '../src/action.js';
 import type { NativeResult } from '../src/native.js';
 import { structuredReport, type Report } from '../src/reporting.js';
+import type { Inputs } from '../src/inputs.js';
 
 const mocks = vi.hoisted(() => ({
   inputs: {} as Record<string, string>,
@@ -12,10 +13,11 @@ const mocks = vi.hoisted(() => ({
   summaryRaw: vi.fn(), summaryWrite: vi.fn(async () => {}),
   upload: vi.fn(async () => ({ id: 123, digest: 'd'.repeat(64) })),
   download: vi.fn(), downloadReport: '', downloadReports: {} as Record<number, string>,
-  post: vi.fn(async () => 'created'),
+  post: vi.fn<typeof import('../src/reporter.js').postReport>(async () => 'created'),
   revision: 'a'.repeat(40),
   nativeEnv: vi.fn(), acquire: vi.fn(),
   result: {} as NativeResult,
+  lintResult: {} as NativeResult, nativeCommands: vi.fn(),
 }));
 vi.mock('@actions/core', () => ({
   getInput: (key: string) => mocks.inputs[key] ?? '',
@@ -42,11 +44,12 @@ vi.mock('../src/tooling.js', async (importOriginal) => ({
 }));
 vi.mock('../src/native.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/native.js')>(),
-  runNative: async (_inputs: unknown, _engine: unknown, _cwd: string, directory: string, env: NodeJS.ProcessEnv) => {
+  runNative: async (inputs: Inputs, _engine: unknown, _cwd: string, directory: string, env: NodeJS.ProcessEnv) => {
+    mocks.nativeCommands(inputs);
     mocks.nativeEnv(env);
     const file = join(directory, 'native.stdout.log');
     await writeFile(file, 'synthetic native transcript');
-    return { result: mocks.result, files: [file] };
+    return { result: inputs.command === 'lint' ? mocks.lintResult : mocks.result, files: [file] };
   },
 }));
 
@@ -57,10 +60,12 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.summaryWrite.mockResolvedValue(undefined);
   mocks.post.mockResolvedValue('created');
+  mocks.upload.mockImplementation(async () => ({ id: 122 + mocks.upload.mock.calls.length, digest: 'd'.repeat(64) }));
   mocks.revision = 'a'.repeat(40);
   mocks.inputs = { command: 'run', 'working-directory': '.', suite: 'smoke' };
   mocks.downloadReports = {};
   mocks.result = { outcome: 'failed', completeness: 'complete', category: 'none', code: 'native-verdict-failed', executed: 1, passed: 0, failed: 1 };
+  mocks.lintResult = { outcome: 'validated', completeness: 'unknown', category: 'none', code: 'native-lint-validated', executed: 0 };
   root = await mkdtemp(join(tmpdir(), 'evals-action-control-'));
   await writeFile(join(root, 'event.json'), JSON.stringify({
     number: 3, pull_request: { head: { repo: { full_name: 'o/r', fork: false } }, base: { repo: { full_name: 'o/r' } } },
@@ -105,6 +110,7 @@ afterEach(async () => {
 });
 
 it('reports the native failed verdict without initializing GitHub reporting', async () => {
+  mocks.inputs['github-token'] = 'automatic-but-unused';
   await runAction();
   expect(mocks.setFailed).toHaveBeenCalledTimes(1);
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('native-verdict-failed'));
@@ -112,6 +118,7 @@ it('reports the native failed verdict without initializing GitHub reporting', as
   expect(mocks.setOutput).toHaveBeenCalledWith('artifact-id', 123);
   expect(mocks.setOutput).toHaveBeenCalledWith('artifact-digest', 'd'.repeat(64));
   expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.nativeEnv.mock.calls[0]?.[0]).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
   const directory = (await readdir(root)).find((name) => name.startsWith('evals-report-'))!;
   const stored = await readFile(join(root, directory, 'report.json'), 'utf8');
   expect(stored).toContain('"schemaVersion": 2');
@@ -120,10 +127,6 @@ it('reports the native failed verdict without initializing GitHub reporting', as
 
 it('downloads and posts a digest-bound report without acquiring or executing Vally', async () => {
   mocks.downloadReport = structuredReport(importedReport());
-  vi.stubEnv('EVALS_JOB_WORKFLOW_REF', `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`);
-  vi.stubEnv('EVALS_JOB_WORKFLOW_SHA', 'd'.repeat(40));
-  vi.stubEnv('EVALS_JOB_WORKFLOW_REPOSITORY', 'github/evals-action');
-  vi.stubEnv('EVALS_JOB_WORKFLOW_FILE_PATH', '.github/workflows/evals.yml');
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
     'source-artifact-digest': 'd'.repeat(64),
@@ -133,10 +136,6 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   expect(mocks.setSecret).toHaveBeenCalledWith('synthetic-report-token');
   expect(mocks.post).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
     repository: 'o/r', reportId: 'evals', selection: 'b'.repeat(64), runId: 100,
-    reusableWorkflow: {
-      ref: `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`,
-      sha: 'd'.repeat(40), repository: 'github/evals-action', filePath: '.github/workflows/evals.yml',
-    },
   }), expect.objectContaining({ outcome: 'passed' }), 123, undefined);
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeEnv).not.toHaveBeenCalled();
@@ -147,8 +146,7 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'passed');
 });
 
-it('validates both artifacts before updating one reusable workflow comment', async () => {
-  vi.stubEnv('EVALS_JOB_WORKFLOW_REF', `github/evals-action/.github/workflows/evals.yml@${'d'.repeat(40)}`);
+it('validates both separate-job artifacts before updating one comment', async () => {
   mocks.downloadReports = {
     123: structuredReport(importedReport({ reportId: 'evals-run', suite: 'smoke' })),
     124: structuredReport(importedLint()),
@@ -224,6 +222,7 @@ it('does not initialize a reporting client for forks or invalid checkouts', asyn
   expect(mocks.setFailed).not.toHaveBeenCalled();
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'not-run');
   expect(mocks.setOutput).toHaveBeenCalledWith('executed', 0);
+  expect(mocks.setOutput).toHaveBeenCalledWith('artifact-id', 123);
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
@@ -235,7 +234,7 @@ it('reports wrong revision and rejects report-token on execution commands', asyn
   mocks.revision = 'a'.repeat(40);
   mocks.inputs['report-token'] = 'report';
   await runAction();
-  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-report'));
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-all-or-report'));
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
@@ -308,7 +307,7 @@ it('enforces platform/input guards and still writes minimal reports', async () =
   await runAction();
   expect(mocks.post).not.toHaveBeenCalled();
   Object.defineProperty(process, 'platform', { value: 'linux' });
-  mocks.inputs.command = '';
+  mocks.inputs.command = 'invalid';
   await runAction();
   expect(mocks.setFailed).toHaveBeenCalledTimes(2);
 });
@@ -369,7 +368,7 @@ it('rejects reporting tokens on run before acquisition and never starts Vally fo
   mocks.inputs['credential-env'] = 'COPILOT_GITHUB_TOKEN';
   mocks.inputs['report-token'] = token;
   await runAction();
-  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-report'));
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-all-or-report'));
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeEnv).not.toHaveBeenCalled();
   mocks.inputs['report-token'] = '';
@@ -380,4 +379,115 @@ it('rejects reporting tokens on run before acquisition and never starts Vally fo
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeEnv).not.toHaveBeenCalled();
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'not-run');
+});
+
+it('defaults to lint then run and posts once using the automatic shared job token', async () => {
+  delete mocks.inputs.command;
+  mocks.inputs['github-token'] = 'automatic-token';
+  vi.stubEnv('INPUT_GITHUB-TOKEN', 'automatic-token');
+  mocks.result = { outcome: 'passed', completeness: 'complete', category: 'none', code: 'native-verdict-passed', executed: 1, passed: 1, failed: 0 };
+  await runAction();
+  expect(mocks.nativeCommands.mock.calls.map(([input]) => input.command)).toEqual(['lint', 'run']);
+  expect(mocks.nativeCommands.mock.calls[1]?.[0].overrides).toEqual({ maxRetries: 0 });
+  expect(mocks.nativeEnv.mock.calls[0]?.[0]).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+  expect(mocks.nativeEnv.mock.calls[1]?.[0]).toHaveProperty('COPILOT_GITHUB_TOKEN', 'automatic-token');
+  expect(process.env['INPUT_GITHUB-TOKEN']).toBeUndefined();
+  expect(mocks.acquire).toHaveBeenCalledTimes(1);
+  expect(mocks.upload).toHaveBeenCalledTimes(2);
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ reportId: 'evals' }),
+    expect.objectContaining({ command: 'run', suite: 'smoke', outcome: 'passed' }), 124,
+    { report: expect.objectContaining({ command: 'lint', outcome: 'validated', reportId: 'evals-lint' }), artifactId: 123 });
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(JSON.stringify(mocks.summaryRaw.mock.calls)).not.toContain('automatic-token');
+  expect(JSON.stringify(mocks.setOutput.mock.calls)).not.toContain('automatic-token');
+});
+
+it('supports BYOK in all without also injecting the automatic Copilot token', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-report-token';
+  mocks.inputs['credential-env'] = 'OPENAI_API_KEY';
+  mocks.inputs['max-retries'] = '1';
+  vi.stubEnv('OPENAI_API_KEY', 'byok-token');
+  await runAction();
+  expect(mocks.nativeEnv.mock.calls[0]?.[0]).not.toHaveProperty('OPENAI_API_KEY');
+  expect(mocks.nativeEnv.mock.calls[1]?.[0]).toHaveProperty('OPENAI_API_KEY', 'byok-token');
+  expect(mocks.nativeEnv.mock.calls[1]?.[0]).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
+  expect(mocks.nativeCommands.mock.calls[1]?.[0].overrides).toEqual({ maxRetries: 1 });
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+});
+
+it('does not start the eval when lint evidence cannot be saved', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  mocks.upload.mockRejectedValue(new Error('private service message'));
+  await runAction();
+  expect(mocks.nativeCommands.mock.calls.map(([input]) => input.command)).toEqual(['lint']);
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post.mock.calls[0]?.[2]).toMatchObject({ outcome: 'error', code: 'structured-artifact-upload-failed' });
+  expect(mocks.setFailed).toHaveBeenCalled();
+});
+
+it('skips eval after failed lint and still posts its failure once', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  mocks.lintResult = { outcome: 'error', category: 'configuration', code: 'native-lint-failed', completeness: 'unknown', executed: 0 };
+  await runAction();
+  expect(mocks.nativeCommands.mock.calls.map(([input]) => input.command)).toEqual(['lint']);
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('native-lint-failed'));
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post.mock.calls[0]?.[2]).toMatchObject({ command: 'lint', outcome: 'error' });
+});
+
+it('keeps a native eval failure failed after successful PR reporting', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  await runAction();
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'failed');
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('native-verdict-failed'));
+});
+
+it('keeps native outputs when comment or artifact publication fails', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  mocks.post.mockRejectedValue(new Error('private transport text'));
+  mocks.upload.mockImplementation(async () => {
+    if (mocks.upload.mock.calls.length === 2) throw new Error('private artifact failure');
+    return { id: 123, digest: 'd'.repeat(64) };
+  });
+  await runAction();
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post.mock.calls[0]?.[3]).toBeUndefined();
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'failed');
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('Required structured reporting failed'));
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('PR reporting failed'));
+  expect(JSON.stringify(mocks.setFailed.mock.calls)).not.toContain('private');
+});
+
+it('reports invalid all-mode selection without acquiring or executing Vally', async () => {
+  mocks.inputs = { 'working-directory': '.', 'github-token': 'automatic-token' };
+  await runAction();
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.nativeCommands).not.toHaveBeenCalled();
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.setFailed).toHaveBeenCalled();
+});
+
+it('does not post on manual dispatch or provide credentials to fork code', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_dispatch');
+  await runAction();
+  expect(mocks.nativeCommands).toHaveBeenCalledTimes(2);
+  expect(mocks.post).not.toHaveBeenCalled();
+  vi.clearAllMocks();
+  vi.stubEnv('GITHUB_EVENT_NAME', 'pull_request');
+  await writeFile(join(root, 'event.json'), JSON.stringify({
+    number: 3, pull_request: { head: { repo: { full_name: 'other/r', fork: true } }, base: { repo: { full_name: 'o/r' } } },
+  }));
+  await runAction();
+  expect(mocks.nativeCommands).not.toHaveBeenCalled();
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.post).not.toHaveBeenCalled();
 });
