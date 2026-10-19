@@ -59,7 +59,10 @@ The repository's `Copilot E2E` workflow is an explicitly approved live control
 for same-repository PRs affecting the Action or example. Keep it to one
 stimulus, one trial, one worker, zero retries and the documented timeout. Do not
 broaden its triggers, permissions, transcript upload or workload without a new
-approval. Never run that job for fork PRs or unreviewed native configuration.
+approval. Fork PRs remain excluded. This repository deliberately treats
+contributors who can push same-repository PR branches affecting the bounded
+workflow/example paths as trusted to trigger this live control. Protect that
+capability through repository write access and branch governance.
 
 ## Release preparation
 

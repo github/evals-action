@@ -20,6 +20,10 @@ The run consumes Copilot AI credits. It uses the automatic workflow token with
 `copilot-requests: write`, one trial, one worker, zero retries, a 60-second
 native timeout, no PR-write permission, no report token and no transcript upload.
 Fork PRs do not run the jobs. See the example README for the exact contract.
+This repository explicitly treats contributors who can push same-repository PR
+branches affecting those paths as trusted to trigger the bounded live control.
+That repository-specific decision does not change the consumer guidance below:
+same-repository origin by itself is not a general-purpose authorization policy.
 
 ## Commands
 
@@ -168,7 +172,7 @@ prevent final artifacts/comments.
 
 ## Trust and credentials
 
-Use only trusted, reviewed own-repository code. Fork PRs and
+Use only trusted code under a deliberate repository policy. Fork PRs and
 `pull_request_target` are excluded before acquisition. The checkout revision is
 checked before installation and again before execution. Workflow preparation
 may intentionally modify working files; the reported revision is not a hash of
@@ -177,7 +181,9 @@ all resulting working content.
 The native CLI can load project plugins, execute setup commands, and invoke
 executors/graders. An explicit `run` step is the team's authorization; environment
 filtering is not an OS sandbox and same-repository origin alone is not a trust
-decision. Do not pass secrets to unreviewed code.
+decision. This repository's bounded example documents an explicit exception for
+contributors with same-repository branch push access; consumers must choose and
+enforce their own authorization boundary. Do not pass secrets to untrusted code.
 
 `COPILOT_GITHUB_TOKEN` is forwarded to run only when explicitly listed in
 `credential-env`; it is not implicitly inherited. GitHub supports the automatic

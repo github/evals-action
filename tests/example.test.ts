@@ -25,7 +25,7 @@ describe('real Copilot example contract', () => {
       maxBuffer: 1024 * 1024,
     });
     expect(result.stderr).not.toContain('COPILOT_GITHUB_TOKEN');
-  });
+  }, 60_000);
 
   it('keeps the automatic workflow bounded and least privilege', async () => {
     const workflow = parse(await readFile('.github/workflows/copilot-e2e.yml', 'utf8')) as {

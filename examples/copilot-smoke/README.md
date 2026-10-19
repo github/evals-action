@@ -44,5 +44,7 @@ env:
   COPILOT_GITHUB_TOKEN: ${{ github.token }}
 ```
 
-Do not run the credentialed example on fork PRs or unreviewed eval/skill
-content. Environment filtering is not a sandbox.
+Fork PRs are excluded. For this repository's dedicated control, contributors
+who can push same-repository PR branches affecting the Action/example paths are
+the approved trust boundary. Protect that capability with repository write
+access and branch governance. Environment filtering is not a sandbox.
