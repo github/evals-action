@@ -55,8 +55,9 @@ without installing this repository. `pnpm check:dist` compares build bytes with
 the checked-in bundle. Never hand-edit generated files. Update the source,
 rebuild, and review both source and distribution changes.
 
-Use strict TypeScript, argument-array process invocation, exact dependencies,
-and SHA-pinned third-party Actions. Do not log raw evaluator/process output or
+Use strict TypeScript, argument-array process invocation, and exact dependencies.
+Use `actions/checkout@v7`; other third-party Actions remain SHA-pinned.
+Do not log raw evaluator/process output or
 copy native runtime behavior into the Action. New native capabilities require
 verified CLI arguments/output contracts and model-free integration controls.
 Only trusted same-repository code may receive execution credentials;
@@ -77,6 +78,14 @@ The first prerelease is [`v0.1.0`](https://github.com/github/evals-action/releas
 Keep published version tags unchanged. For future releases, verify the packaged
 Action at the target commit and update consumer examples to the intended tag.
 Action release versions are independent of the selected Vally version.
+
+The moving `v0` tag points to the latest approved 0.x release. After publishing
+a new 0.x minor or patch release and verifying its checks, advance only `v0`
+to that release's exact commit. Verify the tag target afterward. Do not move
+version-specific tags, publish a separate GitHub release for the moving tag,
+or use a blanket force-push of all tags. Release publication and advancing the
+alias are separate steps; no automatic tag-moving workflow is configured.
+Keep `v0` on the 0.x line when introducing a future `v1` release.
 
 Before proposing a release, verify supported CLI versions and their native
 evidence contracts, run the Linux model-free controls, and qualify the optional

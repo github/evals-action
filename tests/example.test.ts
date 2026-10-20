@@ -43,7 +43,7 @@ describe('real Copilot example contract', () => {
     expect(job.permissions).toEqual({ contents: 'read', 'copilot-requests': 'write', 'pull-requests': 'write' });
     expect(job.steps).toHaveLength(2);
     expect(job.steps[0]).toEqual({
-      uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', with: { 'persist-credentials': false },
+      uses: 'actions/checkout@v7', with: { 'persist-credentials': false },
     });
     expect(job.steps[1]).toEqual({
       uses: './', with: { 'working-directory': 'examples/copilot-smoke', suite: 'copilot-smoke' },

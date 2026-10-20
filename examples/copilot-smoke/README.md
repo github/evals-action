@@ -12,7 +12,7 @@ consumer's simplest usage: one job, one checkout, and one direct Action call:
 
 `command` is omitted. The Action defaults to `all`: validate configuration,
 lint, run the real eval after successful lint, and update one sticky PR comment.
-Consumers replace `./` with `github/evals-action@v0.1.0` and point
+Consumers replace `./` with `github/evals-action@v0` and point
 `working-directory` and `suite` at their own evals. See the
 [quick start](../../README.md#quick-start) for the full consumer workflow.
 
