@@ -17,7 +17,7 @@ const result = await build({
   minify: true,
   metafile: true,
 });
-const notices = await bundledLicenseNotices(Object.keys(result.metafile.inputs));
+const notices = await bundledLicenseNotices(result.metafile.outputs['dist/index.cjs'].inputs);
 const outputs = [
   ...result.outputFiles,
   { path: resolve('dist/THIRD-PARTY-NOTICES.txt'), contents: Buffer.from(notices.text) },

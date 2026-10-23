@@ -7,13 +7,20 @@ const supplementalNotices = {
     source: 'https://github.com/nodable/val-parsers/blob/ac48e7ea591da372be023a481875c747535812b3/LICENSE',
   },
 };
+const moduleLicenseHeaders = {
+  '@protobuf-ts/runtime@2.11.1': [
+    'build/commonjs/goog-varint.js',
+    'build/commonjs/protobufjs-utf8.js',
+  ],
+};
 const noticeName = /^(?:licen[cs]e|notice|copying|copyright|third[-_ ]?party[-_ ]?(?:notices?|licenses?))(?:[.-].*)?$/i;
 const licenseName = /^(?:licen[cs]e|copying)(?:[.-].*)?$/i;
 const normalize = text => text.replaceAll('\r\n', '\n').replace(/[ \t]+$/gm, '').trim();
 
-export async function bundledLicenseNotices(inputs) {
+export async function bundledLicenseNotices(inputContributions) {
   const directories = new Set();
-  for (const input of inputs) {
+  for (const [input, contribution] of Object.entries(inputContributions)) {
+    if (!(contribution.bytesInOutput > 0)) continue;
     const parts = resolve(input).split(sep);
     const index = parts.lastIndexOf('node_modules');
     if (index < 0) continue;
@@ -58,6 +65,20 @@ export async function bundledLicenseNotices(inputs) {
         notices.push({ source: supplement.source, text });
         hasLicenseText = true;
       }
+    }
+    const requiredHeaders = moduleLicenseHeaders[id] ?? [];
+    if (requiredHeaders.length && !hasLicenseText) throw new Error(`Missing package license for ${id}.`);
+    for (const file of requiredHeaders) {
+      const source = (await readFile(join(directory, file), 'utf8')).replaceAll('\r\n', '\n');
+      const header = /^(?:"use strict";\n)?((?:\/\/[^\n]*\n)+)/.exec(source)?.[1];
+      if (!header?.includes('Redistribution and use in source and binary forms') ||
+          !header.includes('THIS SOFTWARE IS PROVIDED')) {
+        throw new Error(`Missing pinned module license header: ${id}/${file}.`);
+      }
+      notices.push({
+        source: `${file} (license header)`,
+        text: normalize(header.split('\n').map(line => line.replace(/^\/\/ ?/, '')).join('\n')),
+      });
     }
     const entry = {
       name: manifest.name,

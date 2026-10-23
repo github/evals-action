@@ -284,7 +284,9 @@
     "declaredLicense": "(Apache-2.0 AND BSD-3-Clause)",
     "status": "license-text-included",
     "sources": [
-      "LICENSE"
+      "LICENSE",
+      "build/commonjs/goog-varint.js (license header)",
+      "build/commonjs/protobufjs-utf8.js (license header)"
     ]
   },
   {
@@ -321,16 +323,6 @@
     "status": "license-text-included",
     "sources": [
       "LICENSE"
-    ]
-  },
-  {
-    "name": "apache-arrow",
-    "version": "21.2.0",
-    "declaredLicense": "Apache-2.0",
-    "status": "license-text-included",
-    "sources": [
-      "LICENSE.txt",
-      "NOTICE.txt"
     ]
   },
   {
@@ -664,15 +656,6 @@
     "name": "fast-xml-parser",
     "version": "5.11.2",
     "declaredLicense": "MIT",
-    "status": "license-text-included",
-    "sources": [
-      "LICENSE"
-    ]
-  },
-  {
-    "name": "flatbuffers",
-    "version": "25.9.23",
-    "declaredLicense": "Apache-2.0",
     "status": "license-text-included",
     "sources": [
       "LICENSE"
@@ -1378,15 +1361,6 @@
     "status": "license-text-included",
     "sources": [
       "LICENSE"
-    ]
-  },
-  {
-    "name": "tslib",
-    "version": "2.8.1",
-    "declaredLicense": "0BSD",
-    "status": "license-text-included",
-    "sources": [
-      "LICENSE.txt"
     ]
   },
   {

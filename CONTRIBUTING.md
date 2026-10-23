@@ -62,7 +62,8 @@ the checked-in bundle. Never hand-edit generated files. Update the source,
 rebuild, and review both source and distribution changes.
 
 The build also generates `dist/THIRD-PARTY-NOTICES.txt` and
-`dist/bundled-dependencies.json` from esbuild's actual input inventory, alongside
+`dist/bundled-dependencies.json` from inputs with positive byte contributions to
+esbuild's executable output, excluding completely tree-shaken modules, alongside
 the existing inline notices in `dist/index.cjs.LEGAL.txt`. Commit all generated
 outputs; `pnpm check:dist` verifies them together. Full license sections in
 package READMEs are retained when standalone files are absent. The version-bound
@@ -70,6 +71,9 @@ supplement for `@nodable/entities` comes from the license at its npm-published
 `gitHead`; keep that provenance with any update.
 Attribution-only `NOTICE` and `COPYRIGHT` files are retained separately; they
 do not suppress license fallbacks or resolve missing license terms.
+The version-bound protobuf runtime source headers retain the Google and
+protobuf.js BSD terms alongside the package's Apache license, rather than
+treating one license file as evidence for every declared component.
 
 Entries marked `missing-license-text` are unresolved public-release blockers,
 not approved exceptions. A passing build or packaging test does not clear them.
