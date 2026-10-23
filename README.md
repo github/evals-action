@@ -390,6 +390,14 @@ provenance, not a claim that the graph was reviewed with the Action.
 The development dependency remains pinned to Vally 0.19.0 for deterministic,
 model-free CLI contract tests. It is a test fixture, not a runtime allowlist.
 
+Bundled dependencies are listed in
+[`dist/bundled-dependencies.json`](dist/bundled-dependencies.json), with available
+full terms in [`dist/THIRD-PARTY-NOTICES.txt`](dist/THIRD-PARTY-NOTICES.txt) and
+retained inline notices in [`dist/index.cjs.LEGAL.txt`](dist/index.cjs.LEGAL.txt).
+Entries marked `missing-license-text` still need authoritative terms and
+release-owner clearance before public distribution; packaging checks do not
+grant that clearance.
+
 Use Node 24 and the pinned pnpm version. Run `pnpm check`, rebuild and commit
 `dist/index.cjs`, and follow [CONTRIBUTING.md](CONTRIBUTING.md). Security reports
 belong through [SECURITY.md](SECURITY.md), not public PR comments.

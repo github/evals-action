@@ -61,6 +61,21 @@ without installing this repository. `pnpm check:dist` compares build bytes with
 the checked-in bundle. Never hand-edit generated files. Update the source,
 rebuild, and review both source and distribution changes.
 
+The build also generates `dist/THIRD-PARTY-NOTICES.txt` and
+`dist/bundled-dependencies.json` from esbuild's actual input inventory, alongside
+the existing inline notices in `dist/index.cjs.LEGAL.txt`. Commit all generated
+outputs; `pnpm check:dist` verifies them together. Full license sections in
+package READMEs are retained when standalone files are absent. The version-bound
+supplement for `@nodable/entities` comes from the license at its npm-published
+`gitHead`; keep that provenance with any update.
+
+Entries marked `missing-license-text` are unresolved public-release blockers,
+not approved exceptions. A passing build or packaging test does not clear them.
+Obtain authoritative terms and release-owner disposition; do not infer a
+license from a dependency's parent, another distributor, or a package name.
+The packaging regression records the current three gaps so dependency changes
+require an explicit reassessment.
+
 Use strict TypeScript, argument-array process invocation, and exact dependencies.
 Use `actions/checkout@v7`; other third-party Actions remain SHA-pinned.
 Do not log raw evaluator/process output or
