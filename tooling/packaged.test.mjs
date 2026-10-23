@@ -12,8 +12,9 @@ test('bundled notices are deterministic, preserve full terms, and expose missing
   try {
     const fixtures = [
       { name: '@fixture/z', version: '1.0.0', license: 'MIT', files: { LICENSE: 'Synthetic full terms \t\r\n', NOTICE: 'Synthetic attribution\r\n' } },
-      { name: '@fixture/a', version: '1.0.0', license: 'MIT', files: { 'README.md': '# Usage\nExample\n\n## License\nCopyright fixture\nPermission is hereby granted\nTHE SOFTWARE IS PROVIDED AS IS\n### Attribution\nPreserve this attribution.\n## Contributing\nNot part of the license section.\n' } },
-      { name: '@fixture/missing', version: '1.0.0', files: { 'README.md': '# Fixture\nNo license declaration.' } },
+      { name: '@fixture/a', version: '1.0.0', license: 'MIT', files: { NOTICE: 'README fixture attribution.', 'README.md': '# Usage\nExample\n\n## License\nCopyright fixture\nPermission is hereby granted\nTHE SOFTWARE IS PROVIDED AS IS\n### Attribution\nPreserve this attribution.\n## Contributing\nNot part of the license section.\n' } },
+      { name: '@fixture/missing', version: '1.0.0', license: 'MIT', files: { NOTICE: 'Attribution without license terms.', 'README.md': '# Fixture\nNo license terms.' } },
+      { name: '@nodable/entities', version: '3.1.0', license: 'MIT', files: { NOTICE: 'Supplement fixture attribution.' } },
     ];
     const inputs = [];
     for (const { files, ...manifest } of fixtures) {
@@ -26,13 +27,24 @@ test('bundled notices are deterministic, preserve full terms, and expose missing
     inputs.push(join(root, 'src', 'index.js'));
     const result = await bundledLicenseNotices(inputs);
     assert.deepEqual(result, await bundledLicenseNotices(inputs.toReversed()));
-    assert.deepEqual(result.inventory.map(item => item.name), ['@fixture/a', '@fixture/missing', '@fixture/z']);
+    assert.deepEqual(result.inventory.map(item => item.name), ['@fixture/a', '@fixture/missing', '@fixture/z', '@nodable/entities']);
     assert.deepEqual(result.inventory[1], {
-      name: '@fixture/missing', version: '1.0.0', declaredLicense: null,
-      status: 'missing-license-text', sources: [],
+      name: '@fixture/missing', version: '1.0.0', declaredLicense: 'MIT',
+      status: 'missing-license-text', sources: ['NOTICE'],
     });
+    assert.equal(result.inventory[0].status, 'license-text-included');
+    assert.deepEqual(result.inventory[0].sources, ['NOTICE', 'README.md (license section)']);
+    assert.equal(result.inventory[3].status, 'license-text-included');
+    assert.deepEqual(result.inventory[3].sources, [
+      'NOTICE',
+      'https://github.com/nodable/val-parsers/blob/ac48e7ea591da372be023a481875c747535812b3/LICENSE',
+    ]);
     assert.match(result.text, /Synthetic full terms/);
     assert.match(result.text, /Synthetic attribution/);
+    assert.match(result.text, /README fixture attribution/);
+    assert.match(result.text, /Supplement fixture attribution/);
+    assert.match(result.text, /Attribution without license terms/);
+    assert.equal(result.text.match(/No full license text was supplied/g)?.length, 1);
     assert.match(result.text, /Copyright fixture\nPermission is hereby granted\nTHE SOFTWARE IS PROVIDED AS IS/);
     assert.match(result.text, /Preserve this attribution\./);
     assert.doesNotMatch(result.text, /Not part of the license section/);

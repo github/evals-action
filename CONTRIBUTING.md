@@ -68,6 +68,8 @@ outputs; `pnpm check:dist` verifies them together. Full license sections in
 package READMEs are retained when standalone files are absent. The version-bound
 supplement for `@nodable/entities` comes from the license at its npm-published
 `gitHead`; keep that provenance with any update.
+Attribution-only `NOTICE` and `COPYRIGHT` files are retained separately; they
+do not suppress license fallbacks or resolve missing license terms.
 
 Entries marked `missing-license-text` are unresolved public-release blockers,
 not approved exceptions. A passing build or packaging test does not clear them.

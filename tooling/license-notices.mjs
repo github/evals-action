@@ -8,6 +8,7 @@ const supplementalNotices = {
   },
 };
 const noticeName = /^(?:licen[cs]e|notice|copying|copyright|third[-_ ]?party[-_ ]?(?:notices?|licenses?))(?:[.-].*)?$/i;
+const licenseName = /^(?:licen[cs]e|copying)(?:[.-].*)?$/i;
 const normalize = text => text.replaceAll('\r\n', '\n').replace(/[ \t]+$/gm, '').trim();
 
 export async function bundledLicenseNotices(inputs) {
@@ -29,11 +30,15 @@ export async function bundledLicenseNotices(inputs) {
     const files = (await readdir(directory, { withFileTypes: true }))
       .filter(entry => entry.isFile()).map(entry => entry.name).sort();
     const notices = [];
+    let hasLicenseText = false;
     for (const file of files.filter(file => noticeName.test(file))) {
       const text = normalize(await readFile(join(directory, file), 'utf8'));
-      if (text) notices.push({ source: file, text });
+      if (text) {
+        notices.push({ source: file, text });
+        hasLicenseText ||= licenseName.test(file);
+      }
     }
-    if (!notices.length) {
+    if (!hasLicenseText) {
       for (const file of files.filter(file => /^readme(?:[.-].*)?$/i.test(file))) {
         const text = normalize(await readFile(join(directory, file), 'utf8'));
         const heading = /^(#{1,6})\s+licen[cs]e[^\n]*\n/im.exec(text);
@@ -42,18 +47,23 @@ export async function bundledLicenseNotices(inputs) {
         const section = remainder.slice(0, nextHeading?.index ?? remainder.length);
         if (section?.includes('Permission is hereby granted') && section.includes('THE SOFTWARE IS PROVIDED')) {
           notices.push({ source: `${file} (license section)`, text: normalize(section) });
+          hasLicenseText = true;
         }
       }
     }
     const supplement = supplementalNotices[id];
-    if (!notices.length && supplement) {
-      notices.push({ source: supplement.source, text: normalize(await readFile(supplement.file, 'utf8')) });
+    if (!hasLicenseText && supplement) {
+      const text = normalize(await readFile(supplement.file, 'utf8'));
+      if (text) {
+        notices.push({ source: supplement.source, text });
+        hasLicenseText = true;
+      }
     }
     const entry = {
       name: manifest.name,
       version: manifest.version,
       declaredLicense: typeof manifest.license === 'string' ? manifest.license : null,
-      status: notices.length ? 'license-text-included' : 'missing-license-text',
+      status: hasLicenseText ? 'license-text-included' : 'missing-license-text',
       sources: notices.map(notice => notice.source),
     };
     const text = [
@@ -61,7 +71,7 @@ export async function bundledLicenseNotices(inputs) {
       `License: ${entry.declaredLicense ?? 'NOT DECLARED'}`,
       `Notice status: ${entry.status}`, '',
       ...notices.map(notice => `Source: ${notice.source}\n\n${notice.text}`),
-      ...(!notices.length ? ['No full license text was supplied by the installed package. Release-owner clearance is required; no permission is inferred.'] : []),
+      ...(!hasLicenseText ? ['No full license text was supplied by the installed package. Release-owner clearance is required; no permission is inferred.'] : []),
     ].join('\n');
     const previous = packages.get(id);
     if (previous && previous.text !== text) throw new Error(`Conflicting bundled notices for ${id}.`);
