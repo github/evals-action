@@ -10,8 +10,28 @@ Use `github/evals-action@v0` for the latest 0.x pilot release
 Use `@v0.1.0` to stay on that specific Action release. The `v0` tag advances as
 new 0.x releases are published; the interface may change during the pilot.
 Supported host: **Linux x64 GitHub-hosted runners**; the Action uses Node 24
-without a Node setup step. The repository is private and shared with the GitHub
-organization; your repository's Actions policy must allow it.
+without a Node setup step. Your repository's Actions policy must allow it.
+
+## Background
+
+Planned work and known gaps are tracked in this repository's
+[issues](https://github.com/github/evals-action/issues). Contributions are
+welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Requirements
+
+- A Linux x64 GitHub-hosted runner, such as `ubuntu-latest`. The Action runs
+  on Node 24, so no Node setup step is needed.
+- A Vally project in your repository: a `.vally.yaml` file and the evals it
+  selects. See the [Vally documentation](https://microsoft.github.io/vally/).
+- An Actions policy that allows `github/evals-action`.
+- For `all` and `run`, which call Copilot models: an organization repository
+  needs the **Allow use of Copilot CLI billed to the organization** policy, or
+  a personal repository needs the owner's Copilot seat. `lint` and `report`
+  don't call models.
+
+The Action installs the Vally CLI from npm at run time; nothing else needs to
+be installed on the runner.
 
 ## Quick start
 
@@ -366,7 +386,7 @@ eval that checks both skill invocation and exact output. This repository's
 checkout and one `uses: ./` step, using the Action's defaults. In your repository,
 use `github/evals-action@v0` instead.
 
-The Action prerelease is private and not listed on Marketplace. Organizations
+The Action prerelease is not listed on Marketplace. Organizations
 that require full-SHA Action references can pin the release commit
 `83fa12332c3e44ad899f347eaf153a0d9b6432dc` for `v0.1.0`.
 
@@ -401,3 +421,22 @@ grant that clearance.
 Use Node 24 and the pinned pnpm version. Run `pnpm check`, rebuild and commit
 `dist/index.cjs`, and follow [CONTRIBUTING.md](CONTRIBUTING.md). Security reports
 belong through [SECURITY.md](SECURITY.md), not public PR comments.
+
+## License
+
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+
+## Maintainers
+
+The maintainers are listed in [CODEOWNERS](.github/CODEOWNERS).
+
+## Support
+
+This Action is under active development. See [SUPPORT.md](SUPPORT.md) for how
+to file issues and get help.
+
+## Acknowledgement
+
+The Action runs evals with [Vally](https://microsoft.github.io/vally/). Thanks
+to the Vally maintainers and to the open source projects listed in
+[`dist/bundled-dependencies.json`](dist/bundled-dependencies.json).
