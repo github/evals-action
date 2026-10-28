@@ -1,6 +1,8 @@
 # Contributing
 
-Contributions are under the [MIT License](LICENSE). Follow
+Contributions to this project are
+[released](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license)
+to the public under the [project's open source license](LICENSE). Follow
 [this project's Contributor Code of Conduct](CODE_OF_CONDUCT.md).
 Search existing issues before proposing substantial work. Report security
 issues privately using [SECURITY.md](SECURITY.md), not the public issue tracker.
