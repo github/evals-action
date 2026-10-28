@@ -1,7 +1,7 @@
 # Contributing
 
 Contributions are under the [MIT License](LICENSE). Follow
-[GitHub's Contributor Code of Conduct](https://github.com/github/.github/blob/main/CODE_OF_CONDUCT.md).
+[this project's Contributor Code of Conduct](CODE_OF_CONDUCT.md).
 Search existing issues before proposing substantial work. Report security
 issues privately using [SECURITY.md](SECURITY.md), not the public issue tracker.
 
