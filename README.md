@@ -25,13 +25,14 @@ welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 - A Vally project in your repository: a `.vally.yaml` file and the evals it
   selects. See the [Vally documentation](https://microsoft.github.io/vally/).
 - An Actions policy that allows `github/evals-action`.
-- For `all` and `run`, which call Copilot models: an organization repository
-  needs the **Allow use of Copilot CLI billed to the organization** policy, or
-  a personal repository needs the owner's Copilot seat. `lint` and `report`
-  don't call models.
+- For `all` and `run` with Copilot workflow-token authentication: an
+  organization repository needs the **Allow use of Copilot CLI billed to the
+  organization** policy, or a personal repository needs the owner's Copilot
+  seat. `lint` and `report` don't call models.
 
-The Action installs the Vally CLI from npm at run time; nothing else needs to
-be installed on the runner.
+The Action installs the Vally CLI from npm at run time. It doesn't install your
+project's own dependencies, so add setup steps for any plugins or tools your
+evals need.
 
 ## Quick start
 
