@@ -57,7 +57,7 @@ never choose the newest match or reuse a prior attempt. Preserve explicit
 ID/digest pairs as a discovery-free path. Discovery tests use synthetic
 artifact listings; do not require live tokens or model execution.
 
-Commit `dist/index.cjs` and its generated license notices. This is an intentional
+Committing `dist` is an intentional
 JavaScript Action distribution exception: consumers execute committed `dist`
 without installing this repository. `pnpm check:dist` compares build bytes with
 the checked-in bundle. Never hand-edit generated files. Update the source,
@@ -104,7 +104,7 @@ capability through repository write access and branch governance.
 ## Release preparation
 
 The first prerelease is [`v0.1.0`](https://github.com/github/evals-action/releases/tag/v0.1.0).
-Keep published version tags unchanged. For future releases, verify the packaged
+For future releases, verify the packaged
 Action at the target commit and update consumer examples to the intended tag.
 Action release versions are independent of the selected Vally version.
 
