@@ -29,6 +29,17 @@ describe('trust and inert operations', () => {
       npm_config_userconfig: 'malicious', GIT_CONFIG_COUNT: '1', ACTIONS_RUNTIME_TOKEN: 'artifact',
     })).toEqual({ PATH: '/usr/bin', LANG: 'C', CI: 'true' });
   });
+  it('preserves only the named caller telemetry controls without interpreting their values', () => {
+    for (const value of ['1', '0', 'true', 'false', '']) {
+      const controls = { VALLY_TELEMETRY_OPTOUT: value, DO_NOT_TRACK: value, OTEL_SDK_DISABLED: value };
+      expect(inertEnvironment({
+        ...controls, GITHUB_TOKEN: 'report', COPILOT_GITHUB_TOKEN: 'model', NODE_OPTIONS: 'unsafe',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://untrusted.invalid', OTEL_EXPORTER_OTLP_HEADERS: 'private-header',
+        OTEL_RESOURCE_ATTRIBUTES: 'private-attributes',
+      })).toEqual({ ...controls, CI: 'true' });
+    }
+    expect(inertEnvironment({})).toEqual({ CI: 'true' });
+  });
   it('checks immutable checkout identity without claiming authorization', () => {
     assertRevision(`${'a'.repeat(40)}\n`, 'a'.repeat(40));
     expect(() => assertRevision('a'.repeat(40), 'b'.repeat(40))).toThrow();

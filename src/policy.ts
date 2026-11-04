@@ -53,7 +53,10 @@ export async function containedFile(directory: string, input: string, maximumByt
 // This is process hygiene, not isolation from other processes under the same runner user.
 export function inertEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {};
-  for (const key of ['PATH', 'SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'TMPDIR', 'LANG', 'LC_ALL']) {
+  for (const key of [
+    'PATH', 'SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'TMPDIR', 'LANG', 'LC_ALL',
+    'VALLY_TELEMETRY_OPTOUT', 'DO_NOT_TRACK', 'OTEL_SDK_DISABLED',
+  ]) {
     if (source[key] !== undefined) result[key] = source[key];
   }
   result.CI = 'true';

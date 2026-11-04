@@ -545,6 +545,22 @@ it('defaults to lint then run and posts once using the automatic shared job toke
   expect(JSON.stringify(mocks.setOutput.mock.calls)).not.toContain('automatic-token');
 });
 
+it.each([undefined, '1', '0', ''])('preserves caller telemetry settings in both default-all phases: %s', async (value) => {
+  delete mocks.inputs.command;
+  const names = ['VALLY_TELEMETRY_OPTOUT', 'DO_NOT_TRACK', 'OTEL_SDK_DISABLED'];
+  for (const name of names) vi.stubEnv(name, value);
+  vi.stubEnv('OTEL_EXPORTER_OTLP_HEADERS', 'private-header');
+  await runAction();
+  expect(mocks.nativeCommands.mock.calls.map(([input]) => input.command)).toEqual(['lint', 'run']);
+  for (const [env] of mocks.nativeEnv.mock.calls) {
+    for (const name of names) {
+      if (value === undefined) expect(env).not.toHaveProperty(name);
+      else expect(env).toHaveProperty(name, value);
+    }
+    expect(env).not.toHaveProperty('OTEL_EXPORTER_OTLP_HEADERS');
+  }
+});
+
 it('supports BYOK in all without also injecting the automatic Copilot token', async () => {
   mocks.inputs.command = 'all';
   mocks.inputs['github-token'] = 'automatic-report-token';

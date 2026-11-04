@@ -17,6 +17,13 @@ async function temporary() {
 const inputs = (overrides: Record<string, string> = {}) => parseInputs((key) => ({
   command: 'run', 'working-directory': '.', 'eval-paths': 'pass.eval.yaml', ...overrides,
 })[key] ?? '');
+const telemetryControls = ['VALLY_TELEMETRY_OPTOUT', 'DO_NOT_TRACK', 'OTEL_SDK_DISABLED'] as const;
+const telemetryCases: NodeJS.ProcessEnv[] = [
+  {},
+  ...telemetryControls.flatMap((name) => ['1', '0', 'true', 'false', ''].map((value) => ({ [name]: value }))),
+  { VALLY_TELEMETRY_OPTOUT: '1', DO_NOT_TRACK: '1', OTEL_SDK_DISABLED: 'true' },
+  { VALLY_TELEMETRY_OPTOUT: '0', DO_NOT_TRACK: '', OTEL_SDK_DISABLED: 'false' },
+];
 
 describe('direct CLI translation', () => {
   it('passes explicit argv without shell interpolation and preserves native override semantics', () => {
@@ -67,6 +74,27 @@ describe('direct CLI translation', () => {
       { command: 'lint', runs: '2' }, { suite: 'smoke' },
     ]) expect(() => nativeArguments(inputs(values), '.', '.', 'id')).toThrow();
   });
+  it.each(['run', 'lint'])('preserves Vally defaults and exact caller telemetry controls for %s', (command) => {
+    for (const controls of telemetryCases) {
+      const source = {
+        ...controls, PATH: '/bin', HOME: '/caller-home', COPILOT_GITHUB_TOKEN: 'model',
+        GITHUB_TOKEN: 'report', GH_TOKEN: 'gh', ACTIONS_RUNTIME_TOKEN: 'artifact', NODE_OPTIONS: 'unsafe',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://untrusted.invalid', OTEL_EXPORTER_OTLP_HEADERS: 'private-header',
+      };
+      const original = { ...source };
+      const env = nativeEnvironment(inputs({ command }), source, '/isolated-home', 'report');
+      for (const name of telemetryControls) {
+        if (controls[name] === undefined) expect(env).not.toHaveProperty(name);
+        else expect(env).toHaveProperty(name, controls[name]);
+      }
+      expect(env.HOME).toBe('/isolated-home');
+      for (const name of [
+        'COPILOT_GITHUB_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'NODE_OPTIONS',
+        'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_HEADERS',
+      ]) expect(env).not.toHaveProperty(name);
+      expect(source).toEqual(original);
+    }
+  });
   it('separates model credentials from installation, preview, reporting and process injection', () => {
     const source = { COPILOT_GITHUB_TOKEN: 'model', OPENAI_API_KEY: 'byok', GITHUB_TOKEN: 'report', ACTIONS_RUNTIME_TOKEN: 'artifact', PATH: '/bin', NODE_OPTIONS: 'unsafe' };
     const unlisted = nativeEnvironment(inputs(), source, '/home', 'report');
@@ -74,7 +102,7 @@ describe('direct CLI translation', () => {
       expect(unlisted).not.toHaveProperty(name);
     }
     const byok = nativeEnvironment(inputs({ 'credential-env': 'OPENAI_API_KEY' }), source, '/home', 'report');
-    expect(byok).toMatchObject({ OPENAI_API_KEY: 'byok', VALLY_TELEMETRY_OPTOUT: '1' });
+    expect(byok).toHaveProperty('OPENAI_API_KEY', 'byok');
     expect(byok).not.toHaveProperty('COPILOT_GITHUB_TOKEN');
     expect(nativeEnvironment(inputs({ 'credential-env': 'COPILOT_GITHUB_TOKEN' }), source, '/home', 'report'))
       .toHaveProperty('COPILOT_GITHUB_TOKEN', 'model');
@@ -150,6 +178,39 @@ describe('direct CLI translation', () => {
     expect(actual.result).toMatchObject({ outcome: 'not-run', code: 'native-empty-selection' });
     for (const path of actual.files) expect(await readFile(path, 'utf8')).not.toContain(token);
   });
+  it.each(['run', 'lint'])('transports caller telemetry settings through --version and %s without forced opt-outs', async (command) => {
+    for (const controls of [telemetryCases[0]!, ...telemetryCases.slice(-2)]) {
+      const root = await temporary();
+      const entry = join(root, 'telemetry-control.cjs');
+      await writeFile(entry, [
+        "const assert = require('node:assert/strict');",
+        `const expected = ${JSON.stringify(controls)};`,
+        `for (const name of ${JSON.stringify(telemetryControls)}) assert.equal(process.env[name], expected[name]);`,
+        "for (const name of ['GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'NODE_OPTIONS', 'OTEL_EXPORTER_OTLP_HEADERS']) assert.equal(process.env[name], undefined);",
+        "assert.ok(!JSON.stringify(process.argv).includes('synthetic-model-token'));",
+        "if (process.argv[2] === '--version') {",
+        "  assert.equal(process.env.COPILOT_GITHUB_TOKEN, undefined); console.log('0.19.0');",
+        "} else if (process.argv[2] === 'lint') {",
+        "  assert.equal(process.env.COPILOT_GITHUB_TOKEN, undefined);",
+        "} else {",
+        "  assert.equal(process.env.COPILOT_GITHUB_TOKEN, 'synthetic-model-token');",
+        "  const runId = process.argv.find(arg => arg.startsWith('--run-id=')).slice('--run-id='.length);",
+        "  console.log(JSON.stringify({type: 'run-summary', runId, passed: true, hadExecutionErrors: false, evals: []}));",
+        "}",
+      ].join('\n'));
+      const engine: EngineIdentity = { entry, version: '0.19.0', integrity: 'synthetic', sha256: sha256(await readFile(entry)), dependencySha256: '', lockSha256: '' };
+      const selected = inputs({ command, 'credential-env': 'COPILOT_GITHUB_TOKEN' });
+      const env = nativeEnvironment(selected, {
+        ...inertEnvironment(process.env), ...Object.fromEntries(telemetryControls.map((name) => [name, undefined])),
+        ...controls, COPILOT_GITHUB_TOKEN: 'synthetic-model-token', GITHUB_TOKEN: 'synthetic-report-token',
+        NODE_OPTIONS: 'unsafe', OTEL_EXPORTER_OTLP_HEADERS: 'private-header',
+      }, root, 'synthetic-report-token');
+      const original = { ...env };
+      const actual = await runNative(selected, engine, root, root, env);
+      expect(actual.result.outcome).toBe(command === 'run' ? 'not-run' : 'validated');
+      expect(env).toEqual(original);
+    }
+  });
 });
 
 function evidence(passed = true) {
@@ -218,14 +279,18 @@ async function nativeFixture() {
     entry, version: '0.19.0', sha256: sha256(await readFile(entry)),
     integrity: 'pinned-development-fixture', dependencySha256: 'development-lockfile', lockSha256: 'development-lockfile',
   };
-  return { root, project, output, engine };
+  const source = {
+    PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
+    VALLY_TELEMETRY_OPTOUT: '1', DO_NOT_TRACK: '1', OTEL_SDK_DISABLED: 'true',
+  };
+  return { root, project, output, engine, source };
 }
 
 describe('real Vally CLI, built-in mock executor, no models', () => {
   it('lints the entire project without selectors and catches invalid nested evals outside supplied selections', async () => {
     const fixture = await nativeFixture();
     const selected = inputs({ command: 'lint', 'eval-paths': '' });
-    const env = nativeEnvironment(selected, { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(selected, fixture.source, fixture.root, '');
     const valid = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
     expect(valid.result).toMatchObject({ outcome: 'validated', executed: 0 });
     await mkdir(join(fixture.project, 'nested'));
@@ -236,7 +301,7 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
   it('runs an actual suite and respects native weighted thresholds instead of all-graders-pass rules', async () => {
     const fixture = await nativeFixture();
     const selected = inputs({ 'eval-paths': '', suite: 'smoke', runs: '2', model: 'one,two' });
-    const env = nativeEnvironment(selected, { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(selected, fixture.source, fixture.root, '');
     const actual = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 4, passed: 2, failed: 0 });
     expect(actual.result.groups).toHaveLength(2);
@@ -246,13 +311,13 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
   it('preserves native include, exclude and comma-separated tag filters in real CLI execution', async () => {
     const fixture = await nativeFixture();
     const selected = inputs({ tags: 'cost=free,low\ncost!=paid' });
-    const env = nativeEnvironment(selected, { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(selected, fixture.source, fixture.root, '');
     const actual = await runNative(selected, fixture.engine, fixture.project, fixture.output, env);
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 1, passed: 1, failed: 0 });
   }, NATIVE_TEST_TIMEOUT_MS);
   it('fails an actual native verdict and reports a fully skipped selection as not-run', async () => {
     const fixture = await nativeFixture();
-    const env = nativeEnvironment(inputs(), { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(inputs(), fixture.source, fixture.root, '');
     const failed = await runNative(inputs({ 'eval-paths': 'fail.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
     expect(failed.result).toMatchObject({ outcome: 'failed', executed: 1, failed: 1 });
     const skipped = await runNative(inputs({ 'eval-paths': 'skipped.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
@@ -260,7 +325,7 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
   }, NATIVE_TEST_TIMEOUT_MS);
   it('does not turn missing suites or evidence-free discovery into success', async () => {
     const fixture = await nativeFixture();
-    const env = nativeEnvironment(inputs(), { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(inputs(), fixture.source, fixture.root, '');
     for (const suite of ['missing', 'empty']) {
       const actual = await runNative(inputs({ 'eval-paths': '', suite }), fixture.engine, fixture.project, fixture.output, env);
       expect(actual.result).toMatchObject({ outcome: 'error', code: 'native-run-summary-missing' });
@@ -268,13 +333,13 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
   }, NATIVE_TEST_TIMEOUT_MS);
   it('refuses changed executable identity and mismatched native versions', async () => {
     const fixture = await nativeFixture();
-    const env = nativeEnvironment(inputs(), { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(inputs(), fixture.source, fixture.root, '');
     await expect(runNative(inputs(), { ...fixture.engine, sha256: 'wrong' }, fixture.project, fixture.output, env)).rejects.toThrow(/executable-changed/);
     await expect(runNative(inputs(), { ...fixture.engine, version: '0.18.0' }, fixture.project, fixture.output, env)).rejects.toThrow(/version-mismatch/);
   }, NATIVE_TEST_TIMEOUT_MS);
   it('preserves actual ungraded runs and native grader operational errors', async () => {
     const fixture = await nativeFixture();
-    const env = nativeEnvironment(inputs(), { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot }, fixture.root, '');
+    const env = nativeEnvironment(inputs(), fixture.source, fixture.root, '');
     const ungraded = await runNative(inputs({ 'eval-paths': 'ungraded.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
     expect(ungraded.result).toMatchObject({ outcome: 'passed', executed: 1, passed: 1 });
     const brokenGrader = await runNative(inputs({ 'eval-paths': 'grader-error.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);

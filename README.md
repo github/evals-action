@@ -349,6 +349,13 @@ service tokens and process-injection variables are not forwarded. An explicit
 `copilot-token` or `credential-env` replaces automatic model authentication in
 all; no stored personal credential fallback is used.
 
+The Action does not force telemetry on or off; Vally owns its normal defaults.
+Caller-provided `VALLY_TELEMETRY_OPTOUT`, `DO_NOT_TRACK`, and `OTEL_SDK_DISABLED`
+environment values are preserved unchanged during evals, lint and version
+checks, including explicit opt-outs. Set these in your workflow's `env` without
+listing them in `credential-env`. Other environment filtering remains unchanged;
+telemetry endpoints, headers and arbitrary ambient variables are not forwarded.
+
 See [Copilot in Actions](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions)
 and [SDK server authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens).
 Live entitlement, organization policy, subject/judge compatibility and billing

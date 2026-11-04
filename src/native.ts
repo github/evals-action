@@ -48,9 +48,6 @@ export function nativeEnvironment(
 ): NodeJS.ProcessEnv {
   const env = inertEnvironment(source);
   env.HOME = home;
-  env.VALLY_TELEMETRY_OPTOUT = '1';
-  env.DO_NOT_TRACK = '1';
-  env.OTEL_SDK_DISABLED = 'true';
   if (inputs.command !== 'run') return env;
   const forbidden = /^(GITHUB_|GH_|ACTIONS_|RUNNER_|INPUT_|NODE_|NPM_|PNPM_|GIT_|LD_|DYLD_)|^(PATH|HOME|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|COMSPEC|SYSTEMROOT|WINDIR|TMP|TEMP|TMPDIR|PYTHONPATH|PYTHONHOME|RUBYOPT|PERL5OPT)$/;
   const reportingSecrets = [reportToken, source.GH_TOKEN, source.ACTIONS_RUNTIME_TOKEN].filter(Boolean);
@@ -253,7 +250,7 @@ export async function runNative(
   const runId = randomUUID();
   const commands = nativeArguments(inputs, cwd, directory, runId);
   if (sha256(await readFile(engine.entry)) !== engine.sha256) throw new NativeError('engine-executable-changed', 'dependency');
-  const version = await invoke(engine, ['--version'], cwd, { ...inertEnvironment(env), HOME: env.HOME, VALLY_TELEMETRY_OPTOUT: '1', DO_NOT_TRACK: '1' }, directory);
+  const version = await invoke(engine, ['--version'], cwd, { ...inertEnvironment(env), HOME: env.HOME }, directory);
   if (version.cancelled) return { result: { outcome: 'cancelled', completeness: 'partial', category: 'execution', code: 'native-cancelled' }, files: [version.stdout, version.stderr] };
   if (version.code !== 0 || (await readFile(version.stdout, 'utf8')).trim() !== engine.version) throw new NativeError('native-version-mismatch', 'dependency');
   const files: string[] = [];
