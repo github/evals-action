@@ -41,6 +41,9 @@ jobs:
     name: Action smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      VALLY_TELEMETRY_OPTOUT: '1'
+      DO_NOT_TRACK: '1'
     steps:
       - uses: actions/checkout@v7
         with:

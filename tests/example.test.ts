@@ -9,6 +9,37 @@ import { assertSerializedReporter } from '../src/reporter.js';
 
 const execute = promisify(execFile);
 
+describe('telemetry workflow contracts', () => {
+  it('opts out packaged acceptance fixtures without changing other workflow defaults', async () => {
+    const workflow = parse(await readFile('.github/workflows/ci.yml', 'utf8')) as {
+      env?: Record<string, string>;
+      jobs: Record<string, {
+        env?: Record<string, string>;
+        steps: Array<{ uses?: string; env?: Record<string, string>; with?: Record<string, string> }>;
+      }>;
+    };
+    expect(workflow.env).toBeUndefined();
+    expect(workflow.jobs.check?.env).toBeUndefined();
+    const packaged = workflow.jobs.packaged!;
+    expect(packaged.env).toEqual({ VALLY_TELEMETRY_OPTOUT: '1', DO_NOT_TRACK: '1' });
+    const acceptanceSteps = packaged.steps.filter((step) => step.uses === './');
+    expect(acceptanceSteps.map((step) => step.with?.command)).toEqual(['run', 'run', 'lint']);
+    for (const step of acceptanceSteps) expect(step.env).toBeUndefined();
+  });
+
+  it('documents the native telemetry default and a concrete caller opt-out', async () => {
+    const readme = await readFile('README.md', 'utf8');
+    expect(readme).toContain('Vally collects pseudonymous usage telemetry by default');
+    expect(readme).toContain('https://microsoft.github.io/vally/reference/telemetry/');
+    const source = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!)
+      .find((yaml) => yaml.includes('VALLY_TELEMETRY_OPTOUT:'))!;
+    const steps = parse(source) as Array<{ uses: string; env: Record<string, string>; with: Record<string, string> }>;
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ uses: 'github/evals-action@v0', env: { VALLY_TELEMETRY_OPTOUT: '1' } });
+    expect(steps[0]!.with).not.toHaveProperty('credential-env');
+  });
+});
+
 describe('real Copilot example contract', () => {
   it('documents separate jobs with one automatic reporter and no artifact wiring', async () => {
     const readme = await readFile('README.md', 'utf8');
