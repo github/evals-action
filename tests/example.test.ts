@@ -43,7 +43,8 @@ describe('telemetry workflow contracts', () => {
 describe('documentation content contracts', () => {
   it('states in Outcomes and evidence that passing checks do not guarantee AI correctness and omits the internal license-clearance note', async () => {
     const readme = await readFile('README.md', 'utf8');
-    expect(readme).toContain("A passing check doesn't guarantee the AI will get it right every time.");
+    const outcomesMatch = /^## Outcomes and evidence\n([\s\S]*?)(?=\n## |\s*$)/m.exec(readme);
+    expect(outcomesMatch?.[1]).toContain("A passing check doesn't guarantee the AI will get it right every time.");
     expect(readme).not.toContain('Entries marked `missing-license-text` still need authoritative terms');
     expect(readme).not.toContain('release-owner clearance before public distribution');
   });
