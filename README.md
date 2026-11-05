@@ -305,6 +305,7 @@ Lint success is `validated`, not an eval pass. A fully evidenced empty run with
 exit zero warns and reports `not-run`: nonblocking but **not a pass**. Ambiguous
 empty discovery with nonzero exit or missing JSONL remains an error. Ungraded
 trials and weighted thresholds retain Vally's native semantics.
+A passing check doesn't guarantee the AI will get it right every time.
 
 | Output | Meaning |
 | --- | --- |
@@ -437,9 +438,6 @@ Bundled dependencies are listed in
 [`dist/bundled-dependencies.json`](dist/bundled-dependencies.json), with available
 full terms in [`dist/THIRD-PARTY-NOTICES.txt`](dist/THIRD-PARTY-NOTICES.txt) and
 retained inline notices in [`dist/index.cjs.LEGAL.txt`](dist/index.cjs.LEGAL.txt).
-Entries marked `missing-license-text` still need authoritative terms and
-release-owner clearance before public distribution; packaging checks do not
-grant that clearance.
 
 Use Node 24 and the pinned pnpm version. Run `pnpm check`, rebuild and commit
 `dist/index.cjs`, and follow [CONTRIBUTING.md](CONTRIBUTING.md). Security reports
