@@ -109,6 +109,7 @@ export function hasQualityDetails(groups: readonly ReportGroup[] | undefined): b
 export function renderQualitySection(
   heading: string, groups: readonly ReportGroup[], maxGroups = 25, maxBytes = 16_000,
 ): string {
+  if (maxBytes <= 0 || groups.length === 0) return '';
   const header = `${heading}\n\n| Eval | Verdict | Score | Duration | Tokens |\n| --- | --- | --- | --- | --- |\n`;
   const footer = '\n\nFurther groups are available in the structured artifact.';
   const footerBytes = Buffer.byteLength(footer, 'utf8');
@@ -126,7 +127,12 @@ export function renderQualitySection(
     rows.push(row);
     usedBytes += rowBytes;
   }
-  return header + rows.join('\n') + (rows.length < groups.length ? footer : '');
+  if (rows.length === 0) {
+    const fallback = `${heading}${footer}`;
+    return Buffer.byteLength(fallback, 'utf8') <= maxBytes ? fallback : '';
+  }
+  const result = header + rows.join('\n') + (rows.length < groups.length ? footer : '');
+  return Buffer.byteLength(result, 'utf8') <= maxBytes ? result : '';
 }
 
 export function renderSummary(report: Report): string {
@@ -167,7 +173,7 @@ function serializeTokens(tokens: ReportTokens): ReportTokens {
 // Explicit projection excludes arbitrary runner JSON, paths, prompts and diagnostics.
 export function structuredReport(report: Report): string {
   const hasExecutedTrials = (report.executed ?? 0) > 0;
-  return JSON.stringify({
+  const serialize = (includeGroupMetrics: boolean) => JSON.stringify({
     schemaVersion: 2, reportId: report.reportId, repository: report.repository,
     workflowRunId: report.workflowRunId, workflowRunAttempt: report.workflowRunAttempt,
     sourceJob: report.sourceJob, selection: report.selection,
@@ -195,12 +201,14 @@ export function structuredReport(report: Report): string {
       stimuliRun,
       stimuliTotal,
       skipped,
-      ...(trials > 0 && overallScore !== undefined ? { overallScore } : {}),
-      ...(trials > 0 && threshold !== undefined ? { threshold } : {}),
-      ...(trials > 0 && durationMs !== undefined ? { durationMs } : {}),
-      ...(trials > 0 && tokens !== undefined ? { tokens: serializeTokens(tokens) } : {}),
+      ...(includeGroupMetrics && trials > 0 && overallScore !== undefined ? { overallScore } : {}),
+      ...(includeGroupMetrics && trials > 0 && threshold !== undefined ? { threshold } : {}),
+      ...(includeGroupMetrics && trials > 0 && durationMs !== undefined ? { durationMs } : {}),
+      ...(includeGroupMetrics && trials > 0 && tokens !== undefined ? { tokens: serializeTokens(tokens) } : {}),
     })) } : {}),
   }, null, 2) + '\n';
+  const full = serialize(true);
+  return Buffer.byteLength(full, 'utf8') > 1_000_000 && report.groups ? serialize(false) : full;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -376,10 +384,12 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
       throw new Error('Structured report totals contradict native group evidence.');
     }
     const executedGroups = groups.filter((group) => group.trials > 0);
-    const expectedDurationMs = executedGroups.length > 0 && executedGroups.every((group) => group.durationMs !== undefined)
+    const hasGroupDuration = executedGroups.some((group) => group.durationMs !== undefined);
+    const expectedDurationMs = hasGroupDuration && executedGroups.every((group) => group.durationMs !== undefined)
       ? executedGroups.reduce((total, group) => total + group.durationMs!, 0)
       : undefined;
-    const expectedTokens: ReportTokens | undefined = executedGroups.length > 0 && executedGroups.every((group) => group.tokens !== undefined)
+    const hasGroupTokens = executedGroups.some((group) => group.tokens !== undefined);
+    const expectedTokens: ReportTokens | undefined = hasGroupTokens && executedGroups.every((group) => group.tokens !== undefined)
       ? {
           ...(executedGroups.every((group) => group.tokens!.input !== undefined && group.tokens!.output !== undefined)
             ? {
@@ -390,7 +400,8 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
           total: executedGroups.reduce((sum, group) => sum + group.tokens!.total, 0),
         }
       : undefined;
-    if (durationMs !== expectedDurationMs || !tokensEqual(tokens, expectedTokens)) {
+    if ((hasGroupDuration && (expectedDurationMs === undefined || durationMs !== expectedDurationMs)) ||
+        (hasGroupTokens && (expectedTokens === undefined || !tokensEqual(tokens, expectedTokens)))) {
       throw new Error('Structured report metrics contradict native group evidence.');
     }
     if ((outcome === 'passed' && (groupExecuted === 0 || groupFailed !== 0 || passed !== groupPassed)) ||

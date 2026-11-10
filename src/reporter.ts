@@ -157,7 +157,7 @@ export function renderComment(
   const status = evaluation?.outcome ?? lint?.outcome ?? report.outcome;
   const rows = evaluation?.groups ?? [];
   const suite = evaluation?.suite;
-  return `# Evals: ${status}\n\n` +
+  const base = `# Evals: ${status}\n\n` +
     (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
     (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
       ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
@@ -169,8 +169,9 @@ export function renderComment(
         rows.slice(0, 100).map((group) =>
           `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
         ).join('\n') + '\n\n' +
-        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') +
-        (hasQualityDetails(rows)
-          ? renderQualitySection('### Quality & token summary', rows) + '\n\n'
-          : '') : '') : '');
+        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
+  if (!evaluation || !rows.length || !hasQualityDetails(rows)) return base;
+  const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(base, 'utf8')));
+  const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
+  return quality ? `${base}${quality}\n\n` : base;
 }

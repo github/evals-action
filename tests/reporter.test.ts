@@ -182,6 +182,32 @@ describe('one sticky PR report for direct Action calls', () => {
     const largeBody = String(largeTest.writes()[0]?.[2]?.body);
     expect(largeBody).toContain('Further groups are available in the structured artifact.');
     expect(Buffer.byteLength(largeBody, 'utf8')).toBeLessThanOrEqual(60_000);
+
+    const ampersandGroups = Array.from({ length: 100 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `${'&'.repeat(90)}-${index}`,
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 0.9,
+      threshold: 0.8,
+      durationMs: 50,
+      tokens: { input: 20, output: 30, total: 50 },
+    }));
+    const ampersandEvaluation: Report = {
+      ...report, suite: 'smoke', outcome: 'passed', executed: 100,
+      passed: 100, failed: 0, durationMs: 5000,
+      tokens: { input: 2000, output: 3000, total: 5000 },
+      groups: ampersandGroups,
+    };
+    const ampersandTest = fixture();
+    expect(await postReport(ampersandTest.client, context, ampersandEvaluation, 123, { report: lint, artifactId: 124 })).toBe('created');
+    const ampersandBody = String(ampersandTest.writes()[0]?.[2]?.body);
+    expect(ampersandBody).toContain('### Quality & token summary');
+    expect(ampersandBody).toContain('Further groups are available in the structured artifact.');
+    expect(Buffer.byteLength(ampersandBody, 'utf8')).toBeLessThanOrEqual(60_000);
   });
   it('reports failed evaluations and lint failures accurately', async () => {
     const test = fixture();

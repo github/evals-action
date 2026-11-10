@@ -182,6 +182,37 @@ describe('minimal presentation projections', () => {
     expect(largeSummary).toContain('Further groups are available in the structured artifact.');
     expect(Buffer.byteLength(largeSummary, 'utf8')).toBeLessThan(100_000);
 
+    // Enforces 1,000,000-byte artifact budget for 1,000 CJK-named groups with metrics.
+    const cjkGroups = Array.from({ length: 1000 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `${'測'.repeat(220)}${index}`,
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 0.95,
+      threshold: 0.8,
+      durationMs: 10,
+      tokens: { input: 5, output: 5, total: 10 },
+    }));
+    const cjkReport = report({
+      outcome: 'passed',
+      executed: 1000,
+      passed: 1000,
+      failed: 0,
+      durationMs: 10_000,
+      tokens: { input: 5_000, output: 5_000, total: 10_000 },
+      groups: cjkGroups,
+    });
+    const cjkSerialized = structuredReport(cjkReport);
+    expect(Buffer.byteLength(cjkSerialized, 'utf8')).toBeLessThanOrEqual(1_000_000);
+    const cjkParsed = parseStructuredReport(cjkSerialized, expectation);
+    expect(cjkParsed.durationMs).toBe(10_000);
+    expect(cjkParsed.tokens).toEqual({ input: 5_000, output: 5_000, total: 10_000 });
+    expect(cjkParsed.groups).toHaveLength(1000);
+    expect(cjkParsed.groups?.[0]?.overallScore).toBeUndefined();
+
     const badGroup = (overrides: Record<string, unknown>) => JSON.stringify({
       ...rich,
       groups: [{ ...rich.groups![0], ...overrides }],
@@ -196,6 +227,20 @@ describe('minimal presentation projections', () => {
       JSON.stringify({ ...rich, tokens: { total: 10, extra: 1 } }),
       JSON.stringify({ ...report(), durationMs: 10, groups: [] }),
       JSON.stringify({ ...report(), tokens: { total: 10 }, groups: [] }),
+      JSON.stringify({
+        ...rich,
+        executed: 4,
+        passed: 2,
+        durationMs: 240,
+        tokens: { input: 600, output: 300, total: 900 },
+        groups: [
+          rich.groups![0],
+          {
+            identity: 'd'.repeat(64), name: 'partial-metrics', passed: true,
+            trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+          },
+        ],
+      }),
       badGroup({ overallScore: 1.2 }),
       badGroup({ overallScore: -0.1 }),
       badGroup({ threshold: 2 }),
