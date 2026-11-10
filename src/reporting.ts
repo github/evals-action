@@ -400,8 +400,8 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
           total: executedGroups.reduce((sum, group) => sum + group.tokens!.total, 0),
         }
       : undefined;
-    if ((hasGroupDuration && (expectedDurationMs === undefined || durationMs !== expectedDurationMs)) ||
-        (hasGroupTokens && (expectedTokens === undefined || !tokensEqual(tokens, expectedTokens)))) {
+    if ((hasGroupDuration && durationMs !== expectedDurationMs) ||
+        (hasGroupTokens && !tokensEqual(tokens, expectedTokens))) {
       throw new Error('Structured report metrics contradict native group evidence.');
     }
     if ((outcome === 'passed' && (groupExecuted === 0 || groupFailed !== 0 || passed !== groupPassed)) ||

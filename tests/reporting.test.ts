@@ -213,6 +213,21 @@ describe('minimal presentation projections', () => {
     expect(cjkParsed.groups).toHaveLength(1000);
     expect(cjkParsed.groups?.[0]?.overallScore).toBeUndefined();
 
+    const partialGroupMetrics = report({
+      outcome: 'passed',
+      executed: 4,
+      passed: 2,
+      failed: 0,
+      groups: [
+        rich.groups![0]!,
+        {
+          identity: 'd'.repeat(64), name: 'partial-metrics', passed: true,
+          trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        },
+      ],
+    });
+    expect(parseStructuredReport(structuredReport(partialGroupMetrics), expectation)).toEqual(partialGroupMetrics);
+
     const badGroup = (overrides: Record<string, unknown>) => JSON.stringify({
       ...rich,
       groups: [{ ...rich.groups![0], ...overrides }],
