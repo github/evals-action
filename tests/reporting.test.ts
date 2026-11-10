@@ -126,8 +126,104 @@ describe('minimal presentation projections', () => {
         groups: [{ identity: 'c'.repeat(64), passed: false, trials: 1, stimuliRun: 0, stimuliTotal: 1, skipped: 1 }],
       }),
       mutate({ outcome: 'not-run', executed: 0, groups: undefined }),
-      mutate({ groups: Array.from({ length: 10_001 }, () => ({})) }),
+      mutate({ groups: Array.from({ length: 1001 }, () => ({})) }),
     ]) expect(() => parseStructuredReport(text, expectation)).toThrow();
+  });
+  it('round-trips and validates optional group scores, duration, and tokens while enforcing byte budgets', () => {
+    const expectation = {
+      reportId: 'evals', repository: 'o/r', workflowRunId: 100,
+      workflowRunAttempt: 1, revision: 'a'.repeat(40),
+    };
+    const rich = report({
+      outcome: 'passed', executed: 2, passed: 1, failed: 0,
+      durationMs: 120,
+      tokens: { input: 300, output: 150, total: 450 },
+      groups: [{
+        identity: 'c'.repeat(64), name: 'rich-eval', passed: true,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 0.95, threshold: 0.8, durationMs: 120,
+        tokens: { input: 300, output: 150, total: 450 },
+      }],
+    });
+    const serialized = structuredReport(rich);
+    const parsed = parseStructuredReport(serialized, expectation);
+    expect(parsed).toEqual(rich);
+    const summary = renderSummary(parsed);
+    expect(summary).toContain('Duration: 120ms. Tokens: 450 (300 in / 150 out).');
+    expect(summary).toContain('| Eval | Trials executed | Stimuli run | Skipped | Native verdict |');
+    expect(summary).toContain('## Quality and token usage');
+    expect(summary).toContain('| Eval | Verdict | Score | Duration | Tokens |');
+    expect(summary).toContain('| rich-eval | passed | 0.95 (threshold 0.80) | 120ms | 450 tokens (300 in / 150 out) |');
+
+    // Enforces 25-group cap and UTF-8 byte budget on the quality table.
+    const manyGroups = Array.from({ length: 30 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `eval-${index}-${'&'.repeat(200)}`,
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 0.9,
+      threshold: 0.8,
+      durationMs: 10,
+      tokens: { input: 5, output: 5, total: 10 },
+    }));
+    const largeReport = report({
+      outcome: 'passed',
+      executed: 30,
+      passed: 30,
+      failed: 0,
+      durationMs: 300,
+      tokens: { input: 150, output: 150, total: 300 },
+      groups: manyGroups,
+    });
+    const largeSummary = renderSummary(largeReport);
+    expect(largeSummary).toContain('Further groups are available in the structured artifact.');
+    expect(Buffer.byteLength(largeSummary, 'utf8')).toBeLessThan(100_000);
+
+    const badGroup = (overrides: Record<string, unknown>) => JSON.stringify({
+      ...rich,
+      groups: [{ ...rich.groups![0], ...overrides }],
+    });
+    for (const invalid of [
+      JSON.stringify({ ...rich, durationMs: -1 }),
+      JSON.stringify({ ...rich, durationMs: 999 }),
+      JSON.stringify({ ...rich, tokens: { total: -1 } }),
+      JSON.stringify({ ...rich, tokens: { input: 300, total: 450 } }),
+      JSON.stringify({ ...rich, tokens: { input: 300, output: 200, total: 450 } }),
+      JSON.stringify({ ...rich, tokens: { input: 300, output: 150, total: 999 } }),
+      JSON.stringify({ ...rich, tokens: { total: 10, extra: 1 } }),
+      JSON.stringify({ ...report(), durationMs: 10, groups: [] }),
+      JSON.stringify({ ...report(), tokens: { total: 10 }, groups: [] }),
+      badGroup({ overallScore: 1.2 }),
+      badGroup({ overallScore: -0.1 }),
+      badGroup({ threshold: 2 }),
+      badGroup({ overallScore: 0.9, threshold: undefined }),
+      badGroup({ durationMs: -5 }),
+      badGroup({ tokens: { input: -1, output: 5, total: 4 } }),
+      badGroup({ tokens: { input: 10, total: 10 } }),
+      badGroup({ tokens: { input: 6, output: 6, total: 10 } }),
+      badGroup({ cases: [{ stimulus: 'not-allowed', passed: true }] }),
+      JSON.stringify({
+        ...report({ outcome: 'not-run', executed: 0, passed: 0, failed: 0 }),
+        groups: [{
+          identity: 'c'.repeat(64), name: 'skipped-eval', passed: true,
+          trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1,
+          durationMs: 10,
+        }],
+      }),
+      JSON.stringify({
+        ...report({ outcome: 'not-run', executed: 0, passed: 0, failed: 0 }),
+        groups: [{
+          identity: 'c'.repeat(64), name: 'skipped-eval', passed: true,
+          trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1,
+          tokens: { total: 10 },
+        }],
+      }),
+    ]) {
+      expect(() => parseStructuredReport(invalid, expectation)).toThrow();
+    }
   });
 });
 

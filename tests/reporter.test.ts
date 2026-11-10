@@ -137,6 +137,52 @@ describe('one sticky PR report for direct Action calls', () => {
     expect(update.writes()[0]?.[0]).toBe('PATCH');
     expect(update.writes()[0]?.[2]?.body).not.toContain('**Run:**');
   });
+  it('renders the Quality & token summary table in the sticky PR comment and bounds it within the comment byte budget', async () => {
+    const test = fixture();
+    const evaluation: Report = {
+      ...report, suite: 'smoke', outcome: 'passed', executed: 2,
+      passed: 1, failed: 0, durationMs: 120,
+      tokens: { input: 300, output: 150, total: 450 },
+      groups: [{
+        identity: 'a'.repeat(64), name: 'skill-check', passed: true,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 0.95, threshold: 0.8, durationMs: 120,
+        tokens: { input: 300, output: 150, total: 450 },
+      }],
+    };
+    const lint: Report = { ...report, sourceJob: 'lint', reportId: 'smoke-lint', command: 'lint', outcome: 'validated', executed: 0 };
+    expect(await postReport(test.client, context, evaluation, 123, { report: lint, artifactId: 124 })).toBe('created');
+    const body = String(test.writes()[0]?.[2]?.body);
+    expect(body).toContain('| Eval | Trials | Result |');
+    expect(body).toContain('### Quality & token summary');
+    expect(body).toContain('| Eval | Verdict | Score | Duration | Tokens |');
+    expect(body).toContain('| skill-check | passed | 0.95 (threshold 0.80) | 120ms | 450 tokens (300 in / 150 out) |');
+
+    const manyGroups = Array.from({ length: 40 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `group-${index}-${'x'.repeat(240)}`,
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 0.9,
+      threshold: 0.8,
+      durationMs: 50,
+      tokens: { input: 20, output: 30, total: 50 },
+    }));
+    const largeEvaluation: Report = {
+      ...report, suite: 'smoke', outcome: 'passed', executed: 40,
+      passed: 40, failed: 0, durationMs: 2000,
+      tokens: { input: 800, output: 1200, total: 2000 },
+      groups: manyGroups,
+    };
+    const largeTest = fixture();
+    expect(await postReport(largeTest.client, context, largeEvaluation, 123, { report: lint, artifactId: 124 })).toBe('created');
+    const largeBody = String(largeTest.writes()[0]?.[2]?.body);
+    expect(largeBody).toContain('Further groups are available in the structured artifact.');
+    expect(Buffer.byteLength(largeBody, 'utf8')).toBeLessThanOrEqual(60_000);
+  });
   it('reports failed evaluations and lint failures accurately', async () => {
     const test = fixture();
     const failure: Report = { ...report, outcome: 'failed', executed: 1, failed: 1, passed: 0 };

@@ -265,6 +265,84 @@ describe('native evidence projection', () => {
     }), 'id', 1)).toMatchObject({ outcome: 'error', category: 'execution' });
     expect(() => parseNativeEvidence(format({ passed: true, score: 1, details: 'invalid' }), 'id', 0)).toThrow();
   });
+  it('extracts overallScore, threshold, durationMs, and token usage at the group level without leaking stimulus names', () => {
+    const trial1 = {
+      type: 'trial-result', runId: 'id', itemId: 'item-1', evalFilePath: '/private/eval.yaml',
+      evalName: 'skill-eval', variant: 'default', stimulus: 'private-case-alpha', status: 'success',
+      durationMs: 120,
+      gradeResult: { passed: true, score: 0.95 },
+      trajectory: { id: 't1', output: 'ok', metrics: { tokenUsage: { inputTokens: 300, outputTokens: 150, totalTokens: 450 } } },
+    };
+    const trial2 = {
+      type: 'trial-result', runId: 'id', itemId: 'item-2', evalFilePath: '/private/eval.yaml',
+      evalName: 'skill-eval', variant: 'default', stimulus: 'private-case-beta', status: 'success',
+      durationMs: 80,
+      gradeResult: { passed: false, score: 0.5 },
+      trajectory: { id: 't2', output: 'partial', metrics: { tokenUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 } } },
+    };
+    const summary = {
+      type: 'run-summary', runId: 'id', passed: true, hadExecutionErrors: false,
+      evals: [{
+        evalFilePath: '/private/eval.yaml', variant: 'default', passed: true,
+        scoringApplied: true, overallScore: 0.725, threshold: 0.7, stimuliRun: 2, stimuliTotal: 2,
+      }],
+    };
+    const parsed = parseNativeEvidence([trial1, trial2, summary].map((row) => JSON.stringify(row)).join('\n'), 'id', 0);
+    expect(parsed).toMatchObject({
+      outcome: 'passed',
+      executed: 2,
+      passed: 1,
+      failed: 0,
+      durationMs: 200,
+      tokens: { input: 400, output: 200, total: 600 },
+    });
+    expect(parsed.groups?.[0]).toMatchObject({
+      name: 'skill-eval',
+      passed: true,
+      trials: 2,
+      overallScore: 0.725,
+      threshold: 0.7,
+      durationMs: 200,
+      tokens: { input: 400, output: 200, total: 600 },
+    });
+    expect(parsed.groups?.[0]).not.toHaveProperty('cases');
+    expect(JSON.stringify(parsed)).not.toMatch(/private-case-alpha|private-case-beta/);
+
+    // Partial trial duration or token coverage omits group/top-level metrics rather than reporting incomplete totals.
+    const partialTrial2 = {
+      ...trial2,
+      durationMs: undefined,
+      trajectory: { id: 't2', output: 'partial', metrics: { tokenUsage: { inputTokens: 100, totalTokens: 150 } } },
+    };
+    const partialParsed = parseNativeEvidence([trial1, partialTrial2, summary].map((row) => JSON.stringify(row)).join('\n'), 'id', 0);
+    expect(partialParsed.durationMs).toBeUndefined();
+    expect(partialParsed.groups?.[0]?.durationMs).toBeUndefined();
+    expect(partialParsed.tokens).toEqual({ total: 600 });
+    expect(partialParsed.groups?.[0]?.tokens).toEqual({ total: 600 });
+
+    // Skipped (zero-trial) groups omit scoring, duration, and token metrics.
+    const skippedTrial = {
+      type: 'trial-result', runId: 'id', itemId: 'item-skip', evalFilePath: '/private/skipped.yaml',
+      evalName: 'skipped-eval', variant: 'default', stimulus: 'private-skip', status: 'skipped',
+    };
+    const skippedSummary = {
+      type: 'run-summary', runId: 'id', passed: true, hadExecutionErrors: false,
+      evals: [{
+        evalFilePath: '/private/skipped.yaml', variant: 'default', passed: true,
+        scoringApplied: true, overallScore: 1, threshold: 0.8, stimuliRun: 0, stimuliTotal: 1, stimuliSkipped: 1,
+      }],
+    };
+    const skippedParsed = parseNativeEvidence([skippedTrial, skippedSummary].map((row) => JSON.stringify(row)).join('\n'), 'id', 0);
+    expect(skippedParsed.groups?.[0]).toMatchObject({ name: 'skipped-eval', trials: 0, skipped: 1 });
+    expect(skippedParsed.groups?.[0]?.overallScore).toBeUndefined();
+    expect(skippedParsed.groups?.[0]?.threshold).toBeUndefined();
+    expect(skippedParsed.groups?.[0]?.durationMs).toBeUndefined();
+    expect(skippedParsed.groups?.[0]?.tokens).toBeUndefined();
+
+    expect(() => parseNativeEvidence([
+      trial1, trial2, { ...summary, evals: [{ ...summary.evals[0], overallScore: 1.5 }] },
+    ].map((row) => JSON.stringify(row)).join('\n'), 'id', 0)).toThrow(/scoring-evidence/);
+  });
 });
 
 async function nativeFixture() {

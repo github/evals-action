@@ -4,7 +4,7 @@ import { open, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import type { Inputs } from './inputs.js';
 import { inertEnvironment, object } from './policy.js';
-import type { Report } from './reporting.js';
+import type { Report, ReportTokens } from './reporting.js';
 import { sha256, type EngineIdentity } from './tooling.js';
 
 export class NativeError extends Error {
@@ -20,6 +20,8 @@ export interface NativeResult {
   executed?: number;
   passed?: number;
   failed?: number;
+  durationMs?: number;
+  tokens?: ReportTokens;
   nativeRunId?: string;
   groups?: Report['groups'];
 }
@@ -132,6 +134,33 @@ function count(value: unknown): number {
   return value;
 }
 
+function safeNonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+interface BucketAccumulator {
+  trials: number;
+  stimuli: Set<string>;
+  skipped: number;
+  name?: string;
+  durationMs: number;
+  durationTrials: number;
+  totalTokens: number;
+  tokenTrials: number;
+  inputTokens: number;
+  outputTokens: number;
+  ioTokenTrials: number;
+}
+
+function emptyBucket(): BucketAccumulator {
+  return {
+    trials: 0, stimuli: new Set<string>(), skipped: 0,
+    durationMs: 0, durationTrials: 0,
+    totalTokens: 0, tokenTrials: 0,
+    inputTokens: 0, outputTokens: 0, ioTokenTrials: 0,
+  };
+}
+
 export function parseNativeEvidence(text: string, runId: string, exitCode: number | null): NativeResult {
   const rows: Record<string, unknown>[] = [];
   try {
@@ -144,12 +173,12 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     throw new NativeError('native-run-summary-missing', 'evidence');
   }
   if (rows.some((row) => row.runId !== runId) || typeof summary.passed !== 'boolean' ||
-      typeof summary.hadExecutionErrors !== 'boolean' || !Array.isArray(summary.evals)) {
+      typeof summary.hadExecutionErrors !== 'boolean' || !Array.isArray(summary.evals) || summary.evals.length > 1000) {
     throw new NativeError('native-evidence-identity-or-schema-mismatch', 'evidence');
   }
   const trials = rows.slice(0, -1);
   const itemIds = new Set<string>();
-  const buckets = new Map<string, { trials: number; stimuli: Set<string>; skipped: number; name?: string }>();
+  const buckets = new Map<string, BucketAccumulator>();
   let executionErrors = summary.hadExecutionErrors;
   for (const trial of trials) {
     if (trial.type !== 'trial-result' || typeof trial.itemId !== 'string' || itemIds.has(trial.itemId) ||
@@ -160,7 +189,7 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     }
     itemIds.add(trial.itemId);
     const key = sha256(JSON.stringify([trial.evalFilePath, trial.variant, trial.model ?? '']));
-    const bucket = buckets.get(key) ?? { trials: 0, stimuli: new Set<string>(), skipped: 0 };
+    const bucket = buckets.get(key) ?? emptyBucket();
     if (trial.evalName !== undefined) {
       if (typeof trial.evalName !== 'string' || !trial.evalName || trial.evalName.length > 256 ||
           /[\r\n]/.test(trial.evalName) || (bucket.name !== undefined && bucket.name !== trial.evalName)) {
@@ -172,6 +201,11 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     else {
       bucket.trials++;
       bucket.stimuli.add(trial.stimulus);
+      const trialDurationMs = safeNonNegativeInteger(trial.durationMs);
+      if (trialDurationMs !== undefined) {
+        bucket.durationMs += trialDurationMs;
+        bucket.durationTrials++;
+      }
       if (trial.status === 'error') executionErrors = true;
       if (trial.status === 'success' && (trial.gradeResult === undefined || trial.trajectory === null || trial.trajectory === undefined)) {
         throw new NativeError('native-trial-evidence-missing', 'evidence');
@@ -180,6 +214,26 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
         try {
           const trajectory = object(trial.trajectory);
           if (typeof trajectory.id !== 'string' || typeof trajectory.output !== 'string') throw new Error('Invalid native trajectory.');
+          if (trajectory.metrics !== undefined && trajectory.metrics !== null &&
+              typeof trajectory.metrics === 'object' && !Array.isArray(trajectory.metrics)) {
+            const metrics = trajectory.metrics as Record<string, unknown>;
+            if (metrics.tokenUsage !== undefined && metrics.tokenUsage !== null &&
+                typeof metrics.tokenUsage === 'object' && !Array.isArray(metrics.tokenUsage)) {
+              const usage = metrics.tokenUsage as Record<string, unknown>;
+              const totalTokens = safeNonNegativeInteger(usage.totalTokens);
+              const inputTokens = safeNonNegativeInteger(usage.inputTokens);
+              const outputTokens = safeNonNegativeInteger(usage.outputTokens);
+              if (totalTokens !== undefined) {
+                bucket.totalTokens += totalTokens;
+                bucket.tokenTrials++;
+                if (inputTokens !== undefined && outputTokens !== undefined && inputTokens + outputTokens <= totalTokens) {
+                  bucket.inputTokens += inputTokens;
+                  bucket.outputTokens += outputTokens;
+                  bucket.ioTokenTrials++;
+                }
+              }
+            }
+          }
           // Null is the native contract for an ungraded trial. Never invent a grader requirement.
           const pending: unknown[] = trial.gradeResult === null ? [] : [trial.gradeResult];
           while (pending.length) {
@@ -208,13 +262,14 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
         typeof group.passed !== 'boolean' || typeof group.scoringApplied !== 'boolean' ||
         (group.model !== undefined && typeof group.model !== 'string')) throw new NativeError('invalid-native-eval-summary', 'evidence');
     if (group.scoringApplied && (typeof group.overallScore !== 'number' || !Number.isFinite(group.overallScore) ||
+        group.overallScore < 0 || group.overallScore > 1 ||
         typeof group.threshold !== 'number' || !Number.isFinite(group.threshold) || group.threshold < 0 || group.threshold > 1)) {
       throw new NativeError('invalid-native-scoring-evidence', 'evidence');
     }
     const key = sha256(JSON.stringify([group.evalFilePath, group.variant, group.model ?? '']));
     if (seen.has(key)) throw new NativeError('duplicate-native-eval-summary', 'evidence');
     seen.add(key);
-    const bucket = buckets.get(key) ?? { trials: 0, stimuli: new Set<string>(), skipped: 0 };
+    const bucket = buckets.get(key) ?? emptyBucket();
     const stimuliRun = count(group.stimuliRun);
     const stimuliTotal = count(group.stimuliTotal);
     const skipped = count(group.stimuliSkipped ?? 0);
@@ -224,13 +279,55 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     if (group.error !== undefined) executionErrors = true;
     const name = bucket.name ?? basename(group.evalFilePath);
     if (!name || name.length > 256 || /[\r\n]/.test(name)) throw new NativeError('invalid-native-eval-name', 'evidence');
-    groups.push({ identity: key, name, passed: group.passed, trials: bucket.trials, stimuliRun, stimuliTotal, skipped });
+    const groupDurationMs = bucket.trials > 0 && bucket.durationTrials === bucket.trials ? bucket.durationMs : undefined;
+    const groupTokens: ReportTokens | undefined = bucket.trials > 0 && bucket.tokenTrials === bucket.trials
+      ? {
+          ...(bucket.ioTokenTrials === bucket.trials
+            ? { input: bucket.inputTokens, output: bucket.outputTokens }
+            : {}),
+          total: bucket.totalTokens,
+        }
+      : undefined;
+    groups.push({
+      identity: key,
+      name,
+      passed: group.passed,
+      trials: bucket.trials,
+      stimuliRun,
+      stimuliTotal,
+      skipped,
+      ...(bucket.trials > 0 && group.scoringApplied ? { overallScore: group.overallScore as number, threshold: group.threshold as number } : {}),
+      ...(groupDurationMs !== undefined ? { durationMs: groupDurationMs } : {}),
+      ...(groupTokens !== undefined ? { tokens: groupTokens } : {}),
+    });
   }
   if ([...buckets.keys()].some((key) => !seen.has(key)) || (summary.passed && groups.some((group) => !group.passed))) {
     throw new NativeError('inconsistent-native-verdict', 'evidence');
   }
   const executed = groups.reduce((total, group) => total + group.trials, 0);
-  const base = { completeness: 'complete' as const, executed, nativeRunId: runId, groups };
+  const executedGroups = groups.filter((group) => group.trials > 0);
+  const durationMs = executedGroups.length > 0 && executedGroups.every((group) => group.durationMs !== undefined)
+    ? executedGroups.reduce((total, group) => total + group.durationMs!, 0)
+    : undefined;
+  const tokens: ReportTokens | undefined = executedGroups.length > 0 && executedGroups.every((group) => group.tokens !== undefined)
+    ? {
+        ...(executedGroups.every((group) => group.tokens!.input !== undefined && group.tokens!.output !== undefined)
+          ? {
+              input: executedGroups.reduce((sum, group) => sum + group.tokens!.input!, 0),
+              output: executedGroups.reduce((sum, group) => sum + group.tokens!.output!, 0),
+            }
+          : {}),
+        total: executedGroups.reduce((sum, group) => sum + group.tokens!.total, 0),
+      }
+    : undefined;
+  const base: Omit<NativeResult, 'outcome' | 'category' | 'code'> = {
+    completeness: 'complete' as const,
+    executed,
+    nativeRunId: runId,
+    groups,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(tokens !== undefined ? { tokens } : {}),
+  };
   if (executionErrors) return { ...base, outcome: 'error', category: 'execution', code: 'native-execution-error' };
   // Never use text matching to reinterpret a nonzero native exit as an empty successful run.
   if (executed === 0 && exitCode === 0 && summary.passed) return { ...base, outcome: 'not-run', category: 'none', code: 'native-empty-selection' };

@@ -1,7 +1,7 @@
 import { parseDocument } from 'yaml';
 import { commentMarker, orderedBody, selectComment, type Comment, type CommentIdentity, type ReportOrder } from './comments.js';
 import { object } from './policy.js';
-import { escapeMarkdown, type Report } from './reporting.js';
+import { escapeMarkdown, hasQualityDetails, renderQualitySection, type Report } from './reporting.js';
 import { ReportingError, type GitHubClient } from './github.js';
 
 export const commentConcurrencyGroup = 'evals-${{ github.workflow_ref }}';
@@ -149,7 +149,7 @@ export async function postReport(
   return decision.action === 'create' ? 'created' : 'updated';
 }
 
-function renderComment(
+export function renderComment(
   report: Report, artifactId: number | undefined, companion: { report: Report; artifactId: number } | undefined, run: string,
 ): string {
   const lint = companion?.report ?? (report.command === 'lint' ? report : undefined);
@@ -169,5 +169,8 @@ function renderComment(
         rows.slice(0, 100).map((group) =>
           `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
         ).join('\n') + '\n\n' +
-        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
+        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') +
+        (hasQualityDetails(rows)
+          ? renderQualitySection('### Quality & token summary', rows) + '\n\n'
+          : '') : '') : '');
 }
