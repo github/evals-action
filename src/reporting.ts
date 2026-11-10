@@ -173,7 +173,7 @@ function serializeTokens(tokens: ReportTokens): ReportTokens {
 // Explicit projection excludes arbitrary runner JSON, paths, prompts and diagnostics.
 export function structuredReport(report: Report): string {
   const hasExecutedTrials = (report.executed ?? 0) > 0;
-  const serialize = (includeGroupMetrics: boolean) => JSON.stringify({
+  const serialize = (includeGroupMetrics: boolean, includeGroupNames = true) => JSON.stringify({
     schemaVersion: 2, reportId: report.reportId, repository: report.repository,
     workflowRunId: report.workflowRunId, workflowRunAttempt: report.workflowRunAttempt,
     sourceJob: report.sourceJob, selection: report.selection,
@@ -195,7 +195,7 @@ export function structuredReport(report: Report): string {
       overallScore, threshold, durationMs, tokens,
     }) => ({
       identity,
-      ...(name ? { name } : {}),
+      ...(includeGroupNames && name ? { name } : {}),
       passed,
       trials,
       stimuliRun,
@@ -207,8 +207,10 @@ export function structuredReport(report: Report): string {
       ...(includeGroupMetrics && trials > 0 && tokens !== undefined ? { tokens: serializeTokens(tokens) } : {}),
     })) } : {}),
   }, null, 2) + '\n';
-  const full = serialize(true);
-  return Buffer.byteLength(full, 'utf8') > 1_000_000 && report.groups ? serialize(false) : full;
+  const full = serialize(true, true);
+  if (Buffer.byteLength(full, 'utf8') <= 1_000_000 || !report.groups) return full;
+  const withoutMetrics = serialize(false, true);
+  return Buffer.byteLength(withoutMetrics, 'utf8') <= 1_000_000 ? withoutMetrics : serialize(false, false);
 }
 
 function record(value: unknown): Record<string, unknown> {

@@ -213,6 +213,36 @@ describe('minimal presentation projections', () => {
     expect(cjkParsed.groups).toHaveLength(1000);
     expect(cjkParsed.groups?.[0]?.overallScore).toBeUndefined();
 
+    const escapedControlGroups = Array.from({ length: 1000 }, (_, i) => ({
+      identity: i.toString(16).padStart(64, '0'),
+      name: `${'\u0001'.repeat(134)}${i}`,
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 0.9,
+      threshold: 0.8,
+      durationMs: 10,
+      tokens: { input: 5, output: 5, total: 10 },
+    }));
+    const escapedControlReport = report({
+      outcome: 'passed',
+      executed: 1000,
+      passed: 1000,
+      failed: 0,
+      durationMs: 10_000,
+      tokens: { input: 5_000, output: 5_000, total: 10_000 },
+      groups: escapedControlGroups,
+    });
+    const escapedControlSerialized = structuredReport(escapedControlReport);
+    expect(Buffer.byteLength(escapedControlSerialized, 'utf8')).toBeLessThanOrEqual(1_000_000);
+    const escapedControlParsed = parseStructuredReport(escapedControlSerialized, expectation);
+    expect(escapedControlParsed.groups).toHaveLength(1000);
+    expect(escapedControlParsed.groups?.[0]?.name).toBeUndefined();
+    expect(escapedControlParsed.durationMs).toBe(10_000);
+    expect(escapedControlParsed.tokens).toEqual({ input: 5_000, output: 5_000, total: 10_000 });
+
     const partialGroupMetrics = report({
       outcome: 'passed',
       executed: 4,
