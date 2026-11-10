@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { invokeVally, nativeArguments, nativeEnvironment, parseNativeEvidence, runNative } from '../src/native.js';
 import { parseInputs } from '../src/inputs.js';
+import { parseStructuredReport, structuredReport, type Report } from '../src/reporting.js';
 import { sha256, type EngineIdentity } from '../src/tooling.js';
 import { inertEnvironment } from '../src/policy.js';
 
@@ -384,6 +385,46 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 4, passed: 2, failed: 0 });
     expect(actual.result.groups).toHaveLength(2);
     expect(actual.result.groups?.map((group) => group.name)).toEqual(['deterministic-pass', 'deterministic-pass']);
+    for (const group of actual.result.groups ?? []) {
+      expect(group).toMatchObject({ overallScore: 0.5, threshold: 0.5 });
+      expect(group.durationMs).toEqual(expect.any(Number));
+      expect(group.durationMs!).toBeGreaterThanOrEqual(0);
+      expect(group.tokens).toEqual({ input: 0, output: 0, total: 0 });
+    }
+    expect(actual.result.durationMs).toBe(
+      (actual.result.groups ?? []).reduce((sum, group) => sum + (group.durationMs ?? 0), 0),
+    );
+    expect(actual.result.tokens).toEqual({ input: 0, output: 0, total: 0 });
+    const reportPayload: Report = {
+      schemaVersion: 2,
+      reportId: 'evals',
+      repository: 'github/evals-action',
+      workflowRunId: 1,
+      workflowRunAttempt: 1,
+      sourceJob: 'evals',
+      selection: 'a'.repeat(64),
+      suite: 'smoke',
+      command: 'run',
+      revision: 'b'.repeat(40),
+      outcome: actual.result.outcome,
+      completeness: actual.result.completeness,
+      category: actual.result.category,
+      code: actual.result.code,
+      ...(actual.result.executed !== undefined ? { executed: actual.result.executed } : {}),
+      ...(actual.result.passed !== undefined ? { passed: actual.result.passed } : {}),
+      ...(actual.result.failed !== undefined ? { failed: actual.result.failed } : {}),
+      ...(actual.result.durationMs !== undefined ? { durationMs: actual.result.durationMs } : {}),
+      ...(actual.result.tokens !== undefined ? { tokens: actual.result.tokens } : {}),
+      ...(actual.result.nativeRunId !== undefined ? { nativeRunId: actual.result.nativeRunId } : {}),
+      ...(actual.result.groups !== undefined ? { groups: actual.result.groups } : {}),
+    };
+    expect(parseStructuredReport(structuredReport(reportPayload), {
+      reportId: 'evals',
+      repository: 'github/evals-action',
+      workflowRunId: 1,
+      workflowRunAttempt: 1,
+      revision: 'b'.repeat(40),
+    })).toEqual(reportPayload);
     expect(actual.files).toHaveLength(2);
   }, NATIVE_TEST_TIMEOUT_MS);
   it('preserves native include, exclude and comma-separated tag filters in real CLI execution', async () => {
