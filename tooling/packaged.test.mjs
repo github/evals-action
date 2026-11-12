@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import { bundledLicenseNotices } from './license-notices.mjs';
+import { parse } from 'yaml';
 
 test('bundled notices are deterministic, preserve full terms, and expose missing terms', async () => {
   const root = await mkdtemp(join(tmpdir(), 'evals-licenses-'));
@@ -162,6 +163,7 @@ test('packaged Action rejects missing project configuration from a clean consume
       encoding: 'utf8',
       timeout: 30_000,
     });
+
     assert.equal(child.error, undefined);
     assert.equal(child.status, 1);
     assert.match(child.stdout, /invalid-input-or-context/);
@@ -172,4 +174,25 @@ test('packaged Action rejects missing project configuration from a clean consume
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('comparison subaction resolves its own self-contained bundle and rejects missing command without leaking errors', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'evals-comparison-packaged-'));
+  try {
+    const metadata = parse(await readFile(resolve('comparison/action.yml'), 'utf8'));
+    assert.equal(metadata.runs.using, 'node24');
+    const source = resolve('comparison', metadata.runs.main);
+    assert.equal(source, resolve('dist/comparison-index.cjs'));
+    const entry = join(root, 'comparison.cjs');
+    await copyFile(source, entry);
+    const child = spawnSync(process.execPath, [entry], {
+      cwd: root, env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
+      encoding: 'utf8', timeout: 30_000,
+    });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 1);
+    assert.match(child.stdout, /comparison-invalid-command/);
+    assert.match(child.stdout, /No evaluation pass is claimed/);
+    assert.doesNotMatch(child.stdout, /node_modules|Error:|stack/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

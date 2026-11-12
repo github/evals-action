@@ -4,8 +4,9 @@ import { resolve } from 'node:path';
 import { bundledLicenseNotices } from './license-notices.mjs';
 
 const result = await build({
-  entryPoints: ['src/index.ts'],
-  outfile: 'dist/index.cjs',
+  entryPoints: ['src/index.ts', 'src/comparison-index.ts'],
+  outdir: 'dist',
+  outExtension: { '.js': '.cjs' },
   bundle: true,
   platform: 'node',
   target: 'node24',
@@ -17,7 +18,13 @@ const result = await build({
   minify: true,
   metafile: true,
 });
-const notices = await bundledLicenseNotices(result.metafile.outputs['dist/index.cjs'].inputs);
+const contributions = {};
+for (const output of Object.values(result.metafile.outputs)) {
+  for (const [file, contribution] of Object.entries(output.inputs)) {
+    contributions[file] = { bytesInOutput: (contributions[file]?.bytesInOutput ?? 0) + contribution.bytesInOutput };
+  }
+}
+const notices = await bundledLicenseNotices(contributions);
 const outputs = [
   ...result.outputFiles,
   { path: resolve('dist/THIRD-PARTY-NOTICES.txt'), contents: Buffer.from(notices.text) },

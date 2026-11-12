@@ -5,6 +5,10 @@ sticky PR comment** with the suite, eval names, verdicts, and evidence links.
 Vally owns selection, execution and grading; the Action handles installation
 and GitHub integration.
 
+For approval-gated Before/After skill comparisons from a trusted `workflow_run`,
+use the separate [comparison subaction](comparison/README.md). The root Action's
+event and checkout policy is unchanged.
+
 Use `github/evals-action@v0` for the latest 0.x pilot release
 (currently [v0.1.0](https://github.com/github/evals-action/releases/tag/v0.1.0)).
 Use `@v0.1.0` to stay on that specific Action release. The `v0` tag advances as
@@ -431,7 +435,7 @@ dependencies can still change between jobs according to upstream ranges.
 Both modes trust npm and the upstream dependency graph; recorded digests are
 provenance, not a claim that the graph was reviewed with the Action.
 
-The development dependency remains pinned to Vally 0.19.0 for deterministic,
+The development dependency remains pinned to Vally 0.21.0 for deterministic,
 model-free CLI contract tests. It is a test fixture, not a runtime allowlist.
 
 Bundled dependencies are listed in
