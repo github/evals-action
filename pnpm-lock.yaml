@@ -177,8 +177,8 @@ importers:
         version: 2.9.1
     devDependencies:
       '@microsoft/vally-cli':
-        specifier: 0.20.0
-        version: 0.20.0
+        specifier: 0.21.0
+        version: 0.21.0
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -623,23 +623,23 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@microsoft/vally-cli@0.20.0':
-    resolution: {integrity: sha512-HxpO3t1yX/IYKLMVP+OpRj6UvxPKBhvxDgAD46psc7Wq2F4eUhBT8SYsC7mL84ecvQ0WBO/rqIpl6wdcvZzuUA==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally-cli@0.21.0':
+    resolution: {integrity: sha512-tum9lV2Lk3L8gMKll6ta7qMNxfO1V8u+z1Dw74pM9bOe2fKHB+4tEfAAubjhXotcp8OtssIz7q5knjvmbcdRSg==}
+    engines: {node: '>=22.15.0'}
     hasBin: true
 
-  '@microsoft/vally-server@0.20.0':
-    resolution: {integrity: sha512-EMkGZ6sq8dlsWTXUbouNo+AfQ7N+LC6dBffIC31QiJQxLCm/cFD2EMT9JUD0iF8Xl+2CWACTUEWG/ilQC1PxKw==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally-server@0.21.0':
+    resolution: {integrity: sha512-Tgy87yqE8xn6Alz69WU/m5Vg8lWmO0c/jSbYa2+caH5w0G36sOfd0j4zFd2K6LvQNcjZzXByoIGCEduonrSg6w==}
+    engines: {node: '>=22.15.0'}
     peerDependencies:
       better-sqlite3: ^13.0.3
     peerDependenciesMeta:
       better-sqlite3:
         optional: true
 
-  '@microsoft/vally@0.20.0':
-    resolution: {integrity: sha512-f0TWP4lShdLhxaNKF/b/FoUIQ/xTHQyEnn89F/r5J+X5JQXv3v2/9rHgw8/yJ95d0HuB0qIfPaMYQ6jSGXssLQ==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally@0.21.0':
+    resolution: {integrity: sha512-9AiIt6lR2axzWZX1EtZWcsZ+twcu1t9Tp+BktUbZbbIA1mv+0FLPiWjigXFmFcoQa+rXxKkuyw5dqfQ6xKTNmw==}
+    engines: {node: '>=22.15.0'}
     hasBin: true
 
   '@modelcontextprotocol/sdk@1.32.1':
@@ -802,14 +802,12 @@ packages:
   '@opentelemetry/sdk-trace-base@2.12.0':
     resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
     engines: {node: ^18.19.0 || >=20.6.0}
-    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-node@2.12.0':
     resolution: {integrity: sha512-9DufH1IlmQMoKAfot5y/FhTP1RnmhLb5K6eKmJO/bvzPjYwPAazoiAUbTZFdPbqxOXN0FEbhZx/e6SB1Og4jmg==}
     engines: {node: ^18.19.0 || >=20.6.0}
-    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
@@ -3083,11 +3081,11 @@ snapshots:
   '@koromix/koffi-win32-x64@3.2.1':
     optional: true
 
-  '@microsoft/vally-cli@0.20.0':
+  '@microsoft/vally-cli@0.21.0':
     dependencies:
       '@azure/monitor-opentelemetry-exporter': 1.0.0-beta.46
-      '@microsoft/vally': 0.20.0
-      '@microsoft/vally-server': 0.20.0
+      '@microsoft/vally': 0.21.0
+      '@microsoft/vally-server': 0.21.0
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/exporter-trace-otlp-http': 0.223.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.1)
@@ -3101,16 +3099,16 @@ snapshots:
       - better-sqlite3
       - supports-color
 
-  '@microsoft/vally-server@0.20.0':
+  '@microsoft/vally-server@0.21.0':
     dependencies:
       '@hono/node-server': 2.1.5(hono@4.13.13)
-      '@microsoft/vally': 0.20.0
+      '@microsoft/vally': 0.21.0
       hono: 4.13.13
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@microsoft/vally@0.20.0':
+  '@microsoft/vally@0.21.0':
     dependencies:
       '@github/copilot-sdk': 1.0.26
       '@modelcontextprotocol/sdk': 1.32.1(zod@4.6.7)
