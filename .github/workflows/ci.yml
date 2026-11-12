@@ -66,7 +66,7 @@ jobs:
           command: run
           working-directory: .
           eval-paths: tests/fixtures/pass.eval.yaml
-          vally-version: 0.19.0
+          vally-version: 0.20.0
           report-id: native-pass
       - name: Verify native verdict failure through the same installed CLI
         id: failing
@@ -76,7 +76,7 @@ jobs:
           command: run
           working-directory: .
           eval-paths: tests/fixtures/fail.eval.yaml
-          vally-version: 0.19.0
+          vally-version: 0.20.0
           report-id: native-fail
       - name: Lint through the same installed CLI
         id: lint
@@ -85,7 +85,7 @@ jobs:
         with:
           command: lint
           working-directory: tests/fixtures
-          vally-version: 0.19.0
+          vally-version: 0.20.0
           report-id: native-lint
       - name: Check native results and structured uploads
         env:

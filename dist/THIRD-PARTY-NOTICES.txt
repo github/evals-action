@@ -3112,7 +3112,7 @@ SOFTWARE.
 
 ========================================================================
 Package: fast-xml-parser
-Version: 5.11.2
+Version: 5.12.0
 License: MIT
 Notice status: license-text-included
 
@@ -4175,7 +4175,7 @@ SOFTWARE.
 
 ========================================================================
 Package: is-unsafe
-Version: 2.0.2
+Version: 2.0.3
 License: MIT
 Notice status: license-text-included
 

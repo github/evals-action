@@ -93,7 +93,7 @@ version instead, add `vally-version`, for example:
 with:
   working-directory: evals
   suite: smoke
-  vally-version: '0.19.0' # Optional; omit for latest stable
+  vally-version: '0.20.0' # Optional; omit for latest stable
 ```
 
 The Action version (`@v0` or `@v0.1.0`) and Vally version are independent. Selecting a
@@ -431,7 +431,7 @@ dependencies can still change between jobs according to upstream ranges.
 Both modes trust npm and the upstream dependency graph; recorded digests are
 provenance, not a claim that the graph was reviewed with the Action.
 
-The development dependency remains pinned to Vally 0.19.0 for deterministic,
+The development dependency remains pinned to Vally 0.20.0 for deterministic,
 model-free CLI contract tests. It is a test fixture, not a runtime allowlist.
 
 Bundled dependencies are listed in
