@@ -109,6 +109,10 @@ export async function runComparisonPair(
   let cancelled = false;
   for (const arm of ['before', 'after'] as const) {
     const path = join(directory, `${entry.id}-${arm}.json`);
+    const serialize = (data: ComparisonArm) => JSON.stringify({
+      id: entry.id, key: entry.key, arm, repository: selection.repository,
+      run: selection.run, attempt: selection.attempt, merge: selection.merge, data,
+    }) + '\n';
     let data: ComparisonArm = { state: 'error', rows: [] };
     try {
       if (cancelled) throw new ComparisonError('comparison-cancelled-before-arm');
@@ -129,17 +133,16 @@ export async function runComparisonPair(
       passed &&= operation.result.outcome === 'passed';
       if (operation.files[0] && operation.result.nativeRunId) {
         if ((await stat(operation.files[0])).size > 64 * maximum) throw new ComparisonError('comparison-native-evidence-too-large');
-        data = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null);
+        const projected = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null);
+        if (Buffer.byteLength(serialize(projected)) > maximum) throw new ComparisonError('comparison-projection-too-large');
+        data = projected;
       }
       if (data.state !== 'complete') passed = false;
     } catch (error) {
       passed = false;
       core.warning(`Comparison ${arm} failed: ${error instanceof ComparisonError ? error.code : 'comparison-arm-error'}. No raw diagnostics published.`);
     }
-    await writeFile(path, JSON.stringify({
-      id: entry.id, key: entry.key, arm, repository: selection.repository,
-      run: selection.run, attempt: selection.attempt, merge: selection.merge, data,
-    }) + '\n', { mode: 0o600, flag: 'wx' });
+    await writeFile(path, serialize(data), { mode: 0o600, flag: 'wx' });
     core.setOutput(`${arm}-path`, path);
   }
   return passed;

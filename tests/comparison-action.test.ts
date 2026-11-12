@@ -212,6 +212,32 @@ it('stale-head guards prevent either native arm and cancellation does not start 
   expect(run).toHaveBeenCalledTimes(1);
 });
 
+it('fails oversized projections explicitly, uploads bounded error state and still attempts After', async () => {
+  const rows = Array.from({ length: 3000 }, (_, index) => ({
+    type: 'trial-result', runId: 'native', itemId: String(index), evalName: 'size-control', stimulus: `case-${index}`,
+    model: 'mock', variant: 'main', evalFilePath: 'eval.yaml', status: 'success',
+    trajectory: { id: String(index), output: '' },
+    gradeResult: { passed: true, score: 1, details: [{ passed: true, score: 1, graderType: 'completed', configuredName: 'n'.repeat(256) }] },
+  }));
+  const contents = [...rows, {
+    type: 'run-summary', runId: 'native', passed: true, hadExecutionErrors: false,
+    evals: [{ evalFilePath: 'eval.yaml', variant: 'main', model: 'mock', scoringApplied: false,
+      passed: true, stimuliRun: rows.length, stimuliTotal: rows.length }],
+  }].map((row) => JSON.stringify(row)).join('\n');
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async (_inputs, _engine, _cwd, directory) => {
+    const file = join(directory, 'native.log');
+    await writeFile(file, contents);
+    return { result: { outcome: 'passed', completeness: 'complete', category: 'none', code: 'passed', nativeRunId: 'native' },
+      files: [file], exitCode: 0 };
+  });
+  const passed = await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, '', { request: mocks.request },
+    { restore: async () => {}, current: async () => {}, run });
+  expect(passed).toBe(false);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-projection-too-large'));
+  expect(JSON.parse(await readFile(join(root, 'skill-abc-before.json'), 'utf8')).data).toEqual({ state: 'error', rows: [] });
+});
+
 it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
   const cwd = join(root, 'candidate');
   await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
