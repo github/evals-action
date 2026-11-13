@@ -354,9 +354,10 @@ async function nativeFixture() {
   await cp(resolve('tests', 'fixtures'), project, { recursive: true });
   await mkdir(output);
   const manifest = createRequire(import.meta.url).resolve('@microsoft/vally-cli/package.json');
+  const { version } = JSON.parse(await readFile(manifest, 'utf8')) as { version: string };
   const entry = join(dirname(manifest), 'dist', 'index.js');
   const engine: EngineIdentity = {
-    entry, version: '0.21.0', sha256: sha256(await readFile(entry)),
+    entry, version, sha256: sha256(await readFile(entry)),
     integrity: 'pinned-development-fixture', dependencySha256: 'development-lockfile', lockSha256: 'development-lockfile',
   };
   const source = {

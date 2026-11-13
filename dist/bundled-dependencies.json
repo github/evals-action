@@ -654,7 +654,7 @@
   },
   {
     "name": "fast-xml-parser",
-    "version": "5.11.2",
+    "version": "5.12.0",
     "declaredLicense": "MIT",
     "status": "license-text-included",
     "sources": [
@@ -987,7 +987,7 @@
   },
   {
     "name": "is-unsafe",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "declaredLicense": "MIT",
     "status": "license-text-included",
     "sources": [

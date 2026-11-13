@@ -6,7 +6,6 @@ import {
   type ComparisonArm, type ComparisonPair, type ComparisonSelection,
 } from '../src/comparison-report.js';
 import { parseNativeEvidence } from '../src/native.js';
-import { sha256 } from '../src/tooling.js';
 
 const evalPath = 'evals/local/skills/draft/eval.yaml';
 const directories: string[] = [];
@@ -87,6 +86,24 @@ async function saveArm(root: string, data: unknown, overrides: Record<string, un
 }
 
 describe('native comparison projection', () => {
+  it.each(['ghp_' + 'a'.repeat(36), 'ghp_\u001b[31m' + 'a'.repeat(36), 'Bearer private-value', 'api_key=private-value',
+    'A1'.repeat(24)])('rejects credential-like labels before projection and publisher rendering', (secret) => {
+    const source = jsonl(trial({ gradeResult: { ...grade(), details: [
+      { graderType: 'completed', configuredName: secret, passed: true, score: 1 },
+    ] } }), footer());
+    expect(() => collectNative(source, 'native', 1)).toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+    const sample = pair();
+    sample.after.rows[0]!.stimulus = secret;
+    expect(() => renderComparison(selection(), [sample], evidence))
+      .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+  });
+
+  it('rejects exact execution credentials even when their shape does not resemble a token', () => {
+    expect(() => collectNative(jsonl(trial({ model: 'opaque-execution-credential' }),
+      footer({ model: 'opaque-execution-credential' })), 'native', 1, ['opaque-execution-credential']))
+      .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+  });
+
   it('uses the real native schema, retains individual counts, and drops private evidence', () => {
     const source = jsonl(trial(), footer());
     expect(parseNativeEvidence(source, 'native', 1).outcome).toBe('failed');
@@ -95,7 +112,7 @@ describe('native comparison projection', () => {
     expect(data.rows[0]).toMatchObject({ eval: 'draft', stimulus: 'draft-positive', model: 'model-a',
       state: 'graded', passed: false });
     expect(data.rows[0]!.checks.map((check) => check.passed)).toEqual([true, false]);
-    expect(data.rows[0]!.checks[1]!.reason).toMatch(/activation/);
+    expect(data.rows[0]!.checks[1]!.reason).toBeUndefined();
     expect(JSON.stringify(data)).not.toMatch(/SECRET|trajectory|evalFilePath|score|evidence/);
   });
 
@@ -146,13 +163,12 @@ describe('native comparison projection', () => {
     ] } }), footer({}, { hadExecutionErrors: true })), 'native', 1);
     expect(data.state).toBe('error');
     expect(data.rows[0]!.state).toBe('error');
-    expect(data.rows[0]!.checks).toEqual([{ id: '0:completed', name: 'completed', passed: false,
-      reason: 'The session did not meet its completion checks.' }]);
+    expect(data.rows[0]!.checks).toEqual([{ id: '0:completed', name: 'completed', passed: false }]);
     const sample = pair();
     sample.after = data;
     const rendered = renderComparison(selection(), [sample], evidence);
-    expect(rendered).toContain('After failures in changed skills (1 grader/model results)');
-    expect(rendered).toContain('After (comparison unknown) | completed');
+    expect(rendered).toContain('⚠️ Error');
+    expect(rendered).toContain('comparison unknown');
     expect(rendered).not.toContain('SECRET');
     const trajectoryError = collectNative(jsonl(trial({
       trajectory: { id: 't', output: 'SECRET', events: [{ type: 'error', message: 'SECRET' }] },
@@ -204,7 +220,7 @@ describe('native comparison projection', () => {
     expect(projected.rows.map((row) => row.eval)).toEqual([expected, expected]);
   });
 
-  it('keeps native scoring separate from individual checks and uses generic unknown-grader reasons', () => {
+  it('keeps native scoring separate from individual checks and excludes raw failure reasons', () => {
     const data = collectNative(jsonl(trial({ gradeResult: {
       passed: true, score: 0.5, details: [
         { graderType: 'custom-check', name: 'contract', passed: false, score: 0, reason: 'SECRET' },
@@ -212,10 +228,10 @@ describe('native comparison projection', () => {
       ],
     } }), footer({ scoringApplied: true, overallScore: 0.5, threshold: 0.5, passed: true }, { passed: true })), 'native', 0);
     expect(data.rows[0]!.passed).toBe(true);
-    expect(data.rows[0]!.checks[0]!.reason).toBe('The configured check failed.');
+    expect(data.rows[0]!.checks[0]!.reason).toBeUndefined();
     const report = renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence);
     expect(report).toContain('1/2 → 1/2');
-    expect(report).toContain('local/draft | 1/1 → 1/1');
+    expect(report).toContain('Native verdicts:** Before ✅ Passed → After ✅ Passed');
     expect(report).not.toContain('SECRET');
   });
 
@@ -244,8 +260,7 @@ describe('native comparison projection', () => {
       passed: false, score: 0, details: [{ graderType: 'completed', passed: true, score: 1 }],
     } }), footer()), 'native', 1);
     const report = renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence);
-    expect(report).toContain('draft : positive | ❌ 1/1 (native scenario failed) → 1/1 (native scenario failed)');
-    expect(report).toContain('| local/draft | 0/1 → 0/1 |');
+    expect(report).toContain('draft : positive | 1/1 (native scenario failed) → 1/1 (native scenario failed)');
   });
 
   it('recognizes nested grader errors without discarding other completed grader failures', () => {
@@ -263,50 +278,17 @@ describe('native comparison projection', () => {
 });
 
 describe('comparison renderer', () => {
-  it('compresses only unmeasured unchanged inventory to publish a valid thousand-skill catalog', () => {
+  it('shows only changed-skill Before/After results regardless of inventory size or unrelated pairs', () => {
     const selected = selection();
     selected.skills = [selected.skills[0]!, ...Array.from({ length: 999 }, (_, index) => ({
       key: `plugin-${index}/unchanged-skill-without-measurements-${index}`, hasEval: index % 2 === 0,
     }))];
-    const sample = pair();
-    sample.after.nativeOutcome = 'failed';
-    sample.after.rows[0]!.nativePassed = false;
-    sample.after.rows[0]!.passed = false;
-    sample.after.rows[0]!.checks[0]!.passed = false;
-    const report = renderComparison(selected, [sample], evidence);
-    expect(Buffer.byteLength(report)).toBeLessThanOrEqual(60_000);
-    expect(report).toContain('999 unchanged skills without results summarized');
-    expect(report).toContain('Changed skills and recorded results are retained');
-    expect(report).toContain('## Changed skill: local/draft');
-    expect(report).toContain('| local/draft |');
-    expect(report).toContain('After (new) | completed');
-    expect(report).toContain('Before (resolved After) | routing');
-    expect(report).not.toContain('| plugin-998/');
-    const inventoryTable = report.slice(report.indexOf('| Skill (passing / total scenarios) |')).split('\n\n')[0]!;
-    expect(inventoryTable).toContain('| Unmeasured unchanged inventory |');
-    expect(inventoryTable).toContain('| local/draft |');
-  });
-
-  it('reserves the actual publisher prefix when a body fits but the complete comment would exceed the budget', () => {
-    const selected = selection();
-    selected.skills = [selected.skills[0]!, ...Array.from({ length: 300 }, (_, index) => ({
-      key: `catalog/skill${index}`, hasEval: true,
-    }))];
-    const sample = pair();
-    const initialBytes = Buffer.byteLength(renderComparison(selected, [sample], evidence));
-    let remaining = 59_999 - initialBytes;
-    expect(remaining).toBeGreaterThan(0);
-    for (const skill of selected.skills.slice(1)) {
-      const padding = Math.min(remaining, 200);
-      skill.key += 'x'.repeat(padding);
-      remaining -= padding;
-    }
-    expect(remaining).toBe(0);
-    const report = renderComparison(selected, [sample], evidence);
-    const prefix = `<!-- evals-comparison:${selected.repository}/${selected.sourceWorkflow}/${sha256(selected.workflowRef)} -->\n<!-- run:${selected.runNumber}:${Number(selected.attempt)} -->\n`;
-    expect(Buffer.byteLength(prefix + report)).toBeLessThanOrEqual(60_000);
-    expect(report).toContain('300 unchanged skills without results summarized');
-    expect(report).toContain('| local/draft |');
+    const baseline = renderComparison(selection(), [pair()], evidence);
+    const report = renderComparison(selected, [pair(), { ...pair(), key: 'local/neighbor' }], evidence);
+    expect(report).toBe(baseline);
+    expect(report).toContain('### local/draft');
+    expect(report).toContain('draft : positive | 1/2 → 2/2');
+    expect(report).not.toMatch(/neighbor|plugin-998|All skills|<details>|resolved|new failures|routing/);
   });
 
   it('does not label a passing model as native-failed because another model failed', () => {
@@ -319,8 +301,7 @@ describe('comparison renderer', () => {
     }
     const report = renderComparison(selection(), [sample], evidence);
     expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
-    expect(report).toContain('| local/draft | 1/1 → 1/1 | 1/1 (native eval failed) → 1/1 (native eval failed) |');
-    expect(report).toContain('draft : positive | ✅ 2/2 → 2/2 |');
+    expect(report).toContain('draft : positive | 2/2 → 2/2 | 2/2 (native eval failed) → 2/2 (native eval failed)');
   });
 
   it.each(['before', 'after'] as const)('describes native-only failure in the %s arm without claiming it already existed', (arm) => {
@@ -331,9 +312,7 @@ describe('comparison renderer', () => {
     const report = renderComparison(selection(), [sample], evidence);
     expect(report).toContain('native eval failed');
     expect(report).not.toContain('draft : positive | ❌');
-    expect(report).toContain('❌ Failure in either arm.');
     expect(report).not.toContain('Existing failure');
-    expect(report).toContain('0 resolved · 📉 0 new failures (grader/model results)');
   });
 
   it('keeps a passing scenario local when a sibling fails in the same native eval group', async () => {
@@ -350,9 +329,8 @@ describe('comparison renderer', () => {
     const loaded = await loadComparison(root, selection());
     const report = renderComparison(loaded.selection, loaded.pairs, evidence);
     expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
-    expect(report).toContain('draft : passing | ✅ 2/2 → 2/2');
-    expect(report).toContain('draft : failing | ❌ 1/2 → 1/2');
-    expect(report).toContain('| local/draft | 1/2 → 1/2 |');
+    expect(report).toContain('draft : passing | 2/2 → 2/2');
+    expect(report).toContain('draft : failing | 1/2 → 1/2');
     expect(report).not.toContain('native eval failed');
   });
   it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
@@ -371,8 +349,7 @@ describe('comparison renderer', () => {
     sample.before.rows[0]!.checks = [{ id: '0:program', name: 'contract-A', passed: false, reason: '' }];
     sample.after.rows[0]!.checks = [{ id: '0:program', name: 'contract-B', passed: true, reason: '' }];
     const rendered = renderComparison(selection(), [sample], evidence);
-    expect(rendered).toContain('0 resolved · 📉 0 new failures');
-    expect(rendered).toContain('Before (comparison unknown) | contract-A');
+    expect(rendered).toContain('comparison unknown');
     expect(rendered).not.toContain('resolved After');
   });
 
@@ -389,33 +366,22 @@ describe('comparison renderer', () => {
     await saveArm(root, { ...sample.after, nativeOutcome: ['passed'] });
     await expect(loadComparison(root, selection())).rejects.toThrow('native verdict');
   });
-  it('renders the approved hierarchy, grader denominators, and scenario denominators without a passing wall', () => {
+  it('renders a straightforward changed-skill table and native verdicts without report extras', () => {
     const report = renderComparison(selection(), [pair()], evidence);
-    expect(report).toContain('draft : positive | 📈 1/2 → 2/2');
+    expect(report).toContain('draft : positive | 1/2 → 2/2');
     expect(report).toContain('passing / total graders');
-    expect(report).toContain('local/draft | 0/1 → 1/1');
-    expect(report).toContain('passing scenarios / total recorded scenarios');
-    expect(report).toContain('Before (resolved After) | routing');
-    expect(report).not.toContain('| completed |');
-    expect(report).toContain('local/neighbor | ⏭️ Not run');
-    expect(report).toContain('remote/run | ⏭️ Not evaluated — no repo eval');
-    expect(report).toContain('does not measure unchanged-skill regressions');
-    expect(report.indexOf('After failures')).toBeLessThan(report.indexOf('<details>'));
-    expect(report.indexOf('Before failures')).toBeLessThan(report.indexOf('All skills'));
-    expect(report.indexOf('All skills')).toBeLessThan(report.indexOf('All-skill failure details'));
-    expect(report.match(/<details>/g)).toHaveLength(3);
+    expect(report).toContain('Native verdicts:** Before ❌ Failed → After ✅ Passed');
+    expect(report).not.toMatch(/local\/neighbor|remote\/run|<details>|After failures|Before failures|All skills/);
     expect(report).not.toContain('SECRET');
   });
 
-  it('shows changed individual failure identities even when aggregate counts are equal', () => {
+  it('shows actual Before/After counts without inferring changes from equal aggregates', () => {
     const sample = pair();
     sample.after.rows[0]!.passed = false;
     sample.after.rows[0]!.checks[0]!.passed = false;
     const report = renderComparison(selection(), [sample], evidence);
-    expect(report).toContain('🔄 1/2 → 1/2');
-    expect(report).toContain('🔄 0/1 → 0/1 (1 new, 1 resolved grader failures)');
-    expect(report).toContain('After (new) | completed');
-    expect(report).toContain('Before (resolved After) | routing');
+    expect(report).toContain('draft : positive | 1/2 → 1/2');
+    expect(report).not.toMatch(/resolved|new failures/);
   });
 
   it.each(['error', 'missing-arm', 'missing-check', 'missing-case', 'skipped'] as const)(
@@ -431,9 +397,7 @@ describe('comparison renderer', () => {
         ...sample.after!.rows[0]!, state: 'not-run', passed: false, checks: [],
       };
       const report = renderComparison(selection(), [sample], evidence);
-      expect(report).toContain('0 resolved · 📉 0 new failures');
       expect(report).toContain('comparison unknown');
-      expect(report).toContain('Incomplete/error evidence');
       expect(report).not.toMatch(/resolved After|After \(new\)|📈 1\/2/);
     },
   );
@@ -447,7 +411,7 @@ describe('comparison renderer', () => {
     expect(report).toContain('Model not observed');
   });
 
-  it('escapes every publisher label and re-derives reasons, equally for projected and loaded inputs', async () => {
+  it('escapes publisher labels and discards legacy reasons equally for projected and loaded inputs', async () => {
     const sample = pair();
     const hostile = '<img src=x>|`[x](javascript:x) @team **bold**\n# heading\u001b[31m\u202e';
     for (const arm of [sample.before, sample.after]) for (const row of arm.rows) {
@@ -472,41 +436,17 @@ describe('comparison renderer', () => {
     }
   });
 
-  it('rejects oversized reports instead of silently truncating failures', () => {
+  it('rejects oversized result tables instead of silently truncating evidence', () => {
     const sample = pair();
     sample.after.nativeOutcome = 'failed';
     for (const arm of [sample.before, sample.after]) {
-      arm.rows = Array.from({ length: 300 }, (_, index) => ({
-        ...structuredClone(sample.before.rows[0]!), stimulus: `case-${index}`,
+      arm.rows = Array.from({ length: 1000 }, (_, index) => ({
+        ...structuredClone(sample.before.rows[0]!), stimulus: `case-${index} ${'long label '.repeat(12)}`,
       }));
     }
     expect(() => renderComparison(selection(), [sample], evidence)).toThrow(/comment limit/);
   });
 
-  it('publishes recorded changed-skill failures once instead of exceeding the budget with duplicate details', () => {
-    const sample = pair();
-    sample.after = structuredClone(sample.before);
-    for (const arm of [sample.before, sample.after]) {
-      arm.rows = Array.from({ length: 50 }, (_, index) => ({
-        ...structuredClone(arm.rows[0]!), stimulus: `case-${index}`,
-      }));
-    }
-    const report = renderComparison(selection(), [sample], evidence);
-    expect(Buffer.byteLength(report)).toBeLessThan(60_000);
-    expect(report.match(/\| routing \| model-a \|/g)).toHaveLength(100);
-    expect(report).toContain('After failures in changed skills (50 grader/model results)');
-    expect(report).toContain('Before failures in changed skills: 50 grader/model results');
-    expect(report).toContain('All-skill failure details: 50 After · 50 Before');
-    expect(report).toContain('Changed-skill failure details are in the After and Before sections above.');
-  });
-
-  it('retains additional non-changed-skill failures in the inventory details without repeating changed failures', () => {
-    const changed = pair(), other = { ...pair(), key: 'local/neighbor' };
-    const report = renderComparison(selection(), [changed, other], evidence);
-    expect(report.match(/### Skill: local\/draft/g)).toHaveLength(1);
-    expect(report.match(/### Skill: local\/neighbor/g)).toHaveLength(1);
-    expect(report).toContain('All-skill failure details: 0 After · 2 Before');
-  });
 });
 
 describe('comparison artifact intake', () => {

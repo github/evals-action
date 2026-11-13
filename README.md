@@ -97,7 +97,7 @@ version instead, add `vally-version`, for example:
 with:
   working-directory: evals
   suite: smoke
-  vally-version: '0.19.0' # Optional; omit for latest stable
+  vally-version: '0.21.0' # Optional; omit for latest stable
 ```
 
 The Action version (`@v0` or `@v0.1.0`) and Vally version are independent. Selecting a
@@ -283,7 +283,7 @@ explicit lint rejects execution overrides.
 | `eval-paths` | Newline-separated literal paths for all/run. Spaces are preserved. No shell expansion. |
 | `tags` | Newline-separated native filters for all/run, e.g. `cost=free` or `flaky!=yes`. |
 | `github-token` | Defaults to `${{ github.token }}`. Used for model auth and PR reporting in all; artifact discovery and commenting in report; not forwarded in explicit lint/run. Discovery requires `actions: read`. |
-| `copilot-token` | Optional explicit model token. Overrides automatic model auth in all; required for workflow-token auth in explicit run. |
+| `copilot-token` | Optional explicit model token. Overrides automatic model auth in all; supports workflow-token auth in explicit run. |
 | `credential-env` | Advanced evaluator credential variable names, one per line, for BYOK/custom providers. Supplying these disables automatic model-token injection in all. Never put values here. Cannot list `COPILOT_GITHUB_TOKEN` with `copilot-token`. |
 | `report-token` | Optional bot/App comment token override for all/report. Discovery uses `github-token`, falling back to this token if absent. Human/PAT reporters are refused. Not valid on explicit lint/run. |
 | `report-id` | Shared lint/run/report identity, default `evals`; letters/digits/underscore/hyphen. Maximum 64 characters (59-character prefix for all). Advanced `evals-run` / `evals-lint` share the `evals` comment. |

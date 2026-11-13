@@ -23,6 +23,12 @@ export function comparisonErrorCode(error: unknown, fallback: string): string {
   return error instanceof ComparisonError || error instanceof NativeError || error instanceof ReportingError ? error.code : fallback;
 }
 
+export function comparisonFailureMessage(error: unknown): string {
+  const code = comparisonErrorCode(error, 'comparison-operation-failed');
+  const hint = error instanceof ComparisonError && error.message !== code ? ` ${error.message}` : '';
+  return `Comparison failed: ${code}.${hint} No evaluation pass is claimed.`;
+}
+
 const parse = (text: string): unknown => {
   if (Buffer.byteLength(text) > maximum) throw new ComparisonError('comparison-json-too-large');
   try { return JSON.parse(text); } catch { throw new ComparisonError('comparison-malformed-json'); }
@@ -219,7 +225,7 @@ export async function runComparisonPair(
       }
       if (operation.files[0] && operation.result.nativeRunId) {
         if ((await stat(operation.files[0])).size > 64 * maximum) throw new ComparisonError('comparison-native-evidence-too-large');
-        const projected = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null);
+        const projected = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null, [token]);
         if (Buffer.byteLength(serialize(projected)) > maximum) throw new ComparisonError('comparison-projection-too-large');
         data = { ...projected, nativeOutcome: projected.nativeOutcome ?? data.nativeOutcome ?? 'unknown' };
       }

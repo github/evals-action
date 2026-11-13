@@ -67,8 +67,7 @@ The build also generates `dist/THIRD-PARTY-NOTICES.txt` and
 `dist/bundled-dependencies.json` from inputs with positive byte contributions to
 esbuild's executable output, excluding completely tree-shaken modules, alongside
 the existing inline notices in `dist/index.cjs.LEGAL.txt`. Commit all generated
-outputs; `pnpm check:dist` verifies them together. Full license sections in
-package READMEs are retained when standalone files are absent. The version-bound
+outputs; `pnpm check:dist` verifies them together. The version-bound
 supplement for `@nodable/entities` comes from the license at its npm-published
 `gitHead`; keep that provenance with any update.
 Attribution-only `NOTICE` and `COPYRIGHT` files are retained separately; they

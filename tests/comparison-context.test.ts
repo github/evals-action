@@ -135,6 +135,13 @@ it('accepts only exact source-bound generic selections with unique contained pat
   for (const value of invalid) expect(() => validateComparisonSelection(value, f.context)).toThrow();
 });
 
+it('accepts caller-supplied skill/eval paths in a different repository layout', () => {
+  const f = fixture();
+  const selected = { ...f.selection, changed: ['writer'], skills: [{ key: 'writer', hasEval: true }],
+    include: [{ ...f.selection.include[0]!, key: 'writer', directory: 'capabilities/writer',
+      evalPath: 'quality/writer.yaml' }] };
+  expect(validateComparisonSelection(selected, f.context)).toEqual(selected);
+});
 it.each(['skills', 'include'] as const)('uses an input-specific safe code for non-object %s entries', (field) => {
   const f = fixture();
   const code = field === 'skills' ? 'comparison-invalid-inventory' : 'comparison-invalid-selection-entry';

@@ -20,7 +20,7 @@ upstream merge, release or production qualification.
 | `run` | `contents: read`, `actions: read`, `pull-requests: read`, explicitly approved `copilot-requests: write` | Run one selected skill's Before/After using native Vally, then emit only two bounded verdict projections. |
 | `report` | `contents: read`, `actions: read`, `pull-requests: write`; **no billing credential** | On a fresh runner, independently authenticate provenance, read projections as untrusted JSON data and update one bot-owned comment. Never execute candidate code. |
 
-The repository owns changed-skill/catalog inventory, eval path policy, required
+The repository owns changed-skill selection, eval path policy, required
 environment-reviewer preflight and protected environment, credential/billing
 approval, backend/model configuration, job timeouts, retention, forks and trigger
 policy. Skills, evals, graders, fixtures and model experiments stay in the
@@ -64,16 +64,15 @@ authenticated trusted `workflowRef`, as the base of this selection:
 ```js
 const selection = {
   ...context,
-  changed: ['local/draft'],
+  changed: ['writer'],
   skills: [
-    { key: 'local/draft', hasEval: true },
-    { key: 'local/neighbor', hasEval: true },
+    { key: 'writer', hasEval: true },
   ],
   include: [{
-    key: 'local/draft',
+    key: 'writer',
     id: 'skill-012345abcdef',
-    directory: 'plugins/local/skills/draft',
-    evalPath: 'evals/local/skills/draft/eval.yaml',
+    directory: 'capabilities/writer',
+    evalPath: 'quality/writer.yaml',
     base: context.base,
     head: context.head,
   }],
@@ -81,12 +80,23 @@ const selection = {
 ```
 
 `changed` includes unpaired/new/deleted skills so they remain visibly not run.
-`skills` is the repository's source-derived display inventory, **not** a request
-to execute the whole cohort. `include` contains only supported existing
+`skills` lists the keys/eval availability used to validate selection; it is
+not displayed and need contain only selected skills. Existing larger lists
+remain compatible. `include` contains only supported existing
 Before/After pairs with an eval. Keys and ids must be unique; paths must be
 relative, non-traversing and non-symlinked. The eval must be outside the replaced
 skill directory. Extra selection fields are rejected. There is no model
 override: native saved configuration determines the model.
+
+### Different repository layouts
+
+No `plugins/`, `skills/` or `evals/` directory name is hardcoded. Configure the
+checkout root with `working-directory`, and map each changed skill to its
+repository-relative `include.directory` and `include.evalPath`, as above.
+Put the project's native `.vally.yaml` and normal eval configuration under that
+root; Vally owns model/backend/fixture/grader configuration. The trusted caller
+determines changed directories and emits the selection; there is no new
+Action-specific discovery or configuration format.
 
 Save exactly this JSON as `selection.json`, upload it separately, and retain
 the identical JSON in the selection job's `needs` output. An artifact alone
@@ -223,41 +233,34 @@ artifact subdirectories are not searched by the publisher.
 
 Exact artifact context, producing attempt and coverage
 must match trusted job outputs. Intake accepts bounded regular UTF-8 JSON files,
-rejects symlinks/mixed identities/duplicate checks, and reconstructs allowlisted
-failure reasons instead of trusting arbitrary reason text. A missing arm is an
+rejects symlinks/mixed identities/duplicate checks, and discards legacy
+failure-reason text. New projections omit reasons entirely. A missing arm is an
 error, not a pass. Native declared coverage and individual grader evidence must
-be complete before any new/resolved failure claims are made. Both grader IDs
+be complete before result comparisons are treated as known. Both grader IDs
 and configured names must match; a renamed check is an unknown comparison,
 not a resolved failure.
 
-The comment shows per-skill eval/scenario rows and model columns with passing /
-total **graders** Before → After, visible After failures, collapsed Before
-failures, then collapsed inventory **scenario** counts and nested failure
-details. Execution errors, failed checks, not-run and unknown remain distinct.
+The comment shows **only changed skills**, with eval/scenario rows and model
+columns containing passing / total **graders** Before → After. There are no
+all-skills inventory, delta counters, failure-detail sections or compression
+campaigns. The run link provides further evidence. Execution errors, failed
+checks, not-run and unknown remain distinct.
 Native arm verdicts are displayed separately from evidence completeness and
 grader counts. Each projected row also retains its native eval verdict: all
 graders passing does not hide a native weighted-score rejection. The optional
 `nativeOutcome` arm field and `nativePassed` row field preserve these verdicts;
 legacy projections without them have unknown native verdicts, never inferred
 passes.
-There is no passing-grader wall, hardcoded cohort, full-matrix campaign or
-causality claim. If unmeasured unchanged inventory rows alone would exceed the
-60,000-byte comment budget, those entries are summarized as counts. Every
-changed-skill row, recorded result and failure detail is retained. If required
-evidence still cannot fit, publication fails explicitly rather than truncating.
-The byte budget includes the publisher's marker and run-order prefix. Inventory
-native-failure annotations use each model's matching eval verdicts; the separate
-Native verdicts line retains the arm-wide outcome.
-Scenario indicators use the recorded scenario verdict and checks, not a failing
+If required results cannot fit the 60,000-byte comment budget, publication fails
+explicitly rather than truncating. The budget includes the publisher's marker
+and run-order prefix. The Native verdicts line retains the arm-wide outcome.
+Scenario annotations use the recorded scenario verdict and checks, not a failing
 sibling's eval-group verdict or another model's arm-wide outcome. Native-only
 scoring rejection remains visible separately in the verdict header and explicit
 `native eval failed` annotations, without marking passing siblings as failures.
 Model-less native evidence uses the explicit `Unspecified model` display label;
-this is not an inferred model identity. The failure icon means a failure in
-either arm, including native-only verdict changes without grader changes.
+this is not an inferred model identity.
 Missing optional eval names reuse the native parser's normalized group name.
-Inventory failure totals refer to the changed-skill details above rather than
-repeating them; any additional non-changed-skill failures remain nested there.
 If `selection.json` is missing from the artifact root, publication fails with
 `comparison-selection-artifact-missing` and a flat-download layout hint.
 The same code covers a missing download directory. Shallow/unavailable checkout
@@ -283,9 +286,14 @@ code to execute with the billing credential. Environment filtering, fresh arm
 state and locked tools are process hygiene, **not** credential/network/shared
 kernel isolation or an uneditable organization-wide permission ceiling.
 Artifacts are untrusted data, not independent attestations of candidate code.
-No prompts, trajectories, model output, raw grader evidence, credentials or
-exception strings are uploaded or commented by this adapter. Displayed eval,
-scenario, model and check names must themselves be suitable for publication.
+Prompts, trajectories, model output and raw grader evidence are excluded.
+Execution checks reject labels containing the exact execution credential before
+writing projections. Projection and publisher intake also reject recognizable
+GitHub tokens, bearer/API-key assignments and long mixed alphanumeric token-like
+labels, with a fixed safe error and no offending value. This is defense in depth,
+not proof against deliberately split/encoded exfiltration by credentialed
+candidate code. Names must be suitable for publication; ordinary network and
+credential exposure still require the workflow's approval boundary.
 Known native/API/reporting error codes are preserved in diagnostics; arbitrary
 exception messages remain private. Fixed projection/validation errors also
 retain stable `comparison-*` codes, such as `comparison-coverage-mismatch`

@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { comparisonErrorCode, measurementDigest, publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
+import { comparisonErrorCode, comparisonFailureMessage, measurementDigest, publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
 import { NativeError } from '../src/native.js';
 import { ReportingError } from '../src/github.js';
-import type { ComparisonContext, ComparisonSelection } from '../src/comparison-context.js';
+import { ComparisonError, type ComparisonContext, type ComparisonSelection } from '../src/comparison-context.js';
 import type { GitHubClient } from '../src/github.js';
 import { sha256, type EngineIdentity } from '../src/tooling.js';
 import { inertEnvironment } from '../src/policy.js';
@@ -99,6 +99,14 @@ it('emits authenticated context without acquisition, execution or publication', 
   expect(mocks.request.mock.calls.every(([method]) => method === 'GET')).toBe(true);
 });
 
+it('preserves fixed recovery hints but keeps arbitrary error text private', () => {
+  const hint = 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.';
+  expect(comparisonFailureMessage(new ComparisonError('comparison-selection-artifact-missing', hint)))
+    .toContain(`comparison-selection-artifact-missing. ${hint}`);
+  expect(comparisonFailureMessage(new Error('SECRET_RAW_EXCEPTION'))).not.toContain('SECRET');
+  expect(comparisonFailureMessage(new ReportingError('github-http-403'))).toContain('github-http-403');
+});
+
 it('rejects invalid commands, execution credentials on controls, partial paid retries and platform mismatch before acquisition', async () => {
   for (const input of [
     { command: 'unknown' }, { command: 'context', 'copilot-token': 'billing' },
@@ -122,7 +130,7 @@ it('reports only exact trusted selection and producing attempt and posts missing
     selection: JSON.stringify(selection), 'producing-attempt': '2', 'artifact-directory': root };
   await runComparisonAction();
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'posted');
-  expect(mocks.summary).toHaveBeenCalledWith(expect.stringContaining('Incomplete/error'));
+  expect(mocks.summary).toHaveBeenCalledWith(expect.stringContaining('⚠️ Error → ⚠️ Error'));
   expect(mocks.acquire).not.toHaveBeenCalled();
   mocks.inputs['artifact-directory'] = 'relative';
   await expect(runComparisonAction()).rejects.toThrow('must-be-absolute');
@@ -380,6 +388,32 @@ it('preserves the observed native error when empty stdout has no projected nativ
   expect(data).toEqual({ state: 'error', rows: [], nativeOutcome: 'error' });
 });
 
+it('does not persist execution credentials emitted in candidate-controlled native labels', async () => {
+  const token = 'opaque-execution-credential';
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async (_inputs, _engine, _cwd, directory) => {
+    const file = join(directory, 'native.log');
+    await writeFile(file, [
+      { type: 'trial-result', runId: 'native', itemId: 'case', evalName: 'example', stimulus: 'case',
+        model: 'mock', variant: 'main', evalFilePath: 'eval.yaml', status: 'success',
+        trajectory: { id: 'case', output: '' }, gradeResult: { passed: true, score: 1,
+          details: [{ graderType: 'completed', configuredName: token, passed: true, score: 1 }] } },
+      { type: 'run-summary', runId: 'native', passed: true, hadExecutionErrors: false,
+        evals: [{ evalFilePath: 'eval.yaml', variant: 'main', model: 'mock', scoringApplied: false,
+          passed: true, stimuliRun: 1, stimuliTotal: 1 }] },
+    ].map((row) => JSON.stringify(row)).join('\n'));
+    return { result: { outcome: 'passed', completeness: 'complete', category: 'none', code: 'passed', nativeRunId: 'native' },
+      files: [file], exitCode: 0 };
+  });
+  expect(await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, token, { request: mocks.request },
+    { restore: async () => {}, current: async () => {}, run, measurements: async () => 'fixed' })).toBe(false);
+  for (const arm of ['before', 'after']) {
+    const saved = await readFile(join(root, `skill-abc-${arm}.json`), 'utf8');
+    expect(saved).not.toContain(token);
+    expect(JSON.parse(saved).data).toMatchObject({ state: 'error', rows: [] });
+  }
+  expect(mocks.warning.mock.calls.flat().join(' ')).not.toContain(token);
+});
+
 it.each(['before', 'after'] as const)('rejects a passing %s arm that changes actual measurement bytes', async (mutatingArm) => {
   const cwd = join(root, 'candidate'), output = join(root, 'output');
   await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
@@ -452,7 +486,7 @@ it('rejects directory symlinks rather than ignoring their resolved measurement t
   await expect(measurementDigest(cwd, 'skills/draft')).rejects.toThrow('comparison-unsupported-measurement-symlink');
 });
 
-it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
+it('qualifies a caller-mapped non-marketplace layout with native Before/After and source-integrity guards', async () => {
   const cwd = join(root, 'candidate');
   await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
   await mkdir(join(cwd, 'evals'), { recursive: true });
