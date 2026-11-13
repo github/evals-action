@@ -276,9 +276,9 @@ function scenarios(pair: ComparisonPair): ComparisonRow[] {
 }
 
 function boundedAppender(lines: string[]): (...values: string[]) => void {
-  let length = lines.reduce((sum, line) => sum + line.length + 1, -1);
+  let length = lines.reduce((sum, line) => sum + Buffer.byteLength(line) + 1, -1);
   return (...values) => {
-    length += values.reduce((sum, line) => sum + line.length + 1, 0);
+    length += values.reduce((sum, line) => sum + Buffer.byteLength(line) + 1, 0);
     if (length > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
     lines.push(...values);
   };
@@ -393,10 +393,11 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
     ...detailLines(changedPairs, ['before']), '</details>', '');
   const evaluated = selection.skills.filter((skill) => pairs.some((pair) => pair.key === skill.key &&
     ((pair.before?.rows.length ?? 0) + (pair.after?.rows.length ?? 0) > 0))).length;
-  append('<details>', `<summary>🌐 All skills: ${evaluated} with results · ${selection.skills.length - evaluated} not evaluated</summary>`, '',
+  const inventoryHeader = ['<details>', `<summary>🌐 All skills: ${evaluated} with results · ${selection.skills.length - evaluated} not evaluated</summary>`, '',
     '**Cells: passing scenarios / total recorded scenarios, Before → After.** Per-trial grades determine these counts; native eval/arm verdicts are separate and can reject weighted scoring. Errors and missing results never pass.',
     'Only selected changed skills were evaluated. This run does not measure unchanged-skill regressions.', '',
-    `| Skill (passing / total scenarios) | ${models.map(text).join(' | ')} |`, `| --- | ${models.map(() => '---').join(' | ')} |`);
+    `| Skill (passing / total scenarios) | ${models.map(text).join(' | ')} |`, `| --- | ${models.map(() => '---').join(' | ')} |`];
+  const inventoryRows: { line: string; required: boolean; hasEval: boolean }[] = [];
   for (const skill of selection.skills) {
     const pair = pairs.find((item) => item.key === skill.key);
     const cells = models.map((model) => {
@@ -414,16 +415,27 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
       const { added, resolved } = delta(pair, model);
       return added && resolved ? `🔄 ${values} (${added} new, ${resolved} resolved grader failures)` : values;
     });
-    append(`| ${text(skill.key)} | ${cells.join(' | ')} |`);
+    inventoryRows.push({ line: `| ${text(skill.key)} | ${cells.join(' | ')} |`,
+      required: pair !== undefined || selection.changed.includes(skill.key), hasEval: skill.hasEval });
   }
-  append('', '<details>',
+  const footer = ['', '<details>',
     `<summary>🔎 All-skill failure details: ${failureCount(pairs, 'after')} After · ${failureCount(pairs, 'before')} Before (grader/model results)</summary>`, '',
     ...detailLines(pairs, arms), '</details>', '', '</details>', '',
     '✅ Both pass · 📈 Failures resolved · 📉 New failures · 🔄 Both new and resolved · ❌ Existing failure.',
     '⚠️ Error · ⏭️ Not run · ❔ Unknown never count as passing. Failure reasons describe checks, not raw model/grader output.', '',
-    '*Each changed skill is measured separately; evals, graders, fixtures and other skill sources stay at the merge revision.*');
+    '*Each changed skill is measured separately; evals, graders, fixtures and other skill sources stay at the merge revision.*'];
+  const unmeasured = inventoryRows.filter((row) => !row.required);
+  const fullBytes = Buffer.byteLength([...lines, ...inventoryHeader, ...inventoryRows.map((row) => row.line), ...footer].join('\n'));
+  append(...inventoryHeader);
+  if (fullBytes > 60_000 && unmeasured.length > 0) {
+    const withEval = unmeasured.filter((row) => row.hasEval).length;
+    append(`| Unmeasured unchanged inventory | ${models.map(() => '⏭️ Not evaluated').join(' | ')} |`, '',
+      `**${unmeasured.length} unchanged skills without results summarized:** ${withEval} with repo evals; ${unmeasured.length - withEval} without. All remain unmeasured for every listed model. Changed skills and recorded results are retained.`, '');
+    append(...inventoryRows.filter((row) => row.required).map((row) => row.line));
+  } else append(...inventoryRows.map((row) => row.line));
+  append(...footer);
   const rendered = lines.join('\n');
-  if (rendered.length > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
+  if (Buffer.byteLength(rendered) > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
   return rendered;
 }
 

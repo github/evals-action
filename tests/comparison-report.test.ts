@@ -221,6 +221,26 @@ describe('native comparison projection', () => {
 });
 
 describe('comparison renderer', () => {
+  it('compresses only unmeasured unchanged inventory to publish a valid thousand-skill catalog', () => {
+    const selected = selection();
+    selected.skills = [selected.skills[0]!, ...Array.from({ length: 999 }, (_, index) => ({
+      key: `plugin-${index}/unchanged-skill-without-measurements-${index}`, hasEval: index % 2 === 0,
+    }))];
+    const sample = pair();
+    sample.after.nativeOutcome = 'failed';
+    sample.after.rows[0]!.nativePassed = false;
+    sample.after.rows[0]!.passed = false;
+    sample.after.rows[0]!.checks[0]!.passed = false;
+    const report = renderComparison(selected, [sample], evidence);
+    expect(Buffer.byteLength(report)).toBeLessThanOrEqual(60_000);
+    expect(report).toContain('999 unchanged skills without results summarized');
+    expect(report).toContain('Changed skills and recorded results are retained');
+    expect(report).toContain('## Changed skill: local/draft');
+    expect(report).toContain('| local/draft |');
+    expect(report).toContain('After (new) | completed');
+    expect(report).toContain('Before (resolved After) | routing');
+    expect(report).not.toContain('| plugin-998/');
+  });
   it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
     const sample = pair();
     expect(() => renderComparison(selection(), [sample, sample], evidence)).toThrow(expect.objectContaining({

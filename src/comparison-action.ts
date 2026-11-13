@@ -1,7 +1,9 @@
 import * as core from '@actions/core';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
-import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
@@ -40,6 +42,17 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   if (index.split('\0').some((entry) => /^[a-zS] /.test(entry))) {
     throw new ComparisonError('comparison-hidden-index-flags');
   }
+  const staged = await git(cwd, ['ls-files', '--stage', '-z']);
+  for (const record of staged.split('\0').filter((row) => row.startsWith('160000 '))) {
+    const path = join(cwd, record.slice(record.indexOf('\t') + 1));
+    try {
+      if (!(await lstat(path)).isDirectory() || (await readdir(path)).length > 0) {
+        throw new ComparisonError('comparison-initialized-submodule-unsupported');
+      }
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+  }
   // Reject symlinked path components before Git or the evaluator can follow them.
   const checkPaths = async () => {
     for (const path of [entry.directory, entry.evalPath]) {
@@ -61,6 +74,28 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   if (outside.stdout || await git(cwd, ['ls-files', '--others', '-z'])) {
     throw new ComparisonError('comparison-measurement-files-changed');
   }
+}
+
+export async function measurementDigest(cwd: string, skillDirectory: string): Promise<string> {
+  const hash = createHash('sha256');
+  const excluded = new Set([join(cwd, '.git'), join(cwd, ...skillDirectory.split('/'))]);
+  const visit = async (directory: string): Promise<void> => {
+    for (const name of (await readdir(directory)).sort()) {
+      const path = join(directory, name);
+      if (excluded.has(path)) continue;
+      const info = await lstat(path);
+      hash.update(relative(cwd, path)).update('\0').update(String(info.mode & 0o777)).update('\0');
+      if (info.isSymbolicLink()) hash.update('link\0').update(await readlink(path));
+      else if (info.isDirectory()) { hash.update('directory\0'); await visit(path); }
+      else if (info.isFile()) {
+        hash.update('file\0').update(String(info.size)).update('\0');
+        for await (const chunk of createReadStream(path)) hash.update(chunk);
+      } else throw new ComparisonError('comparison-unsupported-measurement-file');
+      hash.update('\0');
+    }
+  };
+  await visit(cwd);
+  return hash.digest('hex');
 }
 
 export async function publishComparison(
@@ -93,7 +128,8 @@ export async function publishComparison(
       Number(previous[1]) === order[0] && Number(previous[2]) > order[1]!)) return 'stale';
   const content = `${marker}\n<!-- run:${order.join(':')} -->\n${body}`;
   if (Buffer.byteLength(content) > 60_000) throw new ComparisonError('comparison-comment-too-large');
-  await assertCurrentPullRequest(selection, api);
+  const pull = await assertCurrentPullRequest(selection, api);
+  if (pull.merge_commit_sha !== selection.merge) throw new ComparisonError('comparison-pr-merge-changed');
   await api.request(existing ? 'PATCH' : 'POST',
     existing ? `${prefix}/issues/comments/${existing.id}` : `${prefix}/issues/${selection.pullNumber}/comments`, { body: content });
   return 'posted';
@@ -103,6 +139,7 @@ interface PairDependencies {
   restore: typeof restoreComparisonSource;
   current: () => Promise<void>;
   run: typeof runNative;
+  measurements: typeof measurementDigest;
 }
 
 export async function runComparisonPair(
@@ -112,10 +149,12 @@ export async function runComparisonPair(
     restore: restoreComparisonSource,
     current: async () => { await assertCurrentPullRequest(context, api); },
     run: runNative,
+    measurements: measurementDigest,
   },
 ): Promise<boolean> {
   let passed = true;
   let cancelled = false;
+  let baseline: string | undefined;
   for (const arm of ['before', 'after'] as const) {
     const path = join(directory, `${entry.id}-${arm}.json`);
     const serialize = (data: ComparisonArm) => JSON.stringify({
@@ -126,6 +165,9 @@ export async function runComparisonPair(
     try {
       if (cancelled) throw new ComparisonError('comparison-cancelled-before-arm');
       await dependencies.restore(cwd, context, entry, arm === 'before' ? entry.base : entry.head);
+      const digest = await dependencies.measurements(cwd, entry.directory);
+      if (baseline !== undefined && digest !== baseline) throw new ComparisonError('comparison-measurement-bytes-changed');
+      baseline = digest;
       await dependencies.current();
       const native = await mkdtemp(join(directory, `${arm}-native-`));
       const home = join(native, 'home'), tmp = join(native, 'tmp');
@@ -148,7 +190,7 @@ export async function runComparisonPair(
         if ((await stat(operation.files[0])).size > 64 * maximum) throw new ComparisonError('comparison-native-evidence-too-large');
         const projected = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null);
         if (Buffer.byteLength(serialize(projected)) > maximum) throw new ComparisonError('comparison-projection-too-large');
-        data = projected;
+        data = { ...projected, nativeOutcome: projected.nativeOutcome ?? data.nativeOutcome ?? 'unknown' };
       }
       if (data.state !== 'complete' || data.rows.some((row) => row.state !== 'graded')) passed = false;
     } catch (error) {
@@ -215,7 +257,7 @@ export async function runComparisonAction(): Promise<void> {
   await writeFile(join(directory, 'selection.json'), JSON.stringify(selection) + '\n', { mode: 0o600, flag: 'wx' });
   core.setOutput('projection-directory', directory);
   const passed = await runComparisonPair(context, selection, entry, engine, cwd, directory, copilot, api, {
-    restore: restoreComparisonSource, run: runNative,
+    restore: restoreComparisonSource, run: runNative, measurements: measurementDigest,
     current: async () => {
       assertContext(await authenticateComparison(payload, context.sourceWorkflow, api, process.env), context);
     },

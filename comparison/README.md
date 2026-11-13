@@ -144,6 +144,14 @@ outputs or caches into the candidate checkout before this Action; those files
 will prevent either arm from starting. Keep trusted tools and scratch state
 outside that checkout.
 
+The Action fingerprints actual checkout bytes, file types, permissions and
+symlink targets outside the selected skill before native execution and checks
+that baseline before After. This preserves legitimate checkout normalization
+while detecting byte changes that Git text/EOL normalization can hide.
+Initialized/nonempty submodules are unsupported and fail explicitly; an empty
+uninitialized gitlink is allowed. Submodule ignore settings must not hide
+measurement inputs from the comparison guards.
+
 Acquisition reuses the root Action's integrity-verified Vally installer:
 job-private manifest and generated integrity lock, script-disabled npm restore,
 recorded version/CLI/dependency-graph/lock digests. Both arms share **one acquired
@@ -214,13 +222,19 @@ graders passing does not hide a native weighted-score rejection. The optional
 legacy projections without them have unknown native verdicts, never inferred
 passes.
 There is no passing-grader wall, hardcoded cohort, full-matrix campaign or
-causality claim. Oversized comments fail explicitly rather than truncate.
+causality claim. If unmeasured unchanged inventory rows alone would exceed the
+60,000-byte comment budget, those entries are summarized as counts. Every
+changed-skill row, recorded result and failure detail is retained. If required
+evidence still cannot fit, publication fails explicitly rather than truncating.
 Authenticated bot author ID (including GitHub App installation bots),
 producing-run ordering and a final live PR-head check protect the sticky
 comment. Its marker is scoped to the authenticated trusted workflow ref as
 well as the source workflow, matching the scope of run numbers. Different
 trusted publishers consuming the same notifier do not share comment order.
 Workflow-level publisher serialization is still required.
+Immediately before writing, the publisher rechecks both the PR head and
+selected merge SHA. Like other GitHub API read/write sequences, this is not
+an atomic transaction.
 
 ## Retained exposure and acceptance limits
 

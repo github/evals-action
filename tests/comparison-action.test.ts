@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { comparisonErrorCode, publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
+import { comparisonErrorCode, measurementDigest, publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
 import { NativeError } from '../src/native.js';
 import { ReportingError } from '../src/github.js';
 import type { ComparisonContext, ComparisonSelection } from '../src/comparison-context.js';
@@ -215,6 +215,17 @@ it('refuses non-bot or unavailable publisher identities before listing or writin
   }
 });
 
+it('rejects a regenerated merge in the final live publisher check even when the head is unchanged', async () => {
+  const request = vi.fn<GitHubClient['request']>(async (_method, path) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'comparison-app[bot]' } } };
+    if (path.endsWith('/pulls/7')) return { ...pull(), merge_commit_sha: sha('e') };
+    return [];
+  });
+  await expect(publishComparison(selection, 'Do not publish old merge evidence', { request }))
+    .rejects.toThrow('comparison-pr-merge-changed');
+  expect(request.mock.calls.some(([method, path]) => method !== 'GET' && path.includes('/issues/'))).toBe(false);
+});
+
 it('runs After after a failed Before with fresh HOME/TMP, exact native overrides and allowlisted projections', async () => {
   const entry = selection.include[0]!;
   const restore = vi.fn(async () => {});
@@ -226,7 +237,7 @@ it('runs After after a failed Before with fresh HOME/TMP, exact native overrides
       files: [file], exitCode: 1 };
   });
   expect(await runComparisonPair(context, selection, entry, engine, root, root, 'billing-token', { request: mocks.request },
-    { restore, current, run })).toBe(false);
+    { restore, current, run, measurements: async () => 'fixed' })).toBe(false);
   expect(run).toHaveBeenCalledTimes(2);
   expect(restore.mock.calls.map((call) => call.length)).toEqual([4, 4]);
   expect(current).toHaveBeenCalledTimes(2);
@@ -246,7 +257,7 @@ it('runs After after a failed Before with fresh HOME/TMP, exact native overrides
 
 it('stale-head guards prevent either native arm and cancellation does not start After', async () => {
   const run = vi.fn<typeof import('../src/native.js').runNative>();
-  const deps = { restore: async () => {}, current: async () => { throw new Error('SECRET'); }, run };
+  const deps = { restore: async () => {}, current: async () => { throw new Error('SECRET'); }, run, measurements: async () => 'fixed' };
   await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, 'billing', { request: mocks.request }, deps);
   expect(run).not.toHaveBeenCalled();
   expect(mocks.warning.mock.calls.flat().join(' ')).not.toContain('SECRET');
@@ -279,7 +290,7 @@ it.each(['skipped', 'ungraded'] as const)('rejects native passing arms that cont
       files: [file], exitCode: 0 };
   });
   const passed = await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, '', { request: mocks.request },
-    { restore: async () => {}, current: async () => {}, run });
+    { restore: async () => {}, current: async () => {}, run, measurements: async () => 'fixed' });
   expect(passed).toBe(false);
   expect(run).toHaveBeenCalledTimes(2);
   const arm = JSON.parse(await readFile(join(root, 'skill-abc-after.json'), 'utf8'));
@@ -306,7 +317,7 @@ it('fails oversized projections explicitly, uploads bounded error state and stil
       files: [file], exitCode: 0 };
   });
   const passed = await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, '', { request: mocks.request },
-    { restore: async () => {}, current: async () => {}, run });
+    { restore: async () => {}, current: async () => {}, run, measurements: async () => 'fixed' });
   expect(passed).toBe(false);
   expect(run).toHaveBeenCalledTimes(2);
   expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-projection-too-large'));
@@ -317,13 +328,26 @@ it('preserves known API and native failure codes without exposing unknown except
   for (const error of [new ReportingError('github-http-403'), new NativeError('native-version-mismatch')]) {
     const directory = await mkdtemp(join(root, 'failure-'));
     await runComparisonPair(context, selection, selection.include[0]!, engine, root, directory, '', { request: mocks.request },
-      { restore: async () => {}, current: async () => { throw error; }, run: mocks.native });
+      { restore: async () => {}, current: async () => { throw error; }, run: mocks.native, measurements: async () => 'fixed' });
     expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining(error.code));
     expect(comparisonErrorCode(error, 'comparison-operation-failed')).toBe(error.code);
   }
   expect(comparisonErrorCode(new ReportingError('reporting-bot-token-required'), 'fallback')).toBe('reporting-bot-token-required');
   expect(comparisonErrorCode(Object.assign(new Error('SECRET'), { code: 'SECRET' }), 'comparison-operation-failed'))
     .toBe('comparison-operation-failed');
+});
+
+it('preserves the observed native error when empty stdout has no projected native outcome', async () => {
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async (_inputs, _engine, _cwd, directory) => {
+    const file = join(directory, 'empty.stdout');
+    await writeFile(file, '');
+    return { result: { outcome: 'error', completeness: 'partial', category: 'evidence',
+      code: 'native-run-summary-missing', nativeRunId: 'native' }, files: [file], exitCode: 1 };
+  });
+  expect(await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, '', { request: mocks.request },
+    { restore: async () => {}, current: async () => {}, run, measurements: async () => 'fixed' })).toBe(false);
+  const data = JSON.parse(await readFile(join(root, 'skill-abc-after.json'), 'utf8')).data;
+  expect(data).toEqual({ state: 'error', rows: [], nativeOutcome: 'error' });
 });
 
 it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
@@ -333,6 +357,10 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await writeFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'before');
   await writeFile(join(cwd, 'skills', 'draft', 'café.md'), 'unicode source');
   await writeFile(join(cwd, '.gitignore'), 'skills/draft/*.cache\nfixtures/\n');
+  await mkdir(join(cwd, 'fixtures'));
+  await writeFile(join(cwd, 'fixtures', 'measurement.txt'), 'original\nbytes\n');
+  await writeFile(join(cwd, '.gitattributes'), 'fixtures/*.txt text eol=lf\n');
+  await writeFile(join(cwd, '.gitmodules'), '[submodule "fixture-module"]\npath = fixture-module\nurl = ../fixture-module\nignore = all\n');
   await writeFile(join(cwd, '.vally.yaml'), 'plugins:\n  grader: [./source-grader.mjs]\n');
   await writeFile(join(cwd, 'evals', 'eval.yaml'), [
     'name: source-comparison', 'type: capability', 'defaults:', '  executor: mock', '  model: mock-only',
@@ -348,7 +376,11 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   ].join('\n'));
   const git = (...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q'); git('config', 'core.autocrlf', 'false'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
-  git('add', '.'); git('commit', '-qm', 'base');
+  git('add', '.'); git('add', '-f', 'fixtures/measurement.txt'); git('commit', '-qm', 'base');
+  const gitlink = git('rev-parse', 'HEAD');
+  await mkdir(join(cwd, 'fixture-module'));
+  git('update-index', '--add', '--cacheinfo', `160000,${gitlink},fixture-module`);
+  git('commit', '-qm', 'uninitialized gitlink');
   const base = git('rev-parse', 'HEAD');
   git('checkout', '-qb', 'skill');
   await writeFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'after');
@@ -387,7 +419,7 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
   expect(await readFile(ignoredSkill, 'utf8')).toBe('untracked Before skill state');
   await rm(ignoredSkill);
-  await mkdir(join(cwd, 'fixtures'));
+  await mkdir(join(cwd, 'fixtures'), { recursive: true });
   const ignoredFixture = join(cwd, 'fixtures', 'before.cache');
   await writeFile(ignoredFixture, 'untracked Before fixture state');
   await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
@@ -401,6 +433,32 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await symlink(join(cwd, 'evals'), join(cwd, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   await expect(restoreComparisonSource(cwd, ctx, { ...entry, evalPath: 'linked/eval.yaml' }, head)).rejects.toThrow('symlinked');
   await rm(join(cwd, 'linked'));
+
+  const module = join(cwd, 'fixture-module');
+  const moduleGit = (...args: string[]) => execFileSync('git', ['-C', module, ...args], { encoding: 'utf8' }).trim();
+  await mkdir(module, { recursive: true });
+  moduleGit('init', '-q'); moduleGit('config', 'user.name', 'Fixture'); moduleGit('config', 'user.email', 'fixture@example.invalid');
+  await writeFile(join(module, 'fixture.txt'), 'original');
+  moduleGit('add', '.'); moduleGit('commit', '-qm', 'module fixture');
+  await writeFile(join(module, 'fixture.txt'), 'hidden submodule change');
+  expect(git('diff', 'HEAD', '--', 'fixture-module')).toBe('');
+  expect(git('ls-files', '--others')).toBe('');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('initialized-submodule-unsupported');
+  await rm(module, { recursive: true, force: true });
+  await mkdir(module);
+
+  const measurement = join(cwd, 'fixtures', 'measurement.txt');
+  const byteMutation = vi.fn<typeof import('../src/native.js').runNative>(async () => {
+    await writeFile(measurement, 'original\r\nbytes\r\n');
+    expect(git('diff', 'HEAD', '--', 'fixtures/measurement.txt')).toBe('');
+    return { result: { outcome: 'failed', completeness: 'complete', category: 'none', code: 'fixture-failure' }, files: [] };
+  });
+  const byteOutput = await mkdtemp(join(root, 'byte-drift-'));
+  await runComparisonPair(ctx, { ...selection, ...ctx, include: [entry] }, entry, engine, cwd, byteOutput, '', { request: mocks.request },
+    { restore: restoreComparisonSource, current: async () => {}, run: byteMutation, measurements: measurementDigest });
+  expect(byteMutation).toHaveBeenCalledTimes(1);
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-measurement-bytes-changed'));
+  await writeFile(measurement, 'original\nbytes\n');
 
   const actualNative = await vi.importActual<typeof import('../src/native.js')>('../src/native.js');
   const tooling = await vi.importActual<typeof import('../src/tooling.js')>('../src/tooling.js');
