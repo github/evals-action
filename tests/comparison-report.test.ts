@@ -239,6 +239,15 @@ describe('native comparison projection', () => {
     expect(loaded.pairs[0]!.after).toEqual(failed);
   });
 
+  it('shows a recorded scenario rejection separately from its passing individual check count', () => {
+    const data = collectNative(jsonl(trial({ gradeResult: {
+      passed: false, score: 0, details: [{ graderType: 'completed', passed: true, score: 1 }],
+    } }), footer()), 'native', 1);
+    const report = renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence);
+    expect(report).toContain('draft : positive | ❌ 1/1 (native scenario failed) → 1/1 (native scenario failed)');
+    expect(report).toContain('| local/draft | 0/1 → 0/1 |');
+  });
+
   it('recognizes nested grader errors without discarding other completed grader failures', () => {
     const data = collectNative(jsonl(trial({ gradeResult: {
       passed: false, score: 0, details: [
@@ -311,6 +320,7 @@ describe('comparison renderer', () => {
     const report = renderComparison(selection(), [sample], evidence);
     expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
     expect(report).toContain('| local/draft | 1/1 → 1/1 | 1/1 (native eval failed) → 1/1 (native eval failed) |');
+    expect(report).toContain('draft : positive | ✅ 2/2 → 2/2 |');
   });
 
   it.each(['before', 'after'] as const)('describes native-only failure in the %s arm without claiming it already existed', (arm) => {
@@ -319,10 +329,31 @@ describe('comparison renderer', () => {
     sample[arm].nativeOutcome = 'failed';
     sample[arm].rows[0]!.nativePassed = false;
     const report = renderComparison(selection(), [sample], evidence);
-    expect(report).toContain('draft : positive | ❌');
+    expect(report).toContain('native eval failed');
+    expect(report).not.toContain('draft : positive | ❌');
     expect(report).toContain('❌ Failure in either arm.');
     expect(report).not.toContain('Existing failure');
     expect(report).toContain('0 resolved · 📉 0 new failures (grader/model results)');
+  });
+
+  it('keeps a passing scenario local when a sibling fails in the same native eval group', async () => {
+    const data = collectNative(jsonl(
+      trial({ itemId: 'passing', stimulus: 'draft-passing', gradeResult: grade(true) }),
+      trial({ itemId: 'failing', stimulus: 'draft-failing' }),
+      footer({ stimuliRun: 2, stimuliTotal: 2 }),
+    ), 'native', 1);
+    expect(data).toMatchObject({ state: 'complete', nativeOutcome: 'failed' });
+    expect(data.rows[0]).toMatchObject({ passed: true, nativePassed: false });
+    const sample = { key: 'local/draft', before: data, after: structuredClone(data) };
+    const root = await directory();
+    await save(root, selection(), sample);
+    const loaded = await loadComparison(root, selection());
+    const report = renderComparison(loaded.selection, loaded.pairs, evidence);
+    expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
+    expect(report).toContain('draft : passing | ✅ 2/2 → 2/2');
+    expect(report).toContain('draft : failing | ❌ 1/2 → 1/2');
+    expect(report).toContain('| local/draft | 1/2 → 1/2 |');
+    expect(report).not.toContain('native eval failed');
   });
   it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
     const sample = pair();

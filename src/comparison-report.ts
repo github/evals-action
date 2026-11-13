@@ -245,6 +245,12 @@ function comparable(pair: ComparisonPair): boolean {
   });
 }
 
+function nativeOnlyFailure(arm: ComparisonArm | undefined, row: ComparisonRow | undefined): boolean {
+  if (!arm || !row || row.nativePassed !== false) return false;
+  return arm.rows.filter((candidate) => candidate.eval === row.eval && candidate.model === row.model)
+    .every((candidate) => candidate.state === 'graded' && candidate.passed);
+}
+
 function counts(arm?: ComparisonArm, row?: ComparisonRow): string {
   if (!arm || arm.state === 'error') return '⚠️ Error';
   if (arm.state === 'not-run') return '⏭️ Not run';
@@ -252,7 +258,8 @@ function counts(arm?: ComparisonArm, row?: ComparisonRow): string {
   if (row.state === 'error') return '⚠️ Error';
   if (row.state === 'not-run') return '⏭️ Not run';
   const passed = row.checks.filter((check) => check.passed).length;
-  return `${passed}/${row.checks.length}${passed === row.checks.length && row.nativePassed === false ? ' (native eval failed)' : ''}`;
+  const failure = !row.passed ? ' (native scenario failed)' : nativeOnlyFailure(arm, row) ? ' (native eval failed)' : '';
+  return `${passed}/${row.checks.length}${passed === row.checks.length ? failure : ''}`;
 }
 
 function nativeVerdict(arm: ComparisonArm | undefined): string {
@@ -355,10 +362,11 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
         const old = failures(before), current = failures(after);
         const added = difference(current, old), resolved = difference(old, current);
         const known = comparablePairs.has(pair) && before && after;
-        const nativePass = pair.before?.nativeOutcome === 'passed' && pair.after?.nativeOutcome === 'passed' &&
-          before?.nativePassed === true && after?.nativePassed === true;
+        const nativePass = before?.passed && after?.passed &&
+          before.nativePassed !== undefined && after.nativePassed !== undefined &&
+          !nativeOnlyFailure(pair.before, before) && !nativeOnlyFailure(pair.after, after);
         const icon = !known ? '' : added && resolved ? '🔄 ' : added ? '📉 ' : resolved ? '📈 ' :
-          current.size || before?.nativePassed === false || after?.nativePassed === false ? '❌ ' : nativePass ? '✅ ' : '';
+          current.size || !before?.passed || !after?.passed ? '❌ ' : nativePass ? '✅ ' : '';
         return `${icon}${counts(pair.before, before)} → ${counts(pair.after, after)}${known ? '' : ' (comparison unknown)'}`;
       });
       const short = row.stimulus.startsWith(`${row.eval}-`) ? row.stimulus.slice(row.eval.length + 1) : row.stimulus;

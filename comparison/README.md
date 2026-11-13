@@ -248,6 +248,10 @@ evidence still cannot fit, publication fails explicitly rather than truncating.
 The byte budget includes the publisher's marker and run-order prefix. Inventory
 native-failure annotations use each model's matching eval verdicts; the separate
 Native verdicts line retains the arm-wide outcome.
+Scenario indicators use the recorded scenario verdict and checks, not a failing
+sibling's eval-group verdict or another model's arm-wide outcome. Native-only
+scoring rejection remains visible separately in the verdict header and explicit
+`native eval failed` annotations, without marking passing siblings as failures.
 Model-less native evidence uses the explicit `Unspecified model` display label;
 this is not an inferred model identity. The failure icon means a failure in
 either arm, including native-only verdict changes without grader changes.
