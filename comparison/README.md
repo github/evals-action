@@ -255,6 +255,9 @@ Inventory failure totals refer to the changed-skill details above rather than
 repeating them; any additional non-changed-skill failures remain nested there.
 If `selection.json` is missing from the artifact root, publication fails with
 `comparison-selection-artifact-missing` and a flat-download layout hint.
+The same code covers a missing download directory. Shallow/unavailable checkout
+parent lookups use `comparison-checkout-revision-mismatch`; dangling or looping
+measurement symlinks use `comparison-unsupported-measurement-symlink`.
 Run setup failures distinguish `comparison-working-directory-invalid`,
 `comparison-vally-resolution-failed` and `comparison-vally-acquisition-failed`
 without exposing raw filesystem, registry or installation exception text.

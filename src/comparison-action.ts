@@ -37,9 +37,10 @@ async function git(cwd: string, args: string[], input?: string): Promise<string>
 }
 
 export async function restoreComparisonSource(cwd: string, context: ComparisonContext, entry: ComparisonEntry, source: string): Promise<void> {
-  if (await git(cwd, ['rev-parse', 'HEAD']) !== context.merge ||
-      await git(cwd, ['rev-parse', 'HEAD^1']) !== context.base ||
-      await git(cwd, ['rev-parse', 'HEAD^2']) !== context.head) {
+  let revisions: string[];
+  try { revisions = await Promise.all(['HEAD', 'HEAD^1', 'HEAD^2'].map((revision) => git(cwd, ['rev-parse', revision]))); }
+  catch { throw new ComparisonError('comparison-checkout-revision-mismatch'); }
+  if (revisions[0] !== context.merge || revisions[1] !== context.base || revisions[2] !== context.head) {
     throw new ComparisonError('comparison-checkout-revision-mismatch');
   }
   const index = await git(cwd, ['ls-files', '-v', '-z']);
@@ -106,7 +107,8 @@ export async function measurementDigest(cwd: string, skillDirectory: string): Pr
       hash.update(relative(cwd, path)).update('\0').update(String(info.mode & 0o777)).update('\0');
       if (info.isSymbolicLink()) {
         hash.update('link\0').update(await readlink(path)).update('\0');
-        info = await stat(path);
+        try { info = await stat(path); }
+        catch { throw new ComparisonError('comparison-unsupported-measurement-symlink'); }
         if (!info.isFile()) throw new ComparisonError('comparison-unsupported-measurement-symlink');
         hash.update(String(info.mode & 0o777)).update('\0');
       }

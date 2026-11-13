@@ -492,9 +492,12 @@ async function artifact(root: string, name: string): Promise<unknown> {
 export async function loadComparison(
   root: string, expectedSelection: ComparisonSelection,
 ): Promise<{ selection: ComparisonSelection; pairs: ComparisonPair[] }> {
-  const directory = await realpath(root);
+  let directory: string;
   let savedSelection: unknown;
-  try { savedSelection = await artifact(directory, 'selection.json'); }
+  try {
+    directory = await realpath(root);
+    savedSelection = await artifact(directory, 'selection.json');
+  }
   catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
     invalid('comparison-selection-artifact-missing', 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.');

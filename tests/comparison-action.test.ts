@@ -415,7 +415,7 @@ it.each(['before', 'after'] as const)('rejects a passing %s arm that changes act
   }
 });
 
-it('detects changed fixture bytes resolved through a file symlink into the selected skill', async ({ skip }) => {
+it('measures resolved file symlinks and rejects dangling or looping targets with a safe code', async ({ skip }) => {
   const cwd = join(root, 'candidate'), skill = join(cwd, 'skills', 'draft');
   await mkdir(skill, { recursive: true });
   const source = join(skill, 'SKILL.md');
@@ -434,6 +434,13 @@ it('detects changed fixture bytes resolved through a file symlink into the selec
   const before = await measurementDigest(cwd, 'skills/draft');
   await writeFile(source, 'after');
   expect(await measurementDigest(cwd, 'skills/draft')).not.toBe(before);
+  const fixture = join(cwd, 'fixture.txt');
+  await rm(fixture);
+  await symlink(join(cwd, 'missing.txt'), fixture, 'file');
+  await expect(measurementDigest(cwd, 'skills/draft')).rejects.toThrow('comparison-unsupported-measurement-symlink');
+  await rm(fixture);
+  await symlink(fixture, fixture, 'file');
+  await expect(measurementDigest(cwd, 'skills/draft')).rejects.toThrow('comparison-unsupported-measurement-symlink');
 });
 
 it('rejects directory symlinks rather than ignoring their resolved measurement tree', async () => {
@@ -507,6 +514,10 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(await readFile(join(cwd, entry.directory, 'new.md'), 'utf8')).toBe('renamed by head');
   await expect(readFile(join(cwd, entry.directory, 'removed.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   await expect(readFile(join(cwd, entry.directory, 'old.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  const shallow = join(cwd, '.git', 'shallow');
+  await writeFile(shallow, `${merge}\n`);
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-checkout-revision-mismatch');
+  await rm(shallow);
   for (const flag of ['assume-unchanged', 'skip-worktree']) {
     git('update-index', `--${flag}`, '--', entry.evalPath);
     await writeFile(join(cwd, entry.evalPath), 'hidden measurement change');

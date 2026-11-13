@@ -484,10 +484,12 @@ describe('comparison artifact intake', () => {
     const nested = join(root, 'downloaded-artifact');
     await mkdir(nested);
     await save(nested);
-    await expect(loadComparison(root, selection())).rejects.toMatchObject({
-      code: 'comparison-selection-artifact-missing',
-      message: 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.',
-    });
+    for (const download of [root, join(root, 'missing-directory')]) {
+      await expect(loadComparison(download, selection())).rejects.toMatchObject({
+        code: 'comparison-selection-artifact-missing',
+        message: 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.',
+      });
+    }
     await writeFile(join(root, 'selection.json'), 'SECRET_INVALID_SELECTION');
     await expect(loadComparison(root, selection())).rejects.toMatchObject({ code: 'comparison-malformed-json' });
   });
