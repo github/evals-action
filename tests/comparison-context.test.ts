@@ -134,3 +134,12 @@ it('accepts only exact source-bound generic selections with unique contained pat
   ];
   for (const value of invalid) expect(() => validateComparisonSelection(value, f.context)).toThrow();
 });
+
+it.each(['skills', 'include'] as const)('uses an input-specific safe code for non-object %s entries', (field) => {
+  const f = fixture();
+  const code = field === 'skills' ? 'comparison-invalid-inventory' : 'comparison-invalid-selection-entry';
+  for (const entry of [null, [], false, 0, 'SECRET_NON_OBJECT']) {
+    expect(() => validateComparisonSelection({ ...f.selection, [field]: [entry] }, f.context))
+      .toThrow(expect.objectContaining({ code, message: code }));
+  }
+});

@@ -158,7 +158,8 @@ uninitialized gitlink is allowed. Submodule ignore settings must not hide
 measurement inputs from the comparison guards.
 All Git guards/restores disable replacement objects and force the effective
 worktree to the verified candidate directory, ignoring `core.worktree`
-redirection. Untracked-file checks
+redirection. Every Git call also disables hooks and fsmonitor callbacks.
+Untracked-file checks
 include empty directories, including those inside the selected skill, so
 Before-created directory state cannot silently survive into After.
 Declared Git filter attributes on tracked files are unsupported and fail before

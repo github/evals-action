@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
 import { finished } from 'node:stream/promises';
+import { devNull } from 'node:os';
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
@@ -17,6 +18,7 @@ import { collectNative, comparisonCommentMetadata, loadComparison, renderCompari
 
 const execute = promisify(execFile);
 const maximum = 1024 * 1024;
+const gitControls = ['--no-replace-objects', '-c', `core.hooksPath=${devNull}`, '-c', 'core.fsmonitor=false'];
 export function comparisonErrorCode(error: unknown, fallback: string): string {
   return error instanceof ComparisonError || error instanceof NativeError || error instanceof ReportingError ? error.code : fallback;
 }
@@ -27,7 +29,7 @@ const parse = (text: string): unknown => {
 };
 
 async function git(cwd: string, args: string[], input?: string): Promise<string> {
-  const operation = execute('git', ['--no-replace-objects', `--work-tree=${cwd}`, '--literal-pathspecs', '-C', cwd, ...args], {
+  const operation = execute('git', [...gitControls, `--work-tree=${cwd}`, '--literal-pathspecs', '-C', cwd, ...args], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   const writing = input === undefined ? undefined : finished(operation.child.stdin!, { cleanup: true });
@@ -88,7 +90,7 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   await checkPaths();
   await git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--exit-code', source, '--', entry.directory]);
   // This pathspec is constructed from a validated directory, never candidate shell text.
-  const outside = await execute('git', ['--no-replace-objects', `--work-tree=${cwd}`, '-C', cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
+  const outside = await execute('git', [...gitControls, `--work-tree=${cwd}`, '-C', cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   if (outside.stdout || await git(cwd, ['ls-files', '--others', '--directory', '-z'])) {

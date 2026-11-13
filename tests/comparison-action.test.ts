@@ -11,6 +11,7 @@ import { ReportingError } from '../src/github.js';
 import type { ComparisonContext, ComparisonSelection } from '../src/comparison-context.js';
 import type { GitHubClient } from '../src/github.js';
 import { sha256, type EngineIdentity } from '../src/tooling.js';
+import { inertEnvironment } from '../src/policy.js';
 
 const mocks = vi.hoisted(() => ({
   inputs: {} as Record<string, string>, setOutput: vi.fn<(name: string, value: unknown) => void>(), setFailed: vi.fn(), warning: vi.fn(), acquire: vi.fn(),
@@ -477,7 +478,9 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
     "async grade() { const passed = (await readFile(new URL('./skills/draft/SKILL.md', import.meta.url), 'utf8')) === 'after';",
     'return { passed, score: passed ? 1 : 0 }; } }); }',
   ].join('\n'));
-  const git = (...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+  const git = (...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8', env: inertEnvironment(process.env),
+  }).trim();
   git('init', '-q'); git('config', 'core.autocrlf', 'false'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
   git('add', '.'); git('add', '-f', 'fixtures/measurement.txt'); git('commit', '-qm', 'base');
   const gitlink = git('rev-parse', 'HEAD');
@@ -632,6 +635,29 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   git('config', '--remove-section', 'filter.shadow');
   await restoreComparisonSource(cwd, ctx, entry, head);
   expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
+
+  const hook = join(cwd, '.git', 'hooks', 'post-index-change');
+  const monitor = join(cwd, '.git', 'hooks', 'comparison-fsmonitor');
+  const hookMarker = join(cwd, '.git', 'hook-ran'), monitorMarker = join(cwd, '.git', 'fsmonitor-ran');
+  await writeFile(hook, '#!/bin/sh\nprintf hook > .git/hook-ran\n', { mode: 0o700 });
+  await writeFile(monitor, '#!/bin/sh\nprintf monitor > .git/fsmonitor-ran\nprintf "token\\\\000"\n', { mode: 0o700 });
+  git('read-tree', merge);
+  expect(await readFile(hookMarker, 'utf8')).toBe('hook');
+  git('config', 'core.fsmonitor', '.git/hooks/comparison-fsmonitor');
+  git('config', 'core.fsmonitorHookVersion', '2');
+  git('status', '--porcelain');
+  expect(await readFile(monitorMarker, 'utf8')).toBe('monitor');
+  await rm(hookMarker, { force: true });
+  await rm(monitorMarker);
+  await restoreComparisonSource(cwd, ctx, entry, firstParent);
+  await restoreComparisonSource(cwd, ctx, entry, head);
+  expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
+  await expect(readFile(hookMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(monitorMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+  await rm(hook);
+  await rm(monitor);
+  git('config', '--unset', 'core.fsmonitor');
+  git('config', '--unset', 'core.fsmonitorHookVersion');
 
   const actualNative = await vi.importActual<typeof import('../src/native.js')>('../src/native.js');
   const tooling = await vi.importActual<typeof import('../src/tooling.js')>('../src/tooling.js');

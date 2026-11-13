@@ -136,7 +136,9 @@ export function validateComparisonSelection(value: unknown, context: ComparisonC
     throw new ComparisonError('comparison-invalid-selection');
   }
   const skills = selected.skills.map((raw) => {
-    const skill = object(raw);
+    let skill: Record<string, unknown>;
+    try { skill = object(raw); }
+    catch { throw new ComparisonError('comparison-invalid-inventory'); }
     if (!name(skill.key) || typeof skill.hasEval !== 'boolean') throw new ComparisonError('comparison-invalid-inventory');
     return { key: skill.key, hasEval: skill.hasEval };
   });
@@ -145,7 +147,9 @@ export function validateComparisonSelection(value: unknown, context: ComparisonC
   const changed = selected.changed;
   const ids = new Set<string>(), keys = new Set<string>();
   const include = selected.include.map((raw): ComparisonEntry => {
-    const entry = object(raw);
+    let entry: Record<string, unknown>;
+    try { entry = object(raw); }
+    catch { throw new ComparisonError('comparison-invalid-selection-entry'); }
     if (!name(entry.key) || typeof entry.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(entry.id) ||
         ids.has(entry.id) || keys.has(entry.key) || !changed.includes(entry.key) || !skillKeys.has(entry.key) ||
         !safePath(entry.directory) || !safePath(entry.evalPath) ||
