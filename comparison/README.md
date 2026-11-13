@@ -245,6 +245,9 @@ Inventory failure totals refer to the changed-skill details above rather than
 repeating them; any additional non-changed-skill failures remain nested there.
 If `selection.json` is missing from the artifact root, publication fails with
 `comparison-selection-artifact-missing` and a flat-download layout hint.
+Run setup failures distinguish `comparison-working-directory-invalid`,
+`comparison-vally-resolution-failed` and `comparison-vally-acquisition-failed`
+without exposing raw filesystem, registry or installation exception text.
 Authenticated bot author ID (including GitHub App installation bots),
 producing-run ordering and a final live PR-head check protect the sticky
 comment. Its marker is scoped to the authenticated trusted workflow ref as

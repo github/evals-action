@@ -14,7 +14,7 @@ import { sha256, type EngineIdentity } from '../src/tooling.js';
 
 const mocks = vi.hoisted(() => ({
   inputs: {} as Record<string, string>, setOutput: vi.fn<(name: string, value: unknown) => void>(), setFailed: vi.fn(), warning: vi.fn(), acquire: vi.fn(),
-  summary: vi.fn(), request: vi.fn(), native: vi.fn(),
+  summary: vi.fn(), request: vi.fn(), native: vi.fn(), release: vi.fn(),
 }));
 vi.mock('@actions/core', () => ({
   getInput: (key: string) => mocks.inputs[key] ?? '', setOutput: mocks.setOutput, setFailed: mocks.setFailed,
@@ -27,7 +27,7 @@ vi.mock('../src/github.js', async (original) => ({
 }));
 vi.mock('../src/tooling.js', async (original) => ({
   ...await original<typeof import('../src/tooling.js')>(),
-  resolveRelease: async () => ({ version: '0.21.0', integrity: 'synthetic' }),
+  resolveRelease: mocks.release,
   acquireEngine: mocks.acquire,
 }));
 vi.mock('../src/native.js', async (original) => ({
@@ -73,6 +73,7 @@ beforeEach(async () => {
     return responses[path];
   });
   mocks.acquire.mockResolvedValue(engine);
+  mocks.release.mockResolvedValue({ version: '0.21.0', integrity: 'synthetic' });
   for (const [key, value] of Object.entries({
     GITHUB_EVENT_NAME: 'workflow_run', GITHUB_EVENT_PATH: join(root, 'event.json'), GITHUB_REPOSITORY: 'o/r',
     GITHUB_SHA: context.trusted, GITHUB_WORKFLOW_SHA: context.trusted,
@@ -145,6 +146,34 @@ it('rejects unknown entries, missing billing credential and mutable Vally versio
   mocks.inputs = { ...baseline, context: 'x'.repeat(1024 * 1024 + 1) };
   await expect(runComparisonAction()).rejects.toThrow('too-large');
   expect(mocks.acquire).not.toHaveBeenCalled();
+});
+
+it.each(['missing', '..'])('reports invalid working-directory %s with a fixed safe setup code', async (workingDirectory) => {
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+  Object.defineProperty(process, 'arch', { value: 'x64' });
+  mocks.inputs = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+    selection: JSON.stringify(selection), 'producing-attempt': '2', 'comparison-id': 'skill-abc',
+    'working-directory': workingDirectory, 'vally-version': '0.21.0', 'copilot-token': 'synthetic' };
+  await expect(runComparisonAction()).rejects.toMatchObject({
+    code: 'comparison-working-directory-invalid', message: 'comparison-working-directory-invalid',
+  });
+  expect(mocks.release).not.toHaveBeenCalled();
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.native).not.toHaveBeenCalled();
+});
+
+it.each(['resolution', 'acquisition'] as const)('reports Vally %s failures without raw exception text', async (phase) => {
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+  Object.defineProperty(process, 'arch', { value: 'x64' });
+  await mkdir(join(root, 'candidate'));
+  mocks.inputs = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+    selection: JSON.stringify(selection), 'producing-attempt': '2', 'comparison-id': 'skill-abc',
+    'working-directory': 'candidate', 'vally-version': '0.21.0', 'copilot-token': 'synthetic' };
+  (phase === 'resolution' ? mocks.release : mocks.acquire).mockRejectedValueOnce(new Error('SECRET_PRIVATE_EXCEPTION'));
+  const code = `comparison-vally-${phase}-failed`;
+  await expect(runComparisonAction()).rejects.toMatchObject({ code, message: code });
+  if (phase === 'resolution') expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.native).not.toHaveBeenCalled();
 });
 
 it('publishes bot-owned sticky comments with producing-order protection, current-head checks and size bounds', async () => {

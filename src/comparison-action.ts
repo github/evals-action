@@ -8,7 +8,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
 import { exactVersion, parseInputs } from './inputs.js';
-import { acquireEngine, resolveRelease, type EngineIdentity } from './tooling.js';
+import { acquireEngine, resolveRelease, type EngineIdentity, type EngineRelease } from './tooling.js';
 import { NativeError, nativeEnvironment, runNative } from './native.js';
 import { authenticateComparison, assertContext, assertCurrentPullRequest, ComparisonError, validateComparisonSelection,
   type ComparisonContext, type ComparisonEntry, type ComparisonSelection } from './comparison-context.js';
@@ -253,7 +253,9 @@ export async function runComparisonAction(): Promise<void> {
   if (!copilot) throw new ComparisonError('comparison-copilot-token-required');
   const entry = selection.include.find((item) => item.id === core.getInput('comparison-id'));
   if (!entry) throw new ComparisonError('comparison-entry-not-selected');
-  const cwd = await projectDirectory(process.env.GITHUB_WORKSPACE!, core.getInput('working-directory'));
+  let cwd: string;
+  try { cwd = await projectDirectory(process.env.GITHUB_WORKSPACE!, core.getInput('working-directory')); }
+  catch { throw new ComparisonError('comparison-working-directory-invalid'); }
   const directory = await mkdtemp(join(process.env.RUNNER_TEMP!, 'evals-comparison-'));
   const rel = relative(cwd, directory);
   if (!rel.startsWith(`..${sep}`) && !isAbsolute(rel)) throw new ComparisonError('comparison-output-inside-candidate');
@@ -261,7 +263,12 @@ export async function runComparisonAction(): Promise<void> {
   if (!exactVersion(version)) throw new ComparisonError('comparison-exact-vally-version-required');
   // Acquisition never reads candidate manifests. Both arms share this one integrity-locked graph.
   const tools = await mkdtemp(join(process.env.RUNNER_TEMP!, 'evals-comparison-tools-'));
-  const engine = await acquireEngine(await resolveRelease(version, tools), tools);
+  let release: EngineRelease;
+  try { release = await resolveRelease(version, tools); }
+  catch { throw new ComparisonError('comparison-vally-resolution-failed'); }
+  let engine: EngineIdentity;
+  try { engine = await acquireEngine(release, tools); }
+  catch { throw new ComparisonError('comparison-vally-acquisition-failed'); }
   await writeFile(join(directory, 'selection.json'), JSON.stringify(selection) + '\n', { mode: 0o600, flag: 'wx' });
   core.setOutput('projection-directory', directory);
   const passed = await runComparisonPair(context, selection, entry, engine, cwd, directory, copilot, api, {
