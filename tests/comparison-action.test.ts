@@ -348,6 +348,12 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await writeFile(ignoredFixture, 'untracked Before fixture state');
   await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
   await rm(ignoredFixture);
+  if (process.platform !== 'win32') {
+    const whitespaceFile = join(cwd, 'fixtures', '   ');
+    await writeFile(whitespaceFile, 'ignored whitespace-only filename');
+    await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
+    await rm(whitespaceFile);
+  }
   await symlink(join(cwd, 'evals'), join(cwd, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   await expect(restoreComparisonSource(cwd, ctx, { ...entry, evalPath: 'linked/eval.yaml' }, head)).rejects.toThrow('symlinked');
   await rm(join(cwd, 'linked'));

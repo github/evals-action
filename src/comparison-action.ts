@@ -50,7 +50,7 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   const outside = await execute('git', ['-C', cwd, 'diff', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
-  if (outside.stdout || await git(cwd, ['ls-files', '--others'])) {
+  if (outside.stdout || await git(cwd, ['ls-files', '--others', '-z'])) {
     throw new ComparisonError('comparison-measurement-files-changed');
   }
 }
