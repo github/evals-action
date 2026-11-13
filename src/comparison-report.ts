@@ -111,10 +111,11 @@ export function collectNative(contents: string, runId: string, exitCode: number 
     if (typeof group.passed !== 'boolean') invalid('comparison-invalid-native-verdict', 'Invalid native eval verdict.');
     return [groupIdentity(group), group.passed] as const;
   }));
+  const nativeNames = new Map((native.groups ?? []).map((group) => [group.identity, group.name]));
   const identities = new Set<string>();
   const observed = new Map<string, { run: number; skipped: number }>();
   const rows = records.slice(0, -1).map((trial): ComparisonRow => {
-    const evalName = label(trial.evalName);
+    const evalName = label(trial.evalName ?? nativeNames.get(sha256(groupIdentity(trial))));
     const stimulus = label(trial.stimulus);
     const model = trial.model === undefined || trial.model === '' ? 'Unspecified model' : label(trial.model);
     const variant = label(trial.variant);
@@ -427,7 +428,10 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
   }
   const footer = ['', '<details>',
     `<summary>🔎 All-skill failure details: ${failureCount(pairs, 'after')} After · ${failureCount(pairs, 'before')} Before (grader/model results)</summary>`, '',
-    ...detailLines(pairs, arms), '</details>', '', '</details>', '',
+    'Changed-skill failure details are in the After and Before sections above.', '',
+    ...(pairs.some((pair) => !selection.changed.includes(pair.key))
+      ? detailLines(pairs.filter((pair) => !selection.changed.includes(pair.key)), arms) : []),
+    '</details>', '', '</details>', '',
     '✅ Both pass · 📈 Failures resolved · 📉 New failures · 🔄 Both new and resolved · ❌ Failure in either arm.',
     '⚠️ Error · ⏭️ Not run · ❔ Unknown never count as passing. Failure reasons describe checks, not raw model/grader output.', '',
     '*Each changed skill is measured separately; evals, graders, fixtures and other skill sources stay at the merge revision.*'];

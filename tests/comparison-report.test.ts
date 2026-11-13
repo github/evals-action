@@ -190,6 +190,20 @@ describe('native comparison projection', () => {
     expect(variant.rows[0]!.model).toBe('Unspecified model / variant-b');
   });
 
+  it.each([false, true])('uses the normalized native group name when a trial omits evalName (mixed names: %s)', (mixed) => {
+    const contents = jsonl(
+      trial({ evalName: undefined }),
+      trial({ itemId: 'item-2', stimulus: 'second', evalName: mixed ? 'friendly-name' : undefined }),
+      footer({ stimuliRun: 2, stimuliTotal: 2 }),
+    );
+    const native = parseNativeEvidence(contents, 'native', 1);
+    const expected = mixed ? 'friendly-name' : 'eval.yaml';
+    expect(native.groups?.[0]!.name).toBe(expected);
+    const projected = collectNative(contents, 'native', 1);
+    expect(projected).toMatchObject({ state: 'complete', nativeOutcome: 'failed' });
+    expect(projected.rows.map((row) => row.eval)).toEqual([expected, expected]);
+  });
+
   it('keeps native scoring separate from individual checks and uses generic unknown-grader reasons', () => {
     const data = collectNative(jsonl(trial({ gradeResult: {
       passed: true, score: 0.5, details: [
@@ -436,6 +450,31 @@ describe('comparison renderer', () => {
       }));
     }
     expect(() => renderComparison(selection(), [sample], evidence)).toThrow(/comment limit/);
+  });
+
+  it('publishes recorded changed-skill failures once instead of exceeding the budget with duplicate details', () => {
+    const sample = pair();
+    sample.after = structuredClone(sample.before);
+    for (const arm of [sample.before, sample.after]) {
+      arm.rows = Array.from({ length: 50 }, (_, index) => ({
+        ...structuredClone(arm.rows[0]!), stimulus: `case-${index}`,
+      }));
+    }
+    const report = renderComparison(selection(), [sample], evidence);
+    expect(Buffer.byteLength(report)).toBeLessThan(60_000);
+    expect(report.match(/\| routing \| model-a \|/g)).toHaveLength(100);
+    expect(report).toContain('After failures in changed skills (50 grader/model results)');
+    expect(report).toContain('Before failures in changed skills: 50 grader/model results');
+    expect(report).toContain('All-skill failure details: 50 After · 50 Before');
+    expect(report).toContain('Changed-skill failure details are in the After and Before sections above.');
+  });
+
+  it('retains additional non-changed-skill failures in the inventory details without repeating changed failures', () => {
+    const changed = pair(), other = { ...pair(), key: 'local/neighbor' };
+    const report = renderComparison(selection(), [changed, other], evidence);
+    expect(report.match(/### Skill: local\/draft/g)).toHaveLength(1);
+    expect(report.match(/### Skill: local\/neighbor/g)).toHaveLength(1);
+    expect(report).toContain('All-skill failure details: 0 After · 2 Before');
   });
 });
 

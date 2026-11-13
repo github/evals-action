@@ -240,6 +240,9 @@ Native verdicts line retains the arm-wide outcome.
 Model-less native evidence uses the explicit `Unspecified model` display label;
 this is not an inferred model identity. The failure icon means a failure in
 either arm, including native-only verdict changes without grader changes.
+Missing optional eval names reuse the native parser's normalized group name.
+Inventory failure totals refer to the changed-skill details above rather than
+repeating them; any additional non-changed-skill failures remain nested there.
 If `selection.json` is missing from the artifact root, publication fails with
 `comparison-selection-artifact-missing` and a flat-download layout hint.
 Authenticated bot author ID (including GitHub App installation bots),
