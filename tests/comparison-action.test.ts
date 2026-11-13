@@ -350,6 +350,42 @@ it('preserves the observed native error when empty stdout has no projected nativ
   expect(data).toEqual({ state: 'error', rows: [], nativeOutcome: 'error' });
 });
 
+it.each(['before', 'after'] as const)('rejects a passing %s arm that changes actual measurement bytes', async (mutatingArm) => {
+  const cwd = join(root, 'candidate'), output = join(root, 'output');
+  await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
+  await mkdir(output);
+  const fixture = join(cwd, 'fixture.txt');
+  await writeFile(fixture, 'original');
+  let calls = 0;
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async (_inputs, _engine, _cwd, directory) => {
+    const arm = calls++ === 0 ? 'before' : 'after';
+    if (arm === mutatingArm) await writeFile(fixture, 'changed');
+    const file = join(directory, 'native.log');
+    await writeFile(file, [
+      { type: 'trial-result', runId: 'native', itemId: 'case', evalName: 'measurement', stimulus: 'case',
+        model: 'mock', variant: 'main', evalFilePath: 'eval.yaml', status: 'success',
+        trajectory: { id: 'case', output: '' },
+        gradeResult: { passed: true, score: 1, details: [{ passed: true, score: 1, graderType: 'completed' }] } },
+      { type: 'run-summary', runId: 'native', passed: true, hadExecutionErrors: false,
+        evals: [{ evalFilePath: 'eval.yaml', variant: 'main', model: 'mock', scoringApplied: false,
+          passed: true, stimuliRun: 1, stimuliTotal: 1 }] },
+    ].map((row) => JSON.stringify(row)).join('\n'));
+    return { result: { outcome: 'passed', completeness: 'complete', category: 'none', code: 'passed', nativeRunId: 'native' },
+      files: [file], exitCode: 0 };
+  });
+  const entry = { ...selection.include[0]!, directory: 'skills/draft' };
+  expect(await runComparisonPair(context, selection, entry, engine, cwd, output, '', { request: mocks.request },
+    { restore: async () => {}, current: async () => {}, run, measurements: measurementDigest })).toBe(false);
+  expect(run).toHaveBeenCalledTimes(mutatingArm === 'before' ? 1 : 2);
+  const arm = JSON.parse(await readFile(join(output, `skill-abc-${mutatingArm}.json`), 'utf8'));
+  expect(arm.data).toEqual({ state: 'error', nativeOutcome: 'passed', rows: [] });
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-measurement-bytes-changed'));
+  if (mutatingArm === 'after') {
+    const before = JSON.parse(await readFile(join(output, 'skill-abc-before.json'), 'utf8'));
+    expect(before.data).toMatchObject({ state: 'complete', nativeOutcome: 'passed', rows: [{ state: 'graded', passed: true }] });
+  }
+});
+
 it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
   const cwd = join(root, 'candidate');
   await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });

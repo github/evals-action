@@ -8,11 +8,11 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
 import { exactVersion, parseInputs } from './inputs.js';
-import { acquireEngine, resolveRelease, sha256, type EngineIdentity } from './tooling.js';
+import { acquireEngine, resolveRelease, type EngineIdentity } from './tooling.js';
 import { NativeError, nativeEnvironment, runNative } from './native.js';
 import { authenticateComparison, assertContext, assertCurrentPullRequest, ComparisonError, validateComparisonSelection,
   type ComparisonContext, type ComparisonEntry, type ComparisonSelection } from './comparison-context.js';
-import { collectNative, loadComparison, renderComparison, type ComparisonArm } from './comparison-report.js';
+import { collectNative, comparisonCommentMetadata, loadComparison, renderComparison, type ComparisonArm } from './comparison-report.js';
 
 const execute = promisify(execFile);
 const maximum = 1024 * 1024;
@@ -101,7 +101,7 @@ export async function measurementDigest(cwd: string, skillDirectory: string): Pr
 export async function publishComparison(
   selection: ComparisonSelection, body: string, api: GitHubClient,
 ): Promise<'posted' | 'stale'> {
-  const marker = `<!-- evals-comparison:${selection.repository}/${selection.sourceWorkflow}/${sha256(selection.workflowRef)} -->`;
+  const { marker, prefix: metadata } = comparisonCommentMetadata(selection);
   const prefix = `/repos/${selection.repository}`;
   const author = await authenticatedBotId(api);
   let existing: { id: number; body: string } | undefined;
@@ -126,7 +126,7 @@ export async function publishComparison(
   const previous = existing?.body.match(/<!-- run:(\d+):(\d+) -->/);
   if (previous && (Number(previous[1]) > order[0]! ||
       Number(previous[1]) === order[0] && Number(previous[2]) > order[1]!)) return 'stale';
-  const content = `${marker}\n<!-- run:${order.join(':')} -->\n${body}`;
+  const content = `${metadata}${body}`;
   if (Buffer.byteLength(content) > 60_000) throw new ComparisonError('comparison-comment-too-large');
   const pull = await assertCurrentPullRequest(selection, api);
   if (pull.merge_commit_sha !== selection.merge) throw new ComparisonError('comparison-pr-merge-changed');
@@ -186,6 +186,9 @@ export async function runComparisonPair(
       }
       cancelled = operation.result.outcome === 'cancelled';
       passed &&= operation.result.outcome === 'passed';
+      if (await dependencies.measurements(cwd, entry.directory) !== baseline) {
+        throw new ComparisonError('comparison-measurement-bytes-changed');
+      }
       if (operation.files[0] && operation.result.nativeRunId) {
         if ((await stat(operation.files[0])).size > 64 * maximum) throw new ComparisonError('comparison-native-evidence-too-large');
         const projected = collectNative(await readFile(operation.files[0], 'utf8'), operation.result.nativeRunId, operation.exitCode ?? null);

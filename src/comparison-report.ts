@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 import { ComparisonError, type ComparisonSelection } from './comparison-context.js';
 import { parseNativeEvidence } from './native.js';
+import { sha256 } from './tooling.js';
 
 export type { ComparisonSelection } from './comparison-context.js';
 
@@ -275,17 +276,23 @@ function scenarios(pair: ComparisonPair): ComparisonRow[] {
     .map((row) => [JSON.stringify([row.eval, row.stimulus]), row])).values()];
 }
 
-function boundedAppender(lines: string[]): (...values: string[]) => void {
+export function comparisonCommentMetadata(selection: ComparisonSelection): { marker: string; prefix: string } {
+  const marker = `<!-- evals-comparison:${selection.repository}/${selection.sourceWorkflow}/${sha256(selection.workflowRef)} -->`;
+  return { marker, prefix: `${marker}\n<!-- run:${selection.runNumber}:${Number(selection.attempt)} -->\n` };
+}
+
+function boundedAppender(lines: string[], maximumBytes: number): (...values: string[]) => void {
   let length = lines.reduce((sum, line) => sum + Buffer.byteLength(line) + 1, -1);
   return (...values) => {
     length += values.reduce((sum, line) => sum + Buffer.byteLength(line) + 1, 0);
-    if (length > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
+    if (length > maximumBytes) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
     lines.push(...values);
   };
 }
 
 /** Escaping happens here, equally for freshly projected and artifact-loaded labels. */
 export function renderComparison(selection: ComparisonSelection, inputPairs: ComparisonPair[], evidenceUrl: string): string {
+  const maximumBytes = 60_000 - Buffer.byteLength(comparisonCommentMetadata(selection).prefix);
   const url = URL.parse(evidenceUrl);
   if (!url || evidenceUrl.length > 2048 || url.protocol !== 'https:' || url.username || url.password) {
     invalid('comparison-invalid-evidence-url', 'Expected a safe HTTPS evidence URL.');
@@ -325,7 +332,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
     '**Trials:** One per scenario/model/arm, zero retries. Differences do not prove causation.', '',
     '**Cells: Before → After.** A scenario is one case; graders are its individual checks.', '',
   ];
-  const append = boundedAppender(lines);
+  const append = boundedAppender(lines, maximumBytes);
   if (selection.changed.some((key) => !changedPairs.some((pair) => pair.key === key && comparablePairs.has(pair)))) {
     append('**⚠️ Incomplete/error evidence:** affected cells are not passing results. Check the linked workflow.', '');
   }
@@ -364,7 +371,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
     sum + (pair[arm]?.rows ?? []).reduce((total, row) => total + failures(row).size, 0), 0);
   const detailLines = (scope: ComparisonPair[], selectedArms: readonly ArmName[]): string[] => {
     const output: string[] = [];
-    const emit = boundedAppender(output);
+    const emit = boundedAppender(output, maximumBytes);
     for (const pair of scope) {
       const entries = selectedArms.flatMap((arm) => (pair[arm]?.rows ?? []).flatMap((row) =>
         row.checks.filter((check) => !check.passed).map((check) => ({ arm, row, check }))));
@@ -408,7 +415,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
         if (!rows.length) return '❔ Unknown';
         if (rows.some((row) => row.state !== 'graded')) return '⚠️ Partial / not run';
         return `${rows.filter((row) => row.passed).length}/${rows.length}${
-          rows.every((row) => row.passed) && (data.nativeOutcome === 'failed' || rows.some((row) => row.nativePassed === false))
+          rows.every((row) => row.passed) && rows.some((row) => row.nativePassed === false)
             ? ' (native eval failed)' : ''}`;
       }).join(' → ');
       if (!comparablePairs.has(pair)) return `${values} (comparison unknown)`;
@@ -427,15 +434,15 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
   const unmeasured = inventoryRows.filter((row) => !row.required);
   const fullBytes = Buffer.byteLength([...lines, ...inventoryHeader, ...inventoryRows.map((row) => row.line), ...footer].join('\n'));
   append(...inventoryHeader);
-  if (fullBytes > 60_000 && unmeasured.length > 0) {
+  if (fullBytes > maximumBytes && unmeasured.length > 0) {
     const withEval = unmeasured.filter((row) => row.hasEval).length;
-    append(`| Unmeasured unchanged inventory | ${models.map(() => '⏭️ Not evaluated').join(' | ')} |`, '',
+    append(`| Unmeasured unchanged inventory | ${models.map(() => '⏭️ Not evaluated').join(' | ')} |`,
+      ...inventoryRows.filter((row) => row.required).map((row) => row.line), '',
       `**${unmeasured.length} unchanged skills without results summarized:** ${withEval} with repo evals; ${unmeasured.length - withEval} without. All remain unmeasured for every listed model. Changed skills and recorded results are retained.`, '');
-    append(...inventoryRows.filter((row) => row.required).map((row) => row.line));
   } else append(...inventoryRows.map((row) => row.line));
   append(...footer);
   const rendered = lines.join('\n');
-  if (Buffer.byteLength(rendered) > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
+  if (Buffer.byteLength(rendered) > maximumBytes) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
   return rendered;
 }
 

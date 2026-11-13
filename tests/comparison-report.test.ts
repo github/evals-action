@@ -6,6 +6,7 @@ import {
   type ComparisonArm, type ComparisonPair, type ComparisonSelection,
 } from '../src/comparison-report.js';
 import { parseNativeEvidence } from '../src/native.js';
+import { sha256 } from '../src/tooling.js';
 
 const evalPath = 'evals/local/skills/draft/eval.yaml';
 const directories: string[] = [];
@@ -240,6 +241,44 @@ describe('comparison renderer', () => {
     expect(report).toContain('After (new) | completed');
     expect(report).toContain('Before (resolved After) | routing');
     expect(report).not.toContain('| plugin-998/');
+    const inventoryTable = report.slice(report.indexOf('| Skill (passing / total scenarios) |')).split('\n\n')[0]!;
+    expect(inventoryTable).toContain('| Unmeasured unchanged inventory |');
+    expect(inventoryTable).toContain('| local/draft |');
+  });
+
+  it('reserves the actual publisher prefix when a body fits but the complete comment would exceed the budget', () => {
+    const selected = selection();
+    selected.skills = [selected.skills[0]!, ...Array.from({ length: 300 }, (_, index) => ({
+      key: `catalog/skill${index}`, hasEval: true,
+    }))];
+    const sample = pair();
+    const initialBytes = Buffer.byteLength(renderComparison(selected, [sample], evidence));
+    let remaining = 59_999 - initialBytes;
+    expect(remaining).toBeGreaterThan(0);
+    for (const skill of selected.skills.slice(1)) {
+      const padding = Math.min(remaining, 200);
+      skill.key += 'x'.repeat(padding);
+      remaining -= padding;
+    }
+    expect(remaining).toBe(0);
+    const report = renderComparison(selected, [sample], evidence);
+    const prefix = `<!-- evals-comparison:${selected.repository}/${selected.sourceWorkflow}/${sha256(selected.workflowRef)} -->\n<!-- run:${selected.runNumber}:${Number(selected.attempt)} -->\n`;
+    expect(Buffer.byteLength(prefix + report)).toBeLessThanOrEqual(60_000);
+    expect(report).toContain('300 unchanged skills without results summarized');
+    expect(report).toContain('| local/draft |');
+  });
+
+  it('does not label a passing model as native-failed because another model failed', () => {
+    const sample = pair();
+    sample.before = structuredClone(sample.after);
+    for (const arm of [sample.before, sample.after]) {
+      arm.nativeOutcome = 'failed';
+      const passing = { ...structuredClone(arm.rows[0]!), model: 'model-a', passed: true, nativePassed: true };
+      arm.rows = [passing, { ...structuredClone(passing), model: 'model-b', nativePassed: false }];
+    }
+    const report = renderComparison(selection(), [sample], evidence);
+    expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
+    expect(report).toContain('| local/draft | 1/1 → 1/1 | 1/1 (native eval failed) → 1/1 (native eval failed) |');
   });
   it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
     const sample = pair();

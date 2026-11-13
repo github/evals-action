@@ -146,7 +146,9 @@ outside that checkout.
 
 The Action fingerprints actual checkout bytes, file types, permissions and
 symlink targets outside the selected skill before native execution and checks
-that baseline before After. This preserves legitimate checkout normalization
+that baseline before After and immediately after each native arm, before
+accepting its projection. A changed baseline makes that arm an error, even if
+native grading passed. This preserves legitimate checkout normalization
 while detecting byte changes that Git text/EOL normalization can hide.
 Initialized/nonempty submodules are unsupported and fail explicitly; an empty
 uninitialized gitlink is allowed. Submodule ignore settings must not hide
@@ -226,6 +228,9 @@ causality claim. If unmeasured unchanged inventory rows alone would exceed the
 60,000-byte comment budget, those entries are summarized as counts. Every
 changed-skill row, recorded result and failure detail is retained. If required
 evidence still cannot fit, publication fails explicitly rather than truncating.
+The byte budget includes the publisher's marker and run-order prefix. Inventory
+native-failure annotations use each model's matching eval verdicts; the separate
+Native verdicts line retains the arm-wide outcome.
 Authenticated bot author ID (including GitHub App installation bots),
 producing-run ordering and a final live PR-head check protect the sticky
 comment. Its marker is scoped to the authenticated trusted workflow ref as
