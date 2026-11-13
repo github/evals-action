@@ -177,8 +177,8 @@ importers:
         version: 2.9.1
     devDependencies:
       '@microsoft/vally-cli':
-        specifier: 0.19.0
-        version: 0.19.0
+        specifier: 0.21.0
+        version: 0.21.0
       '@types/node':
         specifier: 24.19.0
         version: 24.19.0
@@ -465,52 +465,52 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@github/copilot-sdk-darwin-arm64@1.0.15':
-    resolution: {integrity: sha512-+iZRSgr0Bjc2EksKuNHggfBQR/2HAiLCAjgIx31X4SavNLzcly6BuR/mJLe6xkamlyjj0ugkLK5TKwnmRjqDRg==}
+  '@github/copilot-sdk-darwin-arm64@1.0.30':
+    resolution: {integrity: sha512-kNsNaw3PQR4m+JxZ9S1rwLqtMAV6AFkcUfE4TdauoFkW80H//rvnze7ywJulOmZNTqI9lnj/UQc6CaMXIn2qJQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@github/copilot-sdk-darwin-x64@1.0.15':
-    resolution: {integrity: sha512-zNtblCoNiSOK0B0y5Y6GvVLfe9PNexJjy/3t1HfcTAA2vHt/zzS440yoGFdqg196Vjtp9yxpLc92Sf1yz6GDMA==}
+  '@github/copilot-sdk-darwin-x64@1.0.30':
+    resolution: {integrity: sha512-FxXDvPSWldfNKo3NjEpFjSgdrDymd27+20CWci2wvWOFWLgymTlxZCgxUJjF9yREUvch+caNZ7ZjCFsTUj8OwA==}
     cpu: [x64]
     os: [darwin]
 
-  '@github/copilot-sdk-linux-arm64@1.0.15':
-    resolution: {integrity: sha512-Q+vp0Y8DBVf9VIe/OxH6jbgf/16xMbvRI/jsglZFGW+u8YNkUGDcpDxSdonMsE5EplC3Hc6E0xFkjVp6pkV1cg==}
+  '@github/copilot-sdk-linux-arm64@1.0.30':
+    resolution: {integrity: sha512-5njY91qD4mKP5iDK04S4hrb3S0RejcCOJ4GTfNvbOk4mb/XQ9S3WbyVCyjck058H1l0mG/cCjb3PbsWAPnqOjg==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@github/copilot-sdk-linux-x64@1.0.15':
-    resolution: {integrity: sha512-OzZm8sKiUNDbc5GVtj9UY3uf/Ci4ZCSdd76yhguoTXHWE6azV50DycWuSFN8WjmILvemYYcIXo81gXrKcpasPQ==}
+  '@github/copilot-sdk-linux-x64@1.0.30':
+    resolution: {integrity: sha512-gSskvZCnv9NHajZGquKwPgp1LVhYN8GnmKAVUr0NorZss9siV0gJk8nr6Zuot9ejIWWbbXHuGvU4x4/POPWDeg==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@github/copilot-sdk-linuxmusl-arm64@1.0.15':
-    resolution: {integrity: sha512-13mnqoX3egpxwMnd2EsMOnDSBxXqK4ed1M/eX2ElAEdWRakE5/NV6tdsAjwdvgCnMeq7g8TXZ0n2Di2qamxAIQ==}
+  '@github/copilot-sdk-linuxmusl-arm64@1.0.30':
+    resolution: {integrity: sha512-WkBsq4kzyUzEV5Sp7ECFLBgWbiG63X1u8XXc7pwYBCxjYIJw77E7dz21wbYQPm19h9hC4SUXHT6ZmGD0iChOrw==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@github/copilot-sdk-linuxmusl-x64@1.0.15':
-    resolution: {integrity: sha512-zKDpqjRsYNBCS+sjZ1nIgZ+4u3sGx6Z6fNIxR8cnJZkqzkdKfjWQ4E/5gqdS+jl+7Eb6eKi3ZMioH9OCFTpjBA==}
+  '@github/copilot-sdk-linuxmusl-x64@1.0.30':
+    resolution: {integrity: sha512-QBdDpV6T23yTUSz/F6kvippTCDSFS6iixDjpxssW7tY9I+tqFksHuV7xXpKHXdVscQj4DfZOsFpqJVcDqJuM6A==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@github/copilot-sdk-win32-arm64@1.0.15':
-    resolution: {integrity: sha512-m3EE2sdqY+XTI1O8sauMSg80iTVEjUqtD1hc0MGPchQd7mt5m/P7KxN7pmUCQ4oVwCqigiMMKbebTRvOz0j0pA==}
+  '@github/copilot-sdk-win32-arm64@1.0.30':
+    resolution: {integrity: sha512-hZi66pRDA75p8Lda97MqmLQZTEKqMRXLAINLjZ+Yiq2XjDD+jMS8mdH4N5MgqvImRbqO6WfRmK8fnT4ojsaz4A==}
     cpu: [arm64]
     os: [win32]
 
-  '@github/copilot-sdk-win32-x64@1.0.15':
-    resolution: {integrity: sha512-BRBJ8za6VZDy+LLRPZVkXWepXgT9psys9WM19d8X7CAl9ymr6Pj7K0nOgJ2eqFMeURXW/tithFgOoxQXNBHSzg==}
+  '@github/copilot-sdk-win32-x64@1.0.30':
+    resolution: {integrity: sha512-BCBJhcki7ZujMMRBtP8fH8oDZGJU09UJdEom3JYbZie5FTOXbJWyW4mR4HPhB4N9rocweA/vKSqFuBg4nXnlLA==}
     cpu: [x64]
     os: [win32]
 
-  '@github/copilot-sdk@1.0.15':
-    resolution: {integrity: sha512-u7WEeF93PKCimIbzv7qgBh1UcuuaHFMoWEDC7W8/2VUGB9eeMN4Ff4QqgHWYHZSQnK5xGtY9Tx8KdyssU9kTYw==}
+  '@github/copilot-sdk@1.0.30':
+    resolution: {integrity: sha512-9ocupD7YJh71SnjHLA5FYs1S2qbI10Cxj/JP6IbrMIP53//X66+2rFydHsG8Y00zoibsXrUuZGjqz/CyKWpOkw==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
   '@hono/node-server@2.1.5':
@@ -533,113 +533,123 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@koromix/koffi-android-arm64@3.2.1':
-    resolution: {integrity: sha512-1pJQ4jnZlUJduK9u9DC5CGy3aOgDUPvIXpNb6syV3+Dh5Q/ugezAIGCqvY+w+1mgXsve0pd0NVvJRjdZNHQ6MA==}
+  '@koromix/koffi-android-arm64@3.3.4':
+    resolution: {integrity: sha512-F+V3PvbTVfpuFh9XKatW1XLH6FJZHQMzZRKOJL8vHQUmG59iBW4D8E9su5jCr5wghCpPoajthD/G2unzSpSedw==}
     cpu: [arm64]
     os: [android]
 
-  '@koromix/koffi-android-x64@3.2.1':
-    resolution: {integrity: sha512-HH40xGh3gVQifjOBnhwT2tECC0lL1lYe+nxHvWNSzxDIyQNcVPXg38ta7vuONRFpD+uIrw7fqGYLzbZIagkVcg==}
+  '@koromix/koffi-android-x64@3.3.4':
+    resolution: {integrity: sha512-uA3SyFYW572S0WTRSSMINI0GCMFDjoAW2uX+i46bAVqzCOvwhydTDtwjx56WOlRcQuLD+oXWLzDqA8glTTLWrw==}
     cpu: [x64]
     os: [android]
 
-  '@koromix/koffi-darwin-arm64@3.2.1':
-    resolution: {integrity: sha512-Vj4h+xcjc5+Cn0DhPHjgRX4omKAv96Kehtcd+1YgYuY2W7FvQn9vS+3SmzVwhC5Qmg9bIwUZObYQ8T/4hBqQqA==}
+  '@koromix/koffi-darwin-arm64@3.3.4':
+    resolution: {integrity: sha512-KWc1kRttFZrFWo3bJKsmiQd/wLIaxs2eIFY10US0PcC93nBfvKOqhGrYK6DNprRMoGwSN99wxIFBJrHDAqw5ew==}
     cpu: [arm64]
     os: [darwin]
 
-  '@koromix/koffi-darwin-x64@3.2.1':
-    resolution: {integrity: sha512-gFCWxNBTZIvxo1p+PURWfsy2Ctj5FGnVVs1f03lTLhBvmxEto70pdIiFztdFLDFkAJ1pmtQmruRKapeK+E8YPA==}
+  '@koromix/koffi-darwin-x64@3.3.4':
+    resolution: {integrity: sha512-QYRCBepdGNL5Nj8UH+mzd4sTuNGtkmYCUBTyOmoksDMXGfM03MMdZg49c42mQE7blYh28H9qeeB0NHU/acN0ng==}
     cpu: [x64]
     os: [darwin]
 
-  '@koromix/koffi-freebsd-arm64@3.2.1':
-    resolution: {integrity: sha512-qj+f1s2e6vULaUG1cdlTcCXmunCq2t+rjxku1+esaMIqVnHpOwj0QzPuInG0AFdXjwBNQhyVR/HpDj8daEwwsQ==}
+  '@koromix/koffi-freebsd-arm64@3.3.4':
+    resolution: {integrity: sha512-JKcJZNviFIxY8AthlUTkVvyTPXb3vIZKfZqDRqm1MGoQiB6GD2KdpFId35EcZM+Zc9//H0b1Simj1dtsph7whQ==}
     cpu: [arm64]
     os: [freebsd]
 
-  '@koromix/koffi-freebsd-ia32@3.2.1':
-    resolution: {integrity: sha512-6olHb1Qfgai0jjs6ddlDDD0ZfsCxy7SPi8rMRpuYQWH0qhgtyQu82hw5b1p7z+TJ0zZP3ZeQQ6l+U/MlM1ICHQ==}
+  '@koromix/koffi-freebsd-ia32@3.3.4':
+    resolution: {integrity: sha512-UaxIO5tRguU7Gqh5jQ5XO1Be3vX8ACuLiQWZr/tZo8xyiKmEVYeBksJt+UgnnoxwZKhBLJEQG9giwiu8tFBtSw==}
     cpu: [ia32]
     os: [freebsd]
 
-  '@koromix/koffi-freebsd-x64@3.2.1':
-    resolution: {integrity: sha512-Dikhw1ySYNVMkmeFvFVjnU5Wdk6mffNoOjJxm9bTG96vg7OlemylxqdEven47R1YJ3yzNVJn/MlQ207ORWfi2w==}
+  '@koromix/koffi-freebsd-x64@3.3.4':
+    resolution: {integrity: sha512-yrYvb0k0DSVBcX1duHxcC2bXh+83SPuqmYvga6+r9t8c7+AkO2bvfv6oEtOt+1NQWUxHZ1hSK2M/hOJYltxUUA==}
     cpu: [x64]
     os: [freebsd]
 
-  '@koromix/koffi-linux-arm64@3.2.1':
-    resolution: {integrity: sha512-K+cGUL5iBcDqxmsocrjmlASqDf24gc7artbVW3PewG2c9AqwC63lezgwvB85Nx4lZAQjB6zIFHh9A7t1yGbwhw==}
+  '@koromix/koffi-linux-arm64@3.3.4':
+    resolution: {integrity: sha512-k6FPjEYDioyVihUqvRFX4QZK0RL/Rrn4xPEzrKxODxgLAUXlhBTut391zPzgsMcArXgN4YTuS11M/kxmA5s+Fg==}
     cpu: [arm64]
     os: [linux]
 
-  '@koromix/koffi-linux-arm@3.2.1':
-    resolution: {integrity: sha512-OfwUwZylidq95wQKp6ClInULrfB2giu7dqM6Rhe0zAe6lES5I2SXNw15T9+GnRHk3/9hKT2XZ37OZLaKSyWNLA==}
+  '@koromix/koffi-linux-arm@3.3.4':
+    resolution: {integrity: sha512-+vFvkVUPQq2unMm1iY3ITJJEIeGFuVVdVe0ozNI2Al42hPohjyC9NUeTFaTPkysxH7YEJSM18GGgA9/LvPqPfw==}
     cpu: [arm]
     os: [linux]
 
-  '@koromix/koffi-linux-ia32@3.2.1':
-    resolution: {integrity: sha512-rxj6UYjU1qd98gxNQOSCdLpc5cPRi5Giq9rNd3jnGuSNIyMkwa6Dxw4cUjmhIBCYESMJtmNt5NWnJp5u9wTfYQ==}
+  '@koromix/koffi-linux-ia32@3.3.4':
+    resolution: {integrity: sha512-+M/YaXaLFWI2DvHXjPsk1SSZcm/uvx7DZKuj1dEph9tmnp2vd75LY9zToE7c0GRoY50+vovTUbsa+nnDbK21hA==}
     cpu: [ia32]
     os: [linux]
 
-  '@koromix/koffi-linux-loong64@3.2.1':
-    resolution: {integrity: sha512-aHhnHzkPRmT/IHDlGvESJ/Bs32m8N6UE6Ab6kMeJzgk74IN8af2m/81/wZJtybR1M2UxCV4NmlVNUYQQvSAO3Q==}
+  '@koromix/koffi-linux-loong64@3.3.4':
+    resolution: {integrity: sha512-LtlTOMy2wBG7sO7Vzd8X/qG3wgw3r5ieXPzKxAgRDaycgbkMqyrSS5nYnGosk2bjctbSPX40O85mVwoEG/vfbA==}
     cpu: [loong64]
     os: [linux]
 
-  '@koromix/koffi-linux-riscv64@3.2.1':
-    resolution: {integrity: sha512-qtQBsjbm3LiirLJvajWmKkNb7ARk7fvJVXdftJ7NtAnF3Xw8EbDvrtvmvtNI1yLPlYcBmlzCCD71hwhWYk0SIA==}
+  '@koromix/koffi-linux-ppc64@3.3.4':
+    resolution: {integrity: sha512-RJtz/dB/O/x5xKCgs7Ks8gXqiAvq9/AQMgHuLXv+TEfrgVuWR2+PGHqxGXPzILDO6Veh5KbMcA6Ad56myHTGdw==}
+    cpu: [ppc64]
+    os: [linux]
+
+  '@koromix/koffi-linux-riscv64@3.3.4':
+    resolution: {integrity: sha512-LvUiKNYaJ6Vx1KrMfwPYPt0smkvQISeTspjPai86tVWu+x55mBLvrpVOMy9n9Np9BviNeg8gJK2pEiqAdG6ppg==}
     cpu: [riscv64]
     os: [linux]
 
-  '@koromix/koffi-linux-x64@3.2.1':
-    resolution: {integrity: sha512-c7hw7Qs/r5gnFRTQLcbifBwRU7wiocj+2pVuDQ5Ahb3r36SZmupmgYbTWcLvTW+hul1jd7SKRV0d14ZJq/tvSw==}
+  '@koromix/koffi-linux-x64@3.3.4':
+    resolution: {integrity: sha512-xi47MKuoQ9fA2SsrH6wljl9t9120hO66qEmb1le6q636q55J974cZfcwDrK5nW1GalJ+0NLXoH2T3/NGQBzPNw==}
     cpu: [x64]
     os: [linux]
 
-  '@koromix/koffi-openbsd-ia32@3.2.1':
-    resolution: {integrity: sha512-mmY8fY8LQ/CB52+h3yrMYmVyoxzW3x08S0yI6VNfHWdfU6yJtZkKCbhjmQCYMrWbYKC4gMvwZwCywIGPAkLyeA==}
+  '@koromix/koffi-openbsd-arm64@3.3.4':
+    resolution: {integrity: sha512-MVaDIM2ILS7u5mP3l9TKmOR3x+jOlOxl7UW21VAhk7GZOAWyfuwGL9+RMkHwIPXR6BcHULi3Wt3hR2g28+QJMQ==}
+    cpu: [arm64]
+    os: [openbsd]
+
+  '@koromix/koffi-openbsd-ia32@3.3.4':
+    resolution: {integrity: sha512-TB03I5oJWALo+fDqS0CiPaL2sOE86W+ZQc61p41jRvSAqnOeh65WSGILa4IixKso/T5Yglo6LDqpz7Fz+Er1fg==}
     cpu: [ia32]
     os: [openbsd]
 
-  '@koromix/koffi-openbsd-x64@3.2.1':
-    resolution: {integrity: sha512-k4ig6aAPbFSRATOIIOfdf/KtlOGH4SVls6L9fy0QnTxRJYvY2oSltTsQtBDANgEQldlq8Kl5WnpRa1VSibP4Lw==}
+  '@koromix/koffi-openbsd-x64@3.3.4':
+    resolution: {integrity: sha512-SANcZVjI17CYRwszVBM+YvjTX6/Mv2zZ5EL5N+cI2Fr1RSiTDeRHCKOpMvW4wpbvmucvYul8qHY2vsi7Gz1Y9w==}
     cpu: [x64]
     os: [openbsd]
 
-  '@koromix/koffi-win32-arm64@3.2.1':
-    resolution: {integrity: sha512-cTWBJGK//pDMeKQJE/79Aq9MiOAF4H8QyLZHSQ9IWm8czOfwjG4J1AhsQ9DjI9KFOykH77hhnpmQTGVMIubGig==}
+  '@koromix/koffi-win32-arm64@3.3.4':
+    resolution: {integrity: sha512-TQLDhDMfq7x8fhIzD4FdqJ7QxEgkHLrcN8Bj6wPHbf85OyXtOLHCw7VRj9PZ6+uyPfaqnb25gmHQuEK8WxR3vg==}
     cpu: [arm64]
     os: [win32]
 
-  '@koromix/koffi-win32-ia32@3.2.1':
-    resolution: {integrity: sha512-Z50EM6TAZ7CFyMmyX6thv8eNpJchqe9eenhibSIy2Eq/FQYF76gU2VK/LEoaF46L8hfC7TpTp9b10MvReHEyFA==}
+  '@koromix/koffi-win32-ia32@3.3.4':
+    resolution: {integrity: sha512-z0uY3mqXATU1X7gykJydc4pqexsg++asy6XuFwd5lc7BgdMegMCm60BOtc73EoNz/sgmV3bX5bEaNVMtI/u5NA==}
     cpu: [ia32]
     os: [win32]
 
-  '@koromix/koffi-win32-x64@3.2.1':
-    resolution: {integrity: sha512-ZmZNiBO6bkOSh3QNzgfvb1cMY0yMobn6ZQrSMqbAce21qyYL8niIbyipz9N/PIRDciGhsV0wUxnZsxIO+yWsHQ==}
+  '@koromix/koffi-win32-x64@3.3.4':
+    resolution: {integrity: sha512-/SpehfYrO9DtkoB0ZOgGyco4GH4zwhEyFqgCm0x8lbzXnrKiwnHXWmPpfuXhFYohFvoSO5jlLQz/hc1fJ5G0AQ==}
     cpu: [x64]
     os: [win32]
 
-  '@microsoft/vally-cli@0.19.0':
-    resolution: {integrity: sha512-2GJa+AkABGksS6DsEHBTbLseY7trq6ALpbXBO5bCWM1BylNx1Ams+/6J79moWEC2gKKwTgkc6rUDuX3rWy+avA==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally-cli@0.21.0':
+    resolution: {integrity: sha512-tum9lV2Lk3L8gMKll6ta7qMNxfO1V8u+z1Dw74pM9bOe2fKHB+4tEfAAubjhXotcp8OtssIz7q5knjvmbcdRSg==}
+    engines: {node: '>=22.15.0'}
     hasBin: true
 
-  '@microsoft/vally-server@0.19.0':
-    resolution: {integrity: sha512-R2gI3A+wvRJjZzXn9+B7QkN6viXOtMObjYs1s//hPFq3XJ2FFdxDUVghB68jkE/M49bwRtHYhY7vsROIHwReoA==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally-server@0.21.0':
+    resolution: {integrity: sha512-Tgy87yqE8xn6Alz69WU/m5Vg8lWmO0c/jSbYa2+caH5w0G36sOfd0j4zFd2K6LvQNcjZzXByoIGCEduonrSg6w==}
+    engines: {node: '>=22.15.0'}
     peerDependencies:
       better-sqlite3: ^13.0.3
     peerDependenciesMeta:
       better-sqlite3:
         optional: true
 
-  '@microsoft/vally@0.19.0':
-    resolution: {integrity: sha512-EtdL8VR9+Yr1gGyRkgwluA52rSuJ/+WXQ7ENvXwRIyezCDUSv2NRYmf9D2qxyQMEt3GSo7P3hl4RnG0tJSAr0w==}
-    engines: {node: '>=22.14.0'}
+  '@microsoft/vally@0.21.0':
+    resolution: {integrity: sha512-9AiIt6lR2axzWZX1EtZWcsZ+twcu1t9Tp+BktUbZbbIA1mv+0FLPiWjigXFmFcoQa+rXxKkuyw5dqfQ6xKTNmw==}
+    engines: {node: '>=22.15.0'}
     hasBin: true
 
   '@modelcontextprotocol/sdk@1.32.1':
@@ -725,8 +735,8 @@ packages:
     resolution: {integrity: sha512-OlanaW1vv7ufTqQ3/fPLI4arGt5ZoM+P8abOMki6uEYnpRazepSWDwDnnw+la7kE26SHVC18//SMccrDvLKOXQ==}
     engines: {node: '>=8.0.0'}
 
-  '@opentelemetry/api-logs@0.222.0':
-    resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
+  '@opentelemetry/api-logs@0.223.1':
+    resolution: {integrity: sha512-DtIY6YRp0Q0GRVtiKH+N6zAoXQzYtlwbXqZEN/UhBgkKgHYPo2RF6vvB8jGebwcESwquS0S3Vn5fouu7dI17Tg==}
     engines: {node: '>=8.0.0'}
 
   '@opentelemetry/api@1.9.1':
@@ -745,32 +755,32 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
-  '@opentelemetry/core@2.11.0':
-    resolution: {integrity: sha512-7YP44XH0tV6+Mb54x2YGf84i7yi+31MBZlE8JwvozkxyTvXbSp10X7cI7YE49ChJ3shMJoBmCJF3+1QFBJctGA==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': '>=1.0.0 <1.10.0'
-
   '@opentelemetry/core@2.12.0':
     resolution: {integrity: sha512-1HsSAuvT4/my0QrXWsyXFdWjKaPeCHsismKZgEEIb8NK13LP6DrMRlsUbvD/0F9mDWK3xDom9AMv3IscxgOnOQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
-  '@opentelemetry/exporter-trace-otlp-http@0.222.0':
-    resolution: {integrity: sha512-RCnPWcHppwiquQ+cV3nWvNwdf0MG1w26e5jewW2T83nTZOlXgcg88sY9ulCVgagGHcq1mj0L0GP6YHgzk2v8oA==}
+  '@opentelemetry/core@2.12.1':
+    resolution: {integrity: sha512-3hr6Pj0/G0oVgIGb97IVcw9BjZ6eudonKjrmQxw7JquyU/XmVbJelkmyoU0sT/OvHGkv+r1tcrwv8MbSX7aKHw==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0 <1.10.0'
+
+  '@opentelemetry/exporter-trace-otlp-http@0.223.1':
+    resolution: {integrity: sha512-GFUExKrz836eYHXMak4ucjLl9EC5q4CgWwzCcj8hSGltLOTpkhbE24Y/7jc3DlygcTQzVVphv6STvnfKPasH/g==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.3.0
 
-  '@opentelemetry/otlp-exporter-base@0.222.0':
-    resolution: {integrity: sha512-YbywG3veEm2Fb6TbdxRkuquWob6eVWXuA8/Ba1tXz9jHfUqpdE3keilOHEtPboC4CvS1bjeeVfNkWGOOrLj+lw==}
+  '@opentelemetry/otlp-exporter-base@0.223.1':
+    resolution: {integrity: sha512-TVbeqdBiYKS12OWZOk3y709l0yh66mCSAO8bSbIK8/Og3MQmy1vVBWEp+HbJvONmc02c226/8t2r7hmEgGcMvA==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.3.0
 
-  '@opentelemetry/otlp-transformer@0.222.0':
-    resolution: {integrity: sha512-/F3BZ89+CJQnZkMh2tCrtcdB+XT2Dxhj4FFE+WPQ//413hmFL0/RfEX6vgOIWGhiSzrkHWTK3+6SiT7K5/g/jQ==}
+  '@opentelemetry/otlp-transformer@0.223.1':
+    resolution: {integrity: sha512-22EJNk0qjI3klrON0aFR0BXye6FOM2vrkpjXjW8KDeSSiMez7+T4ARXfAh8+ucS3dEnhpSoGdfs4E/z4EIYjXQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.3.0
@@ -781,14 +791,14 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
-  '@opentelemetry/resources@2.11.0':
-    resolution: {integrity: sha512-Ie7+8q8MDF4FAEQCKVMTx3ReUvxiIAgIiiW3c9JdmP8+HMcDy20puT+AHjexnExgnbvBxjQ9fjkFDWrikJ2jQA==}
+  '@opentelemetry/resources@2.12.0':
+    resolution: {integrity: sha512-+rSRoOdln6NhXTVcBdHSlZxJDNzwxadeweK2ltZO3tVtfp6aklABc06xclDk6ovRR+EiGgIcSbh/6NgjFhnb3A==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
-  '@opentelemetry/resources@2.12.0':
-    resolution: {integrity: sha512-+rSRoOdln6NhXTVcBdHSlZxJDNzwxadeweK2ltZO3tVtfp6aklABc06xclDk6ovRR+EiGgIcSbh/6NgjFhnb3A==}
+  '@opentelemetry/resources@2.12.1':
+    resolution: {integrity: sha512-IwrNcuLCvnJAnNLkXxx0Uw+rjBkVW6VGQrhd7PanNf0LavOzkTk9sDAjdqegM7p/VdxefNRrii6d+wBRJfz35g==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
@@ -799,17 +809,11 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.4.0 <1.10.0'
 
-  '@opentelemetry/sdk-logs@0.222.0':
-    resolution: {integrity: sha512-+19YHODIjaUCArxleaJtuufFZVpz/xvvK+VllQqE+W8hHolxdoRwHfK/s667zezwh1hkx6FFF+oYzetYgqK+Bg==}
+  '@opentelemetry/sdk-logs@0.223.1':
+    resolution: {integrity: sha512-GpL453eVjCUn2fC3LYBuckCyPleN7FqpvmndT2kZ8gO8c6hHRL5X1BqLLDbVmdw1QDT4ZVyK9G4MNfz5xEkXew==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.4.0 <1.10.0'
-
-  '@opentelemetry/sdk-metrics@2.11.0':
-    resolution: {integrity: sha512-7GXXcObyHyDUUSG+L+kJoquty01bzm7ivE7+SSgXXJcHuPzGviptxwARmI2c+bnnxjexGQbJnyNlN8HxBP/Y7A==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': '>=1.9.0 <1.10.0'
 
   '@opentelemetry/sdk-metrics@2.12.0':
     resolution: {integrity: sha512-mVMaEHwCUJuY3S4Esn+nT0yQA3qCEGh+SOPJsXygU0Gl453WcsDNjtEa8EfdewMwoLyr1tlofB4fXytVpiXuow==}
@@ -817,26 +821,34 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.9.0 <1.10.0'
 
+  '@opentelemetry/sdk-metrics@2.12.1':
+    resolution: {integrity: sha512-HeSblYhpds4QWliBE7ANCfoa2p3QH83uUxX4vO2qtk6BhIcqP7qDYYT36z3LOXftEBpdfbDStZxv+Cw5mqKX5g==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.9.0 <1.10.0'
+
   '@opentelemetry/sdk-trace-base@2.12.0':
     resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-node@2.12.0':
     resolution: {integrity: sha512-9DufH1IlmQMoKAfot5y/FhTP1RnmhLb5K6eKmJO/bvzPjYwPAazoiAUbTZFdPbqxOXN0FEbhZx/e6SB1Og4jmg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
-  '@opentelemetry/sdk-trace@2.11.0':
-    resolution: {integrity: sha512-fFnTqGm8/G73GQVnxYi7LXa1ZVYEUvgL6XI1LpvV0bPC7WQ/ZGgKxCSl8FnlZBKto9JHHEFTO6s6CUpvvtwFrA==}
+  '@opentelemetry/sdk-trace@2.12.0':
+    resolution: {integrity: sha512-ImVuRQ6faOsTi1Wna88s2avgrrf/iDgXPigIeynkUhjstMuoQUDOJXgkez2j1mlU4btjXcXBGa+q7qKFYR3GsA==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
-  '@opentelemetry/sdk-trace@2.12.0':
-    resolution: {integrity: sha512-ImVuRQ6faOsTi1Wna88s2avgrrf/iDgXPigIeynkUhjstMuoQUDOJXgkez2j1mlU4btjXcXBGa+q7qKFYR3GsA==}
+  '@opentelemetry/sdk-trace@2.12.1':
+    resolution: {integrity: sha512-vANdmCYnn+Ka/alBKxwICMl4Koa+aQBlRC9zAZy+Ig1Obbo3RZt2oiyv+8/gET5rrBBYrO3YniPcXfwZrN01rg==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
@@ -1947,8 +1959,8 @@ packages:
     resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
     engines: {node: '>=18'}
 
-  koffi@3.2.1:
-    resolution: {integrity: sha512-0qE3lZ8jllRqPN4Ob6Ajl7c2bJSJDhQWuKLGP5hIEpHLllJWv1ydHFMhHmHc5p/W9GticKVDbYzZd7TBoQ4CZg==}
+  koffi@3.3.4:
+    resolution: {integrity: sha512-31Vr+LM+w1dEsNcOJtJWvYyUTjVc/SWOxNDZJxfhsBC6qZ5YVn98n5x1oBbDq5skxCbWD4SByJpNmq63fvg9Aw==}
 
   lazystream@1.0.1:
     resolution: {integrity: sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==}
@@ -2630,9 +2642,9 @@ packages:
       jsdom:
         optional: true
 
-  vscode-jsonrpc@8.2.1:
-    resolution: {integrity: sha512-kdjOSJ2lLIn7r1rtrMbbNCHjyMPfRnowdKjBQ+mGq6NAW5QY2bEZC/khaC5OR8svbbjvLEaIXkOq45e2X9BIbQ==}
-    engines: {node: '>=14.0.0'}
+  vscode-jsonrpc@10.0.0:
+    resolution: {integrity: sha512-USSfxg0vDIpTQqlQBGxF3mBARyoS8cU7LHLpbYNh6dOJt32dlskxPWB0Irrh5TllTmyf7oNLAvqDqzklbwwnpA==}
+    engines: {node: '>=14.17.0'}
 
   which-boxed-primitive@1.1.1:
     resolution: {integrity: sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==}
@@ -2688,9 +2700,6 @@ packages:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
       zod: ^3.25.28 || ^4
-
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
@@ -2990,44 +2999,44 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@github/copilot-sdk-darwin-arm64@1.0.15':
+  '@github/copilot-sdk-darwin-arm64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-darwin-x64@1.0.15':
+  '@github/copilot-sdk-darwin-x64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-linux-arm64@1.0.15':
+  '@github/copilot-sdk-linux-arm64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-linux-x64@1.0.15':
+  '@github/copilot-sdk-linux-x64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-linuxmusl-arm64@1.0.15':
+  '@github/copilot-sdk-linuxmusl-arm64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-linuxmusl-x64@1.0.15':
+  '@github/copilot-sdk-linuxmusl-x64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-win32-arm64@1.0.15':
+  '@github/copilot-sdk-win32-arm64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk-win32-x64@1.0.15':
+  '@github/copilot-sdk-win32-x64@1.0.30':
     optional: true
 
-  '@github/copilot-sdk@1.0.15':
+  '@github/copilot-sdk@1.0.30':
     dependencies:
-      koffi: 3.2.1
-      vscode-jsonrpc: 8.2.1
-      zod: 4.3.6
+      koffi: 3.3.4
+      vscode-jsonrpc: 10.0.0
+      zod: 4.6.7
     optionalDependencies:
-      '@github/copilot-sdk-darwin-arm64': 1.0.15
-      '@github/copilot-sdk-darwin-x64': 1.0.15
-      '@github/copilot-sdk-linux-arm64': 1.0.15
-      '@github/copilot-sdk-linux-x64': 1.0.15
-      '@github/copilot-sdk-linuxmusl-arm64': 1.0.15
-      '@github/copilot-sdk-linuxmusl-x64': 1.0.15
-      '@github/copilot-sdk-win32-arm64': 1.0.15
-      '@github/copilot-sdk-win32-x64': 1.0.15
+      '@github/copilot-sdk-darwin-arm64': 1.0.30
+      '@github/copilot-sdk-darwin-x64': 1.0.30
+      '@github/copilot-sdk-linux-arm64': 1.0.30
+      '@github/copilot-sdk-linux-x64': 1.0.30
+      '@github/copilot-sdk-linuxmusl-arm64': 1.0.30
+      '@github/copilot-sdk-linuxmusl-x64': 1.0.30
+      '@github/copilot-sdk-win32-arm64': 1.0.30
+      '@github/copilot-sdk-win32-x64': 1.0.30
 
   '@hono/node-server@2.1.5(hono@4.13.13)':
     dependencies:
@@ -3051,67 +3060,73 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@koromix/koffi-android-arm64@3.2.1':
+  '@koromix/koffi-android-arm64@3.3.4':
     optional: true
 
-  '@koromix/koffi-android-x64@3.2.1':
+  '@koromix/koffi-android-x64@3.3.4':
     optional: true
 
-  '@koromix/koffi-darwin-arm64@3.2.1':
+  '@koromix/koffi-darwin-arm64@3.3.4':
     optional: true
 
-  '@koromix/koffi-darwin-x64@3.2.1':
+  '@koromix/koffi-darwin-x64@3.3.4':
     optional: true
 
-  '@koromix/koffi-freebsd-arm64@3.2.1':
+  '@koromix/koffi-freebsd-arm64@3.3.4':
     optional: true
 
-  '@koromix/koffi-freebsd-ia32@3.2.1':
+  '@koromix/koffi-freebsd-ia32@3.3.4':
     optional: true
 
-  '@koromix/koffi-freebsd-x64@3.2.1':
+  '@koromix/koffi-freebsd-x64@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-arm64@3.2.1':
+  '@koromix/koffi-linux-arm64@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-arm@3.2.1':
+  '@koromix/koffi-linux-arm@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-ia32@3.2.1':
+  '@koromix/koffi-linux-ia32@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-loong64@3.2.1':
+  '@koromix/koffi-linux-loong64@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-riscv64@3.2.1':
+  '@koromix/koffi-linux-ppc64@3.3.4':
     optional: true
 
-  '@koromix/koffi-linux-x64@3.2.1':
+  '@koromix/koffi-linux-riscv64@3.3.4':
     optional: true
 
-  '@koromix/koffi-openbsd-ia32@3.2.1':
+  '@koromix/koffi-linux-x64@3.3.4':
     optional: true
 
-  '@koromix/koffi-openbsd-x64@3.2.1':
+  '@koromix/koffi-openbsd-arm64@3.3.4':
     optional: true
 
-  '@koromix/koffi-win32-arm64@3.2.1':
+  '@koromix/koffi-openbsd-ia32@3.3.4':
     optional: true
 
-  '@koromix/koffi-win32-ia32@3.2.1':
+  '@koromix/koffi-openbsd-x64@3.3.4':
     optional: true
 
-  '@koromix/koffi-win32-x64@3.2.1':
+  '@koromix/koffi-win32-arm64@3.3.4':
     optional: true
 
-  '@microsoft/vally-cli@0.19.0':
+  '@koromix/koffi-win32-ia32@3.3.4':
+    optional: true
+
+  '@koromix/koffi-win32-x64@3.3.4':
+    optional: true
+
+  '@microsoft/vally-cli@0.21.0':
     dependencies:
       '@azure/monitor-opentelemetry-exporter': 1.0.0-beta.46
-      '@microsoft/vally': 0.19.0
-      '@microsoft/vally-server': 0.19.0
+      '@microsoft/vally': 0.21.0
+      '@microsoft/vally-server': 0.21.0
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-trace-otlp-http': 0.223.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-node': 2.12.0(@opentelemetry/api@1.9.1)
@@ -3123,18 +3138,18 @@ snapshots:
       - better-sqlite3
       - supports-color
 
-  '@microsoft/vally-server@0.19.0':
+  '@microsoft/vally-server@0.21.0':
     dependencies:
       '@hono/node-server': 2.1.5(hono@4.13.13)
-      '@microsoft/vally': 0.19.0
+      '@microsoft/vally': 0.21.0
       hono: 4.13.13
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@microsoft/vally@0.19.0':
+  '@microsoft/vally@0.21.0':
     dependencies:
-      '@github/copilot-sdk': 1.0.15
+      '@github/copilot-sdk': 1.0.30
       '@modelcontextprotocol/sdk': 1.32.1(zod@4.6.7)
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
@@ -3251,7 +3266,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@opentelemetry/api-logs@0.222.0':
+  '@opentelemetry/api-logs@0.223.1':
     dependencies:
       '@opentelemetry/api': 1.9.1
 
@@ -3266,38 +3281,38 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.43.0
 
-  '@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1)':
-    dependencies:
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/semantic-conventions': 1.43.0
-
   '@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.43.0
 
-  '@opentelemetry/exporter-trace-otlp-http@0.222.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/core@2.12.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/otlp-exporter-base': 0.222.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-transformer': 0.222.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-trace': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.43.0
 
-  '@opentelemetry/otlp-exporter-base@0.222.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/exporter-trace-otlp-http@0.223.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-transformer': 0.222.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-exporter-base': 0.223.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-transformer': 0.223.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace': 2.12.1(@opentelemetry/api@1.9.1)
 
-  '@opentelemetry/otlp-transformer@0.222.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/otlp-exporter-base@0.223.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/api-logs': 0.222.0
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-logs': 0.222.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-metrics': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-trace': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-transformer': 0.223.1(@opentelemetry/api@1.9.1)
+
+  '@opentelemetry/otlp-transformer@0.223.1(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/api-logs': 0.223.1
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-logs': 0.223.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace': 2.12.1(@opentelemetry/api@1.9.1)
 
   '@opentelemetry/resources@2.10.0(@opentelemetry/api@1.9.1)':
     dependencies:
@@ -3305,16 +3320,16 @@ snapshots:
       '@opentelemetry/core': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
 
-  '@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1)':
-    dependencies:
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/semantic-conventions': 1.43.0
-
   '@opentelemetry/resources@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.43.0
+
+  '@opentelemetry/resources@2.12.1(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
 
   '@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1)':
@@ -3325,25 +3340,25 @@ snapshots:
       '@opentelemetry/resources': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
 
-  '@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/sdk-logs@0.223.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/api-logs': 0.222.0
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/api-logs': 0.223.1
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.12.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
-
-  '@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1)':
-    dependencies:
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
 
   '@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.1)
+
+  '@opentelemetry/sdk-metrics@2.12.1(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.12.1(@opentelemetry/api@1.9.1)
 
   '@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
@@ -3360,18 +3375,18 @@ snapshots:
       '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.9.1)
 
-  '@opentelemetry/sdk-trace@2.11.0(@opentelemetry/api@1.9.1)':
-    dependencies:
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/semantic-conventions': 1.43.0
-
   '@opentelemetry/sdk-trace@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.43.0
+
+  '@opentelemetry/sdk-trace@2.12.1(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.12.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.12.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
@@ -4440,26 +4455,28 @@ snapshots:
 
   jwt-decode@4.0.0: {}
 
-  koffi@3.2.1:
+  koffi@3.3.4:
     optionalDependencies:
-      '@koromix/koffi-android-arm64': 3.2.1
-      '@koromix/koffi-android-x64': 3.2.1
-      '@koromix/koffi-darwin-arm64': 3.2.1
-      '@koromix/koffi-darwin-x64': 3.2.1
-      '@koromix/koffi-freebsd-arm64': 3.2.1
-      '@koromix/koffi-freebsd-ia32': 3.2.1
-      '@koromix/koffi-freebsd-x64': 3.2.1
-      '@koromix/koffi-linux-arm': 3.2.1
-      '@koromix/koffi-linux-arm64': 3.2.1
-      '@koromix/koffi-linux-ia32': 3.2.1
-      '@koromix/koffi-linux-loong64': 3.2.1
-      '@koromix/koffi-linux-riscv64': 3.2.1
-      '@koromix/koffi-linux-x64': 3.2.1
-      '@koromix/koffi-openbsd-ia32': 3.2.1
-      '@koromix/koffi-openbsd-x64': 3.2.1
-      '@koromix/koffi-win32-arm64': 3.2.1
-      '@koromix/koffi-win32-ia32': 3.2.1
-      '@koromix/koffi-win32-x64': 3.2.1
+      '@koromix/koffi-android-arm64': 3.3.4
+      '@koromix/koffi-android-x64': 3.3.4
+      '@koromix/koffi-darwin-arm64': 3.3.4
+      '@koromix/koffi-darwin-x64': 3.3.4
+      '@koromix/koffi-freebsd-arm64': 3.3.4
+      '@koromix/koffi-freebsd-ia32': 3.3.4
+      '@koromix/koffi-freebsd-x64': 3.3.4
+      '@koromix/koffi-linux-arm': 3.3.4
+      '@koromix/koffi-linux-arm64': 3.3.4
+      '@koromix/koffi-linux-ia32': 3.3.4
+      '@koromix/koffi-linux-loong64': 3.3.4
+      '@koromix/koffi-linux-ppc64': 3.3.4
+      '@koromix/koffi-linux-riscv64': 3.3.4
+      '@koromix/koffi-linux-x64': 3.3.4
+      '@koromix/koffi-openbsd-arm64': 3.3.4
+      '@koromix/koffi-openbsd-ia32': 3.3.4
+      '@koromix/koffi-openbsd-x64': 3.3.4
+      '@koromix/koffi-win32-arm64': 3.3.4
+      '@koromix/koffi-win32-ia32': 3.3.4
+      '@koromix/koffi-win32-x64': 3.3.4
 
   lazystream@1.0.1:
     dependencies:
@@ -5286,7 +5303,7 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vscode-jsonrpc@8.2.1: {}
+  vscode-jsonrpc@10.0.0: {}
 
   which-boxed-primitive@1.1.1:
     dependencies:
@@ -5362,7 +5379,5 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
       zod: 4.6.7
-
-  zod@4.3.6: {}
 
   zod@4.6.7: {}
