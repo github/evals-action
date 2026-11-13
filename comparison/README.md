@@ -156,13 +156,18 @@ unsupported and fail explicitly.
 Initialized/nonempty submodules are unsupported and fail explicitly; an empty
 uninitialized gitlink is allowed. Submodule ignore settings must not hide
 measurement inputs from the comparison guards.
-All Git guards/restores disable replacement objects. Untracked-file checks
+All Git guards/restores disable replacement objects and force the effective
+worktree to the verified candidate directory, ignoring `core.worktree`
+redirection. Untracked-file checks
 include empty directories, including those inside the selected skill, so
 Before-created directory state cannot silently survive into After.
-Active custom Git filters on tracked files are unsupported and fail before
-worktree restoration. Both working-tree and cached attributes (including local
+Declared Git filter attributes on tracked files are unsupported and fail before
+worktree restoration, including drivers literally named `unset` or `unspecified`
+and explicit negative filter declarations. Both working-tree and cached attributes (including local
 overrides) are checked for every tracked path before and after staging the
-selected source. Ordinary text/EOL normalization is retained; diff guards
+selected source. The original index is preserved through attribute preflight;
+index and worktree are then restored together so additions, deletions and
+renames remain supported. Ordinary text/EOL normalization is retained; diff guards
 disable external diff and text-conversion commands.
 
 Acquisition reuses the root Action's integrity-verified Vally installer:

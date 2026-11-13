@@ -27,7 +27,7 @@ const parse = (text: string): unknown => {
 };
 
 async function git(cwd: string, args: string[], input?: string): Promise<string> {
-  const operation = execute('git', ['--no-replace-objects', '--literal-pathspecs', '-C', cwd, ...args], {
+  const operation = execute('git', ['--no-replace-objects', `--work-tree=${cwd}`, '--literal-pathspecs', '-C', cwd, ...args], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   const writing = input === undefined ? undefined : finished(operation.child.stdin!, { cleanup: true });
@@ -70,21 +70,24 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   const checkFilters = async () => {
     const paths = await git(cwd, ['ls-files', '-z']);
     for (const cached of [false, true]) {
-      const attributes = await git(cwd, ['check-attr', ...(cached ? ['--cached'] : []), '-z', 'filter', '--stdin'], paths);
-      if (attributes.split('\0').some((value, index) => index % 3 === 2 && !['unspecified', 'unset'].includes(value))) {
+      const attributes = await git(cwd, ['check-attr', ...(cached ? ['--cached'] : []), '-z', '--all', '--stdin'], paths);
+      if (attributes.split('\0').some((value, index) => index % 3 === 1 && value === 'filter')) {
         throw new ComparisonError('comparison-git-filters-unsupported');
       }
     }
   };
   await checkPaths();
   await checkFilters();
-  await git(cwd, ['restore', `--source=${source}`, '--staged', '--', entry.directory]);
-  await checkFilters();
-  await git(cwd, ['restore', `--source=${source}`, '--worktree', '--', entry.directory]);
+  const previousTree = await git(cwd, ['write-tree']);
+  try {
+    await git(cwd, ['restore', `--source=${source}`, '--staged', '--', entry.directory]);
+    await checkFilters();
+  } finally { await git(cwd, ['read-tree', previousTree]); }
+  await git(cwd, ['restore', `--source=${source}`, '--staged', '--worktree', '--', entry.directory]);
   await checkPaths();
   await git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--exit-code', source, '--', entry.directory]);
   // This pathspec is constructed from a validated directory, never candidate shell text.
-  const outside = await execute('git', ['--no-replace-objects', '-C', cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
+  const outside = await execute('git', ['--no-replace-objects', `--work-tree=${cwd}`, '-C', cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   if (outside.stdout || await git(cwd, ['ls-files', '--others', '--directory', '-z'])) {

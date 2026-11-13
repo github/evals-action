@@ -450,6 +450,8 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await mkdir(join(cwd, 'evals'), { recursive: true });
   await writeFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'before');
   await writeFile(join(cwd, 'skills', 'draft', 'café.md'), 'unicode source');
+  await writeFile(join(cwd, 'skills', 'draft', 'removed.md'), 'removed by head');
+  await writeFile(join(cwd, 'skills', 'draft', 'old.md'), 'renamed by head');
   await writeFile(join(cwd, '.gitignore'), 'skills/draft/*.cache\nfixtures/\n');
   await mkdir(join(cwd, 'fixtures'));
   await writeFile(join(cwd, 'fixtures', 'measurement.txt'), 'original\nbytes\n');
@@ -478,6 +480,10 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   const base = git('rev-parse', 'HEAD');
   git('checkout', '-qb', 'skill');
   await writeFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'after');
+  await writeFile(join(cwd, 'skills', 'draft', 'added.md'), 'added by head');
+  git('rm', '-q', '--', 'skills/draft/removed.md');
+  git('mv', '--', 'skills/draft/old.md', 'skills/draft/new.md');
+  git('add', '--', 'skills/draft/added.md');
   git('commit', '-qam', 'head');
   const head = git('rev-parse', 'HEAD');
   git('checkout', '-qb', 'merge', base);
@@ -490,9 +496,17 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   const entry = { ...selection.include[0]!, directory: 'skills/draft', evalPath: 'evals/eval.yaml', base: firstParent, head };
   await restoreComparisonSource(cwd, ctx, entry, firstParent);
   expect(await readFile(join(cwd, entry.directory, 'SKILL.md'), 'utf8')).toBe('before');
+  expect(await readFile(join(cwd, entry.directory, 'removed.md'), 'utf8')).toBe('removed by head');
+  expect(await readFile(join(cwd, entry.directory, 'old.md'), 'utf8')).toBe('renamed by head');
+  await expect(readFile(join(cwd, entry.directory, 'added.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(join(cwd, entry.directory, 'new.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   expect(await readFile(join(cwd, 'neighbor'), 'utf8')).toBe('merge context');
   await restoreComparisonSource(cwd, ctx, entry, head);
   expect(await readFile(join(cwd, entry.directory, 'SKILL.md'), 'utf8')).toBe('after');
+  expect(await readFile(join(cwd, entry.directory, 'added.md'), 'utf8')).toBe('added by head');
+  expect(await readFile(join(cwd, entry.directory, 'new.md'), 'utf8')).toBe('renamed by head');
+  await expect(readFile(join(cwd, entry.directory, 'removed.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(join(cwd, entry.directory, 'old.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   for (const flag of ['assume-unchanged', 'skip-worktree']) {
     git('update-index', `--${flag}`, '--', entry.evalPath);
     await writeFile(join(cwd, entry.evalPath), 'hidden measurement change');
@@ -566,7 +580,31 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
   git('replace', '-d', head);
 
+  const shadow = join(root, 'shadow');
+  await mkdir(join(shadow, 'skills', 'draft'), { recursive: true });
+  await writeFile(join(shadow, 'skills', 'draft', 'SKILL.md'), 'after');
+  await restoreComparisonSource(cwd, ctx, entry, firstParent);
+  git('config', 'core.worktree', shadow);
+  await restoreComparisonSource(cwd, ctx, entry, head);
+  expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
+  git('config', '--unset', 'core.worktree');
+
   const attributes = join(cwd, '.git', 'info', 'attributes');
+  for (const driver of ['unset', 'unspecified']) {
+    await writeFile(attributes, `skills/draft/SKILL.md filter=${driver}\n`);
+    git('config', `filter.${driver}.smudge`, 'echo FILTERED_SOURCE');
+    git('config', `filter.${driver}.clean`, 'git --no-replace-objects show HEAD:skills/draft/SKILL.md');
+    git('config', `filter.${driver}.required`, 'true');
+    await rm(join(cwd, 'skills', 'draft', 'SKILL.md'));
+    git('checkout-index', '--force', '--', 'skills/draft/SKILL.md');
+    expect((await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).trim()).toBe('FILTERED_SOURCE');
+    expect(git('check-attr', 'filter', '--', 'skills/draft/SKILL.md')).toContain(`filter: ${driver}`);
+    expect(git('diff', '--exit-code', head, '--', 'skills/draft/SKILL.md')).toBe('');
+    await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-git-filters-unsupported');
+    git('config', '--remove-section', `filter.${driver}`);
+  }
+  await rm(attributes);
+  await restoreComparisonSource(cwd, ctx, entry, head);
   await writeFile(attributes, 'skills/draft/SKILL.md filter=shadow\n');
   git('config', 'filter.shadow.smudge', 'echo FILTERED_SOURCE');
   git('config', 'filter.shadow.clean', 'git --no-replace-objects show HEAD:skills/draft/SKILL.md');
@@ -620,4 +658,4 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(after.data).toMatchObject({ state: 'complete', rows: [{ state: 'graded', passed: true }] });
   expect(await readFile(join(cwd, 'skills/draft/SKILL.md'), 'utf8')).toBe('after');
   expect(mocks.summary).toHaveBeenCalledWith(expect.stringContaining('dependency lock SHA-256'));
-}, 90_000);
+}, 120_000);
