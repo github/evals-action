@@ -49,6 +49,7 @@ function selection(): ComparisonSelection {
   return {
     repository: 'example/repo', run: '999', attempt: '2', runNumber: 8, pullNumber: 3,
     sourceWorkflow: '.github/workflows/skill-evals.yml', sourceRun: '123', sourceAttempt: '1',
+    workflowRef: 'example/repo/.github/workflows/compare.yml@refs/heads/main',
     trusted: 'd'.repeat(40), base: 'a'.repeat(40), head: 'b'.repeat(40),
     merge: 'c'.repeat(40), runHead: 'b'.repeat(40), changed: ['local/draft'],
     skills: [{ key: 'local/draft', hasEval: true }, { key: 'local/neighbor', hasEval: true },
@@ -220,6 +221,17 @@ describe('native comparison projection', () => {
 });
 
 describe('comparison renderer', () => {
+  it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
+    const sample = pair();
+    expect(() => renderComparison(selection(), [sample, sample], evidence)).toThrow(expect.objectContaining({
+      code: 'comparison-duplicate-skill', message: 'Duplicate comparison skill.',
+    }));
+    const root = await directory();
+    await save(root);
+    await expect(loadComparison(root, { ...selection(), include: [] })).rejects.toMatchObject({
+      code: 'comparison-coverage-mismatch', message: 'Artifact coverage differs from trusted selection.',
+    });
+  });
   it('does not resolve a different named grader at the same index and type', () => {
     const sample = pair();
     sample.before.rows[0]!.checks = [{ id: '0:program', name: 'contract-A', passed: false, reason: '' }];

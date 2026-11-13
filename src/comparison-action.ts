@@ -6,7 +6,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
 import { exactVersion, parseInputs } from './inputs.js';
-import { acquireEngine, resolveRelease, type EngineIdentity } from './tooling.js';
+import { acquireEngine, resolveRelease, sha256, type EngineIdentity } from './tooling.js';
 import { NativeError, nativeEnvironment, runNative } from './native.js';
 import { authenticateComparison, assertContext, assertCurrentPullRequest, ComparisonError, validateComparisonSelection,
   type ComparisonContext, type ComparisonEntry, type ComparisonSelection } from './comparison-context.js';
@@ -66,7 +66,7 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
 export async function publishComparison(
   selection: ComparisonSelection, body: string, api: GitHubClient,
 ): Promise<'posted' | 'stale'> {
-  const marker = `<!-- evals-comparison:${selection.repository}/${selection.sourceWorkflow} -->`;
+  const marker = `<!-- evals-comparison:${selection.repository}/${selection.sourceWorkflow}/${sha256(selection.workflowRef)} -->`;
   const prefix = `/repos/${selection.repository}`;
   const author = await authenticatedBotId(api);
   let existing: { id: number; body: string } | undefined;

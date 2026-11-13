@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
-import type { ComparisonSelection } from './comparison-context.js';
+import { ComparisonError, type ComparisonSelection } from './comparison-context.js';
 import { parseNativeEvidence } from './native.js';
 
 export type { ComparisonSelection } from './comparison-context.js';
@@ -44,21 +44,21 @@ const arms = ['before', 'after'] as const;
 type ArmName = typeof arms[number];
 type RecordValue = Record<string, unknown>;
 
-function invalid(message: string): never { throw new Error(message); }
+function invalid(code: string, message: string): never { throw new ComparisonError(code, message); }
 
 function record(value: unknown): RecordValue {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('Invalid comparison object.');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('comparison-invalid-object', 'Invalid comparison object.');
   return value as RecordValue;
 }
 
 function exact(value: RecordValue, keys: string[], optional: string[] = []): void {
   if (Object.keys(value).some((key) => !keys.includes(key) && !optional.includes(key)) || keys.some((key) => !Object.hasOwn(value, key))) {
-    invalid('Unexpected comparison fields.');
+    invalid('comparison-unexpected-fields', 'Unexpected comparison fields.');
   }
 }
 
 function label(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > maxLabel) invalid('Invalid comparison label.');
+  if (typeof value !== 'string' || !value.trim() || value.length > maxLabel) invalid('comparison-invalid-label', 'Invalid comparison label.');
   return value;
 }
 
@@ -99,7 +99,7 @@ function gradeError(grade: RecordValue): boolean {
 
 /** Project only case identifiers and individual verdicts, never native output or exceptions. */
 export function collectNative(contents: string, runId: string, exitCode: number | null): ComparisonArm {
-  if (Buffer.byteLength(contents) > 64 * 1024 * 1024) invalid('Native comparison evidence exceeds its size limit.');
+  if (Buffer.byteLength(contents) > 64 * 1024 * 1024) invalid('comparison-native-evidence-too-large', 'Native comparison evidence exceeds its size limit.');
   if (!contents.trim()) return { state: 'error', rows: [] };
   const native = parseNativeEvidence(contents, runId, exitCode);
   // parseNativeEvidence owns source JSONL/schema validation; comparison adds coverage requirements.
@@ -107,7 +107,7 @@ export function collectNative(contents: string, runId: string, exitCode: number 
   const summary = records.at(-1)!;
   const groups = summary.evals as RecordValue[];
   const nativeVerdicts = new Map(groups.map((group) => {
-    if (typeof group.passed !== 'boolean') invalid('Invalid native eval verdict.');
+    if (typeof group.passed !== 'boolean') invalid('comparison-invalid-native-verdict', 'Invalid native eval verdict.');
     return [groupIdentity(group), group.passed] as const;
   }));
   const identities = new Set<string>();
@@ -119,7 +119,7 @@ export function collectNative(contents: string, runId: string, exitCode: number 
     const variant = label(trial.variant);
     const displayModel = label(variant === 'main' ? model : `${model} / ${variant}`);
     const identity = rowIdentity({ eval: evalName, stimulus, model: displayModel });
-    if (identities.has(identity)) invalid('Expected one trial per case/model, without retries.');
+    if (identities.has(identity)) invalid('comparison-duplicate-native-trial', 'Expected one trial per case/model, without retries.');
     identities.add(identity);
     const bucket = observed.get(groupIdentity(trial)) ?? { run: 0, skipped: 0 };
     if (trial.status === 'skipped') bucket.skipped++;
@@ -132,24 +132,24 @@ export function collectNative(contents: string, runId: string, exitCode: number 
     const state: ComparisonRow['state'] = trial.status === 'skipped' ? 'not-run' :
       trial.status !== 'success' || !grade || gradeError(grade) || executionError ? 'error' : 'graded';
     if (state === 'graded' && (!Array.isArray(grade?.details) || !grade.details.length)) {
-      invalid('Native individual grader evidence is missing.');
+      invalid('comparison-native-graders-missing', 'Native individual grader evidence is missing.');
     }
     const details = state === 'not-run' ? [] : grade?.details ?? [];
-    if (!Array.isArray(details) || details.length > maxChecks) invalid('Invalid native individual graders.');
+    if (!Array.isArray(details) || details.length > maxChecks) invalid('comparison-invalid-native-graders', 'Invalid native individual graders.');
     const checks: ComparisonCheck[] = details.flatMap((item, index) => {
       const check = record(item);
       if (gradeError(check)) return [];
-      if (typeof check.passed !== 'boolean') invalid('Invalid native grader verdict.');
+      if (typeof check.passed !== 'boolean') invalid('comparison-invalid-native-grader-verdict', 'Invalid native grader verdict.');
       const type = check.graderType ?? check.kind ?? 'check';
-      if (typeof type !== 'string' || !/^[a-z0-9._-]{1,128}$/.test(type)) invalid('Invalid native grader type.');
+      if (typeof type !== 'string' || !/^[a-z0-9._-]{1,128}$/.test(type)) invalid('comparison-invalid-native-grader-type', 'Invalid native grader type.');
       const projected = { id: `${index}:${type}`, name: label(check.configuredName ?? check.name ?? type), passed: check.passed };
       return [{ ...projected, reason: checkReason(projected) }];
     });
     const nativePassed = nativeVerdicts.get(groupIdentity(trial));
-    if (nativePassed === undefined) invalid('Missing native eval verdict.');
+    if (nativePassed === undefined) invalid('comparison-native-eval-verdict-missing', 'Missing native eval verdict.');
     return { eval: evalName, stimulus, model: displayModel, state, passed: state === 'graded' && grade?.passed === true, nativePassed, checks };
   });
-  if (rows.length > maxRows) invalid('Too many comparison cases.');
+  if (rows.length > maxRows) invalid('comparison-too-many-cases', 'Too many comparison cases.');
   const complete = groups.every((group) => {
     const bucket = observed.get(groupIdentity(group)) ?? { run: 0, skipped: 0 };
     return !group.hadExecutionErrors && !group.hadGradingErrors &&
@@ -169,10 +169,10 @@ function safeArm(value: unknown): ComparisonArm {
   const data = record(value);
   exact(data, ['state', 'rows'], ['nativeOutcome']);
   if (typeof data.state !== 'string' || !['complete', 'error', 'not-run'].includes(data.state) || !Array.isArray(data.rows) ||
-      data.rows.length > maxRows) invalid('Invalid comparison arm.');
+      data.rows.length > maxRows) invalid('comparison-invalid-arm', 'Invalid comparison arm.');
   if (data.nativeOutcome !== undefined && (typeof data.nativeOutcome !== 'string' ||
       !['passed', 'failed', 'error', 'not-run', 'cancelled', 'unknown'].includes(data.nativeOutcome))) {
-    invalid('Invalid comparison native verdict.');
+    invalid('comparison-invalid-native-outcome', 'Invalid comparison native verdict.');
   }
   const identities = new Set<string>();
   const rows = data.rows.map((item): ComparisonRow => {
@@ -181,11 +181,11 @@ function safeArm(value: unknown): ComparisonArm {
     if (typeof row.state !== 'string' || !['graded', 'error', 'not-run'].includes(row.state) || typeof row.passed !== 'boolean' ||
         (row.state !== 'graded' && row.passed) || !Array.isArray(row.checks) || row.checks.length > maxChecks ||
         (row.nativePassed !== undefined && typeof row.nativePassed !== 'boolean')) {
-      invalid('Invalid comparison case.');
+      invalid('comparison-invalid-case', 'Invalid comparison case.');
     }
     const projected = { eval: label(row.eval), stimulus: label(row.stimulus), model: label(row.model) };
     const identity = rowIdentity(projected);
-    if (identities.has(identity)) invalid('Duplicate comparison case.');
+    if (identities.has(identity)) invalid('comparison-duplicate-case', 'Duplicate comparison case.');
     identities.add(identity);
     const checkIds = new Set<string>(), checkIndexes = new Set<string>();
     const checks = row.checks.map((item): ComparisonCheck => {
@@ -193,25 +193,25 @@ function safeArm(value: unknown): ComparisonArm {
       exact(check, ['id', 'name', 'passed', 'reason']);
       if (typeof check.id !== 'string' || !/^(0|[1-9]\d{0,3}):[a-z0-9._-]{1,128}$/.test(check.id) ||
           checkIds.has(check.id) || typeof check.passed !== 'boolean' ||
-          typeof check.reason !== 'string' || check.reason.length > 4096) invalid('Invalid comparison check.');
+          typeof check.reason !== 'string' || check.reason.length > 4096) invalid('comparison-invalid-check', 'Invalid comparison check.');
       const index = check.id.split(':')[0]!;
-      if (Number(index) >= maxChecks || checkIndexes.has(index)) invalid('Duplicate or invalid comparison check index.');
+      if (Number(index) >= maxChecks || checkIndexes.has(index)) invalid('comparison-invalid-check-index', 'Duplicate or invalid comparison check index.');
       checkIds.add(check.id); checkIndexes.add(index);
       const projected = { id: check.id, name: label(check.name), passed: check.passed };
       return { ...projected, reason: checkReason(projected) };
     });
     if ((row.state === 'graded' && !checks.length) || (row.state === 'not-run' && checks.length)) {
-      invalid('Missing or unexpected comparison checks.');
+      invalid('comparison-checks-missing-or-unexpected', 'Missing or unexpected comparison checks.');
     }
     return { ...projected, state: row.state as ComparisonRow['state'], passed: row.passed,
       ...(typeof row.nativePassed === 'boolean' ? { nativePassed: row.nativePassed } : {}), checks };
   });
   if ((data.state === 'not-run' && rows.some((row) => row.state !== 'not-run')) ||
       (data.state === 'complete' && (!rows.length || rows.some((row) => row.state === 'error')))) {
-    invalid('Inconsistent comparison arm.');
+    invalid('comparison-inconsistent-arm', 'Inconsistent comparison arm.');
   }
   if (data.nativeOutcome === 'passed' && rows.some((row) => row.nativePassed === false)) {
-    invalid('Inconsistent comparison native verdict.');
+    invalid('comparison-inconsistent-native-outcome', 'Inconsistent comparison native verdict.');
   }
   return { state: data.state as ComparisonArm['state'], rows,
     ...(data.nativeOutcome !== undefined ? { nativeOutcome: data.nativeOutcome as NonNullable<ComparisonArm['nativeOutcome']> } : {}) };
@@ -279,7 +279,7 @@ function boundedAppender(lines: string[]): (...values: string[]) => void {
   let length = lines.reduce((sum, line) => sum + line.length + 1, -1);
   return (...values) => {
     length += values.reduce((sum, line) => sum + line.length + 1, 0);
-    if (length > 60_000) invalid('Comparison exceeds the comment limit; no truncated report published.');
+    if (length > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
     lines.push(...values);
   };
 }
@@ -288,13 +288,13 @@ function boundedAppender(lines: string[]): (...values: string[]) => void {
 export function renderComparison(selection: ComparisonSelection, inputPairs: ComparisonPair[], evidenceUrl: string): string {
   const url = URL.parse(evidenceUrl);
   if (!url || evidenceUrl.length > 2048 || url.protocol !== 'https:' || url.username || url.password) {
-    invalid('Expected a safe HTTPS evidence URL.');
+    invalid('comparison-invalid-evidence-url', 'Expected a safe HTTPS evidence URL.');
   }
   const evidence = url.href.replace(/[()<>[\]`]/g, (char) => `%${char.codePointAt(0)!.toString(16).toUpperCase()}`);
   const seen = new Set<string>();
   const pairs = inputPairs.map((pair): ComparisonPair => {
     label(pair.key);
-    if (seen.has(pair.key)) invalid('Duplicate comparison skill.');
+    if (seen.has(pair.key)) invalid('comparison-duplicate-skill', 'Duplicate comparison skill.');
     seen.add(pair.key);
     return {
       key: pair.key,
@@ -423,7 +423,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
     '⚠️ Error · ⏭️ Not run · ❔ Unknown never count as passing. Failure reasons describe checks, not raw model/grader output.', '',
     '*Each changed skill is measured separately; evals, graders, fixtures and other skill sources stay at the merge revision.*');
   const rendered = lines.join('\n');
-  if (rendered.length > 60_000) invalid('Comparison exceeds the comment limit; no truncated report published.');
+  if (rendered.length > 60_000) invalid('comparison-comment-too-large', 'Comparison exceeds the comment limit; no truncated report published.');
   return rendered;
 }
 
@@ -431,17 +431,17 @@ async function artifact(root: string, name: string): Promise<unknown> {
   const file = resolve(root, name);
   const metadata = await lstat(file);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > maxArtifactBytes) {
-    invalid('Expected a bounded regular comparison artifact inside the download directory.');
+    invalid('comparison-artifact-content-invalid', 'Expected a bounded regular comparison artifact inside the download directory.');
   }
   const rel = relative(root, await realpath(file));
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    invalid('Expected a bounded regular comparison artifact inside the download directory.');
+    invalid('comparison-artifact-content-invalid', 'Expected a bounded regular comparison artifact inside the download directory.');
   }
   const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const opened = await handle.stat();
     if (!opened.isFile() || opened.size > maxArtifactBytes || opened.ino !== metadata.ino || opened.dev !== metadata.dev) {
-      invalid('Comparison artifact changed while opening.');
+      invalid('comparison-artifact-changed', 'Comparison artifact changed while opening.');
     }
     const buffer = Buffer.alloc(maxArtifactBytes + 1);
     let length = 0;
@@ -450,17 +450,17 @@ async function artifact(root: string, name: string): Promise<unknown> {
       if (!result.bytesRead) break;
       length += result.bytesRead;
     }
-    if (length > maxArtifactBytes) invalid('Comparison artifact exceeds its size limit.');
+    if (length > maxArtifactBytes) invalid('comparison-artifact-too-large', 'Comparison artifact exceeds its size limit.');
     let contents: string;
     try { contents = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, length)); }
     catch (error) {
       if (!(error instanceof TypeError)) throw error;
-      invalid('Malformed comparison UTF-8 input.');
+      invalid('comparison-malformed-utf8', 'Malformed comparison UTF-8 input.');
     }
     try { return JSON.parse(contents) as unknown; }
     catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
-      invalid('Malformed comparison JSON input.');
+      invalid('comparison-malformed-json', 'Malformed comparison JSON input.');
     }
   } finally { await handle.close(); }
 }
@@ -471,13 +471,13 @@ export async function loadComparison(
 ): Promise<{ selection: ComparisonSelection; pairs: ComparisonPair[] }> {
   const directory = await realpath(root);
   const savedSelection = await artifact(directory, 'selection.json');
-  if (!isDeepStrictEqual(savedSelection, expectedSelection)) invalid('Artifact coverage differs from trusted selection.');
-  if (expectedSelection.include.length > 1000) invalid('Too many selected comparison skills.');
+  if (!isDeepStrictEqual(savedSelection, expectedSelection)) invalid('comparison-coverage-mismatch', 'Artifact coverage differs from trusted selection.');
+  if (expectedSelection.include.length > 1000) invalid('comparison-too-many-skills', 'Too many selected comparison skills.');
   const ids = new Set<string>(), keys = new Set<string>();
   const pairs: ComparisonPair[] = [];
   for (const entry of expectedSelection.include) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(entry.id) || ids.has(entry.id) || keys.has(entry.key)) {
-      invalid('Invalid or duplicate comparison artifact identity.');
+      invalid('comparison-invalid-artifact-identity', 'Invalid or duplicate comparison artifact identity.');
     }
     label(entry.key);
     ids.add(entry.id); keys.add(entry.key);
@@ -495,7 +495,7 @@ export async function loadComparison(
       if (value.id !== entry.id || value.key !== entry.key || value.arm !== arm ||
           value.repository !== expectedSelection.repository || value.run !== expectedSelection.run ||
           value.attempt !== expectedSelection.attempt || value.merge !== expectedSelection.merge) {
-        invalid('Mixed comparison artifacts.');
+        invalid('comparison-artifact-identity-mismatch', 'Mixed comparison artifacts.');
       }
       pair[arm] = safeArm(value.data);
     }

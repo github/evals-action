@@ -7,11 +7,12 @@ const sha = (value: unknown): value is string => typeof value === 'string' && /^
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 const name = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9._/-]{0,199}$/.test(value);
 export class ComparisonError extends Error {
-  constructor(public readonly code: string) { super(code); }
+  constructor(public readonly code: string, message = code) { super(message); }
 }
 export interface ComparisonContext {
   repository: string;
   sourceWorkflow: string;
+  workflowRef: string;
   sourceRun: string;
   sourceAttempt: string;
   run: string;
@@ -74,8 +75,9 @@ export async function authenticateComparison(
     throw new ComparisonError('comparison-invalid-producing-attempt');
   }
   const repo = object(await api.request('GET', `/repos/${repository}`));
-  if (typeof repo.default_branch !== 'string' || !env.GITHUB_WORKFLOW_REF?.startsWith(`${repository}/.github/workflows/`) ||
-      !env.GITHUB_WORKFLOW_REF.endsWith(`@refs/heads/${repo.default_branch}`)) {
+  const workflowRef = env.GITHUB_WORKFLOW_REF;
+  if (typeof repo.default_branch !== 'string' || typeof workflowRef !== 'string' ||
+      !workflowRef.startsWith(`${repository}/.github/workflows/`) || !workflowRef.endsWith(`@refs/heads/${repo.default_branch}`)) {
     throw new ComparisonError('comparison-workflow-not-default-branch');
   }
   const source = object(object(payload).workflow_run);
@@ -100,7 +102,7 @@ export async function authenticateComparison(
   }
   if (run.head_sha !== head) throw new ComparisonError('comparison-source-head-mismatch');
   const identity = {
-    repository, sourceWorkflow, sourceRun: String(source.id), sourceAttempt: String(source.run_attempt),
+    repository, sourceWorkflow, workflowRef, sourceRun: String(source.id), sourceAttempt: String(source.run_attempt),
     run: String(runId), attempt: String(attempt), runNumber, pullNumber: associated.number,
     head, runHead: run.head_sha, trusted: env.GITHUB_SHA,
   };

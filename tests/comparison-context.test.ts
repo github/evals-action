@@ -28,6 +28,7 @@ export function fixture() {
   });
   const context = {
     repository: 'o/r', sourceWorkflow: '.github/workflows/notify.yml', sourceRun: '11', sourceAttempt: '3',
+    workflowRef: env.GITHUB_WORKFLOW_REF,
     run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('b'),
     trusted: sha('d'), base: sha('a'), merge: sha('c'),
   };

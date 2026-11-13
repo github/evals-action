@@ -56,8 +56,10 @@ Check out `steps.context.outputs.merge` with `actions/checkout@v7`,
 `fetch-depth: 2` and `persist-credentials: false`. The repository's **trusted**
 selector verifies that checkout and reads data without executing candidate
 scripts. It performs the repository's environment-protection preflight and
-outputs `selection`, `matrix`, `count` and `attempt` as job outputs. Use the
-exact context JSON as the base of this selection:
+exposes `context`, `selection`, `matrix`, `count` and `attempt` as job outputs.
+Map `context` from `steps.context.outputs.context`; the other outputs come
+from the repository selector. Use the exact context JSON, including its
+authenticated trusted `workflowRef`, as the base of this selection:
 
 ```js
 const selection = {
@@ -136,6 +138,12 @@ prevent After; cancellation does. One trial, one worker and zero retries are
 native CLI overrides, not a second runner. Every arm receives fresh HOME and
 TMP/TEMP directories and an allowlisted environment.
 
+`working-directory` must start clean, including no untracked or Git-ignored
+files created by earlier setup steps. Do not install dependencies, build
+outputs or caches into the candidate checkout before this Action; those files
+will prevent either arm from starting. Keep trusted tools and scratch state
+outside that checkout.
+
 Acquisition reuses the root Action's integrity-verified Vally installer:
 job-private manifest and generated integrity lock, script-disabled npm restore,
 recorded version/CLI/dependency-graph/lock digests. Both arms share **one acquired
@@ -175,7 +183,18 @@ selection and pair artifacts into a fresh directory, then call:
 ```
 
 Publisher-only reruns can consume the original selection producing attempt
-without repeating models. Exact artifact context, producing attempt and coverage
+without repeating models **only while the selected base, head and merge are
+still current**. A base-branch advance or regenerated merge invalidates old
+projections even if the PR head is unchanged. Use **Re-run all jobs** for fresh
+selection and newly approved execution; retrying only the publisher cannot
+recover those old paid projections.
+
+Downloaded artifacts must have a **flat** layout: `selection.json` and every
+`{id}-before.json` / `{id}-after.json` directly inside `artifact-directory`.
+For a pattern download, set `merge-multiple: true`; its default separate
+artifact subdirectories are not searched by the publisher.
+
+Exact artifact context, producing attempt and coverage
 must match trusted job outputs. Intake accepts bounded regular UTF-8 JSON files,
 rejects symlinks/mixed identities/duplicate checks, and reconstructs allowlisted
 failure reasons instead of trusting arbitrary reason text. A missing arm is an
@@ -198,7 +217,10 @@ There is no passing-grader wall, hardcoded cohort, full-matrix campaign or
 causality claim. Oversized comments fail explicitly rather than truncate.
 Authenticated bot author ID (including GitHub App installation bots),
 producing-run ordering and a final live PR-head check protect the sticky
-comment; workflow-level publisher serialization is still required.
+comment. Its marker is scoped to the authenticated trusted workflow ref as
+well as the source workflow, matching the scope of run numbers. Different
+trusted publishers consuming the same notifier do not share comment order.
+Workflow-level publisher serialization is still required.
 
 ## Retained exposure and acceptance limits
 
@@ -211,7 +233,18 @@ No prompts, trajectories, model output, raw grader evidence, credentials or
 exception strings are uploaded or commented by this adapter. Displayed eval,
 scenario, model and check names must themselves be suitable for publication.
 Known native/API/reporting error codes are preserved in diagnostics; arbitrary
-exception messages remain private.
+exception messages remain private. Fixed projection/validation errors also
+retain stable `comparison-*` codes, such as `comparison-coverage-mismatch`
+and `comparison-comment-too-large`, without untrusted input excerpts.
+
+Bot author ID authenticates the API account, not an exclusive workflow.
+Default Actions tokens share `github-actions[bot]`; another permitted
+PR-write workflow can forge that bot's marker and ordering text. Do not treat
+that shared identity as publisher attestation. A publisher-exclusive GitHub
+App token can be supplied through `github-token`, but it must remain unavailable
+to candidate workflows; its protected credentials/settings require a separate
+repository trust-boundary decision, not an Action input pretending to enforce
+organization policy.
 
 Model-free native mock-executor and deterministic-grader tests qualify command
 translation and projection. Synthetic GitHub responses qualify provenance,

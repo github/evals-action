@@ -10,7 +10,7 @@ import { NativeError } from '../src/native.js';
 import { ReportingError } from '../src/github.js';
 import type { ComparisonContext, ComparisonSelection } from '../src/comparison-context.js';
 import type { GitHubClient } from '../src/github.js';
-import type { EngineIdentity } from '../src/tooling.js';
+import { sha256, type EngineIdentity } from '../src/tooling.js';
 
 const mocks = vi.hoisted(() => ({
   inputs: {} as Record<string, string>, setOutput: vi.fn<(name: string, value: unknown) => void>(), setFailed: vi.fn(), warning: vi.fn(), acquire: vi.fn(),
@@ -37,6 +37,7 @@ vi.mock('../src/native.js', async (original) => ({
 const sha = (letter: string) => letter.repeat(40);
 const context: ComparisonContext = {
   repository: 'o/r', sourceWorkflow: '.github/workflows/notify.yml', sourceRun: '11', sourceAttempt: '3',
+  workflowRef: 'o/r/.github/workflows/compare.yml@refs/heads/main',
   run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('b'),
   trusted: sha('d'), base: sha('a'), merge: sha('c'),
 };
@@ -88,7 +89,9 @@ afterEach(async () => {
 
 it('emits authenticated context without acquisition, execution or publication', async () => {
   await runComparisonAction();
-  expect(mocks.setOutput).toHaveBeenCalledWith('context', JSON.stringify(context));
+  const output = mocks.setOutput.mock.calls.find(([name]) => name === 'context')?.[1];
+  if (typeof output !== 'string') throw new Error('Missing context JSON output.');
+  expect(JSON.parse(output)).toEqual(context);
   expect(mocks.setOutput).toHaveBeenCalledWith('merge', context.merge);
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.request.mock.calls.every(([method]) => method === 'GET')).toBe(true);
@@ -173,12 +176,30 @@ it('publishes bot-owned sticky comments with producing-order protection, current
 });
 
 it('rejects duplicate bot markers, malformed comment listings and transport failures without posting', async () => {
-  const body = '<!-- evals-comparison:o/r/.github/workflows/notify.yml -->';
+  const body = `<!-- evals-comparison:o/r/.github/workflows/notify.yml/${sha256(context.workflowRef)} -->`;
   const comment = { id: 1, body, user: { id: 42, login: 'github-actions[bot]', type: 'Bot' } };
   for (const result of [{}, [null], [comment, comment]]) {
     await expect(publishComparison(selection, 'Report', { request: async (_method, path) =>
       path === '/graphql' ? { data: { viewer: { databaseId: 42, login: 'github-actions[bot]' } } } : result })).rejects.toThrow();
   }
+});
+
+it('keeps comment identity and run ordering separate for different trusted workflow refs', async () => {
+  let comments: unknown[] = [];
+  const request = vi.fn<GitHubClient['request']>(async (method, path) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'comparison-app[bot]' } } };
+    if (path.endsWith('/pulls/7')) return pull();
+    return method === 'GET' ? comments : { id: 1 };
+  });
+  const first = { ...selection, runNumber: 900 };
+  await publishComparison(first, 'First workflow', { request });
+  const firstBody = request.mock.calls.at(-1)![2]!.body as string;
+  comments = [{ id: 1, body: firstBody, user: { id: 42 } }];
+  const second = { ...selection, workflowRef: 'o/r/.github/workflows/other.yml@refs/heads/main', run: '100', runNumber: 1 };
+  expect(await publishComparison(second, 'Second workflow', { request })).toBe('posted');
+  expect(request.mock.calls.at(-1)![0]).toBe('POST');
+  const secondBody = request.mock.calls.at(-1)![2]!.body as string;
+  expect(secondBody.split('\n')[0]).not.toBe(firstBody.split('\n')[0]);
 });
 
 it('refuses non-bot or unavailable publisher identities before listing or writing comments', async () => {
