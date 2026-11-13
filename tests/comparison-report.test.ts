@@ -410,6 +410,19 @@ describe('comparison renderer', () => {
 });
 
 describe('comparison artifact intake', () => {
+  it('reports a missing root selection artifact with a fixed actionable layout error', async () => {
+    const root = await directory();
+    const nested = join(root, 'downloaded-artifact');
+    await mkdir(nested);
+    await save(nested);
+    await expect(loadComparison(root, selection())).rejects.toMatchObject({
+      code: 'comparison-selection-artifact-missing',
+      message: 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.',
+    });
+    await writeFile(join(root, 'selection.json'), 'SECRET_INVALID_SELECTION');
+    await expect(loadComparison(root, selection())).rejects.toMatchObject({ code: 'comparison-malformed-json' });
+  });
+
   it('loads exact selection and artifact identities, allowing selection structural extras', async () => {
     const root = await directory();
     const selected = { ...selection(), extraContext: { approved: true } };

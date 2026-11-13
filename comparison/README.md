@@ -150,6 +150,9 @@ that baseline before After and immediately after each native arm, before
 accepting its projection. A changed baseline makes that arm an error, even if
 native grading passed. This preserves legitimate checkout normalization
 while detecting byte changes that Git text/EOL normalization can hide.
+Regular-file symlinks include both their link text and resolved file bytes and
+permissions in the baseline. Directory/special-file symlink targets are
+unsupported and fail explicitly.
 Initialized/nonempty submodules are unsupported and fail explicitly; an empty
 uninitialized gitlink is allowed. Submodule ignore settings must not hide
 measurement inputs from the comparison guards.
@@ -231,6 +234,8 @@ evidence still cannot fit, publication fails explicitly rather than truncating.
 The byte budget includes the publisher's marker and run-order prefix. Inventory
 native-failure annotations use each model's matching eval verdicts; the separate
 Native verdicts line retains the arm-wide outcome.
+If `selection.json` is missing from the artifact root, publication fails with
+`comparison-selection-artifact-missing` and a flat-download layout hint.
 Authenticated bot author ID (including GitHub App installation bots),
 producing-run ordering and a final live PR-head check protect the sticky
 comment. Its marker is scoped to the authenticated trusted workflow ref as

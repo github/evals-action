@@ -83,10 +83,15 @@ export async function measurementDigest(cwd: string, skillDirectory: string): Pr
     for (const name of (await readdir(directory)).sort()) {
       const path = join(directory, name);
       if (excluded.has(path)) continue;
-      const info = await lstat(path);
+      let info = await lstat(path);
       hash.update(relative(cwd, path)).update('\0').update(String(info.mode & 0o777)).update('\0');
-      if (info.isSymbolicLink()) hash.update('link\0').update(await readlink(path));
-      else if (info.isDirectory()) { hash.update('directory\0'); await visit(path); }
+      if (info.isSymbolicLink()) {
+        hash.update('link\0').update(await readlink(path)).update('\0');
+        info = await stat(path);
+        if (!info.isFile()) throw new ComparisonError('comparison-unsupported-measurement-symlink');
+        hash.update(String(info.mode & 0o777)).update('\0');
+      }
+      if (info.isDirectory()) { hash.update('directory\0'); await visit(path); }
       else if (info.isFile()) {
         hash.update('file\0').update(String(info.size)).update('\0');
         for await (const chunk of createReadStream(path)) hash.update(chunk);

@@ -489,7 +489,12 @@ export async function loadComparison(
   root: string, expectedSelection: ComparisonSelection,
 ): Promise<{ selection: ComparisonSelection; pairs: ComparisonPair[] }> {
   const directory = await realpath(root);
-  const savedSelection = await artifact(directory, 'selection.json');
+  let savedSelection: unknown;
+  try { savedSelection = await artifact(directory, 'selection.json'); }
+  catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    invalid('comparison-selection-artifact-missing', 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.');
+  }
   if (!isDeepStrictEqual(savedSelection, expectedSelection)) invalid('comparison-coverage-mismatch', 'Artifact coverage differs from trusted selection.');
   if (expectedSelection.include.length > 1000) invalid('comparison-too-many-skills', 'Too many selected comparison skills.');
   const ids = new Set<string>(), keys = new Set<string>();

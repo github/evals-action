@@ -386,6 +386,35 @@ it.each(['before', 'after'] as const)('rejects a passing %s arm that changes act
   }
 });
 
+it('detects changed fixture bytes resolved through a file symlink into the selected skill', async ({ skip }) => {
+  const cwd = join(root, 'candidate'), skill = join(cwd, 'skills', 'draft');
+  await mkdir(skill, { recursive: true });
+  const source = join(skill, 'SKILL.md');
+  await writeFile(source, 'before');
+  const unlinked = await measurementDigest(cwd, 'skills/draft');
+  await writeFile(source, 'after');
+  expect(await measurementDigest(cwd, 'skills/draft')).toBe(unlinked);
+  await writeFile(source, 'before');
+  try { await symlink(source, join(cwd, 'fixture.txt'), 'file'); }
+  catch (error) {
+    if (process.platform === 'win32' && error instanceof Error && 'code' in error && error.code === 'EPERM') {
+      return skip('Windows file symlink creation requires an unavailable privilege; Linux qualification remains required.');
+    }
+    throw error;
+  }
+  const before = await measurementDigest(cwd, 'skills/draft');
+  await writeFile(source, 'after');
+  expect(await measurementDigest(cwd, 'skills/draft')).not.toBe(before);
+});
+
+it('rejects directory symlinks rather than ignoring their resolved measurement tree', async () => {
+  const cwd = join(root, 'candidate'), skill = join(cwd, 'skills', 'draft');
+  await mkdir(skill, { recursive: true });
+  await writeFile(join(skill, 'SKILL.md'), 'before');
+  await symlink(skill, join(cwd, 'fixture-directory'), process.platform === 'win32' ? 'junction' : 'dir');
+  await expect(measurementDigest(cwd, 'skills/draft')).rejects.toThrow('comparison-unsupported-measurement-symlink');
+});
+
 it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
   const cwd = join(root, 'candidate');
   await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
