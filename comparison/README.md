@@ -237,6 +237,9 @@ evidence still cannot fit, publication fails explicitly rather than truncating.
 The byte budget includes the publisher's marker and run-order prefix. Inventory
 native-failure annotations use each model's matching eval verdicts; the separate
 Native verdicts line retains the arm-wide outcome.
+Model-less native evidence uses the explicit `Unspecified model` display label;
+this is not an inferred model identity. The failure icon means a failure in
+either arm, including native-only verdict changes without grader changes.
 If `selection.json` is missing from the artifact root, publication fails with
 `comparison-selection-artifact-missing` and a flat-download layout hint.
 Authenticated bot author ID (including GitHub App installation bots),

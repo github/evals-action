@@ -116,7 +116,7 @@ export function collectNative(contents: string, runId: string, exitCode: number 
   const rows = records.slice(0, -1).map((trial): ComparisonRow => {
     const evalName = label(trial.evalName);
     const stimulus = label(trial.stimulus);
-    const model = label(trial.model);
+    const model = trial.model === undefined || trial.model === '' ? 'Unspecified model' : label(trial.model);
     const variant = label(trial.variant);
     const displayModel = label(variant === 'main' ? model : `${model} / ${variant}`);
     const identity = rowIdentity({ eval: evalName, stimulus, model: displayModel });
@@ -428,7 +428,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
   const footer = ['', '<details>',
     `<summary>🔎 All-skill failure details: ${failureCount(pairs, 'after')} After · ${failureCount(pairs, 'before')} Before (grader/model results)</summary>`, '',
     ...detailLines(pairs, arms), '</details>', '', '</details>', '',
-    '✅ Both pass · 📈 Failures resolved · 📉 New failures · 🔄 Both new and resolved · ❌ Existing failure.',
+    '✅ Both pass · 📈 Failures resolved · 📉 New failures · 🔄 Both new and resolved · ❌ Failure in either arm.',
     '⚠️ Error · ⏭️ Not run · ❔ Unknown never count as passing. Failure reasons describe checks, not raw model/grader output.', '',
     '*Each changed skill is measured separately; evals, graders, fixtures and other skill sources stay at the merge revision.*'];
   const unmeasured = inventoryRows.filter((row) => !row.required);

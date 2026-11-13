@@ -116,7 +116,7 @@ describe('native comparison projection', () => {
       .toThrow(/individual grader evidence/);
     expect(() => collectNative(jsonl(trial({ gradeResult: { passed: true, score: 1, details: [] } }), footer()), 'native', 1))
       .toThrow(/individual grader evidence/);
-    expect(() => collectNative(jsonl(trial({ model: undefined }), footer()), 'native', 1)).toThrow();
+    expect(() => collectNative(jsonl(trial({ model: ['model-a'] }), footer()), 'native', 1)).toThrow();
     expect(() => collectNative(jsonl(trial({ gradeResult: grade(), variant: '' }), footer({ variant: '' })), 'native', 1))
       .toThrow(/label/);
   });
@@ -170,6 +170,24 @@ describe('native comparison projection', () => {
     expect(ungraded.rows[0]).toMatchObject({ state: 'error', passed: false, checks: [] });
     const variant = collectNative(jsonl(trial({ variant: 'variant-b' }), footer({ variant: 'variant-b' })), 'native', 1);
     expect(variant.rows[0]!.model).toBe('model-a / variant-b');
+  });
+
+  it.each([undefined, ''])('preserves valid native evidence with model %s using an explicit display label', async (model) => {
+    const contents = jsonl(trial({ model }), footer({ model }));
+    expect(parseNativeEvidence(contents, 'native', 1).outcome).toBe('failed');
+    const projected = collectNative(contents, 'native', 1);
+    expect(projected).toMatchObject({ state: 'complete', nativeOutcome: 'failed',
+      rows: [{ model: 'Unspecified model', passed: false }] });
+    const sample = { key: 'local/draft', before: projected, after: structuredClone(projected) };
+    const root = await directory();
+    await save(root, selection(), sample);
+    const loaded = await loadComparison(root, selection());
+    const report = renderComparison(loaded.selection, loaded.pairs, evidence);
+    expect(report).toContain('| Unspecified model |');
+    expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
+    const variant = collectNative(jsonl(trial({ model, variant: 'variant-b' }),
+      footer({ model, variant: 'variant-b' })), 'native', 1);
+    expect(variant.rows[0]!.model).toBe('Unspecified model / variant-b');
   });
 
   it('keeps native scoring separate from individual checks and uses generic unknown-grader reasons', () => {
@@ -279,6 +297,18 @@ describe('comparison renderer', () => {
     const report = renderComparison(selection(), [sample], evidence);
     expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
     expect(report).toContain('| local/draft | 1/1 → 1/1 | 1/1 (native eval failed) → 1/1 (native eval failed) |');
+  });
+
+  it.each(['before', 'after'] as const)('describes native-only failure in the %s arm without claiming it already existed', (arm) => {
+    const sample = pair();
+    sample.before = structuredClone(sample.after);
+    sample[arm].nativeOutcome = 'failed';
+    sample[arm].rows[0]!.nativePassed = false;
+    const report = renderComparison(selection(), [sample], evidence);
+    expect(report).toContain('draft : positive | ❌');
+    expect(report).toContain('❌ Failure in either arm.');
+    expect(report).not.toContain('Existing failure');
+    expect(report).toContain('0 resolved · 📉 0 new failures (grader/model results)');
   });
   it('retains fixed safe validation codes for report limits and coverage mismatches', async () => {
     const sample = pair();
