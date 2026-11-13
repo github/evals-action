@@ -156,6 +156,9 @@ unsupported and fail explicitly.
 Initialized/nonempty submodules are unsupported and fail explicitly; an empty
 uninitialized gitlink is allowed. Submodule ignore settings must not hide
 measurement inputs from the comparison guards.
+All Git guards/restores disable replacement objects. Untracked-file checks
+include empty directories, including those inside the selected skill, so
+Before-created directory state cannot silently survive into After.
 
 Acquisition reuses the root Action's integrity-verified Vally installer:
 job-private manifest and generated integrity lock, script-disabled npm restore,

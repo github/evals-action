@@ -525,6 +525,18 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-measurement-bytes-changed'));
   await writeFile(measurement, 'original\nbytes\n');
 
+  const emptyCache = join(cwd, 'skills', 'draft', 'cache');
+  await mkdir(emptyCache);
+  expect(git('ls-files', '--others', '-z')).toBe('');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-measurement-files-changed');
+  await rm(emptyCache, { recursive: true, force: true });
+
+  git('replace', head, base);
+  expect(git('show', `${head}:skills/draft/SKILL.md`)).toBe('before');
+  await restoreComparisonSource(cwd, ctx, entry, head);
+  expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
+  git('replace', '-d', head);
+
   const actualNative = await vi.importActual<typeof import('../src/native.js')>('../src/native.js');
   const tooling = await vi.importActual<typeof import('../src/tooling.js')>('../src/tooling.js');
   const manifest = createRequire(import.meta.url).resolve('@microsoft/vally-cli/package.json');

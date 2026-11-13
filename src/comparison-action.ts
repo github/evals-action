@@ -26,7 +26,7 @@ const parse = (text: string): unknown => {
 };
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const result = await execute('git', ['--literal-pathspecs', '-C', cwd, ...args], {
+  const result = await execute('git', ['--no-replace-objects', '--literal-pathspecs', '-C', cwd, ...args], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   return result.stdout.trim();
@@ -68,10 +68,10 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   await checkPaths();
   await git(cwd, ['diff', '--exit-code', source, '--', entry.directory]);
   // This pathspec is constructed from a validated directory, never candidate shell text.
-  const outside = await execute('git', ['-C', cwd, 'diff', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
+  const outside = await execute('git', ['--no-replace-objects', '-C', cwd, 'diff', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
-  if (outside.stdout || await git(cwd, ['ls-files', '--others', '-z'])) {
+  if (outside.stdout || await git(cwd, ['ls-files', '--others', '--directory', '-z'])) {
     throw new ComparisonError('comparison-measurement-files-changed');
   }
 }
