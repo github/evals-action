@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import { bundledLicenseNotices } from './license-notices.mjs';
-import { parse } from 'yaml';
+import { parse, parseAllDocuments } from 'yaml';
 
 test('bundled notices are deterministic, preserve full terms, and expose missing terms', async () => {
   const root = await mkdtemp(join(tmpdir(), 'evals-licenses-'));
@@ -144,6 +144,21 @@ test('packaged dependency inventory preserves the three unresolved upstream lice
   assert.deepEqual(inventory.find(item => item.name === '@nodable/entities').sources, [
     'https://github.com/nodable/val-parsers/blob/ac48e7ea591da372be023a481875c747535812b3/LICENSE',
   ]);
+});
+
+test('frozen installs do not depend on registry-specific mirror tarball overrides', async () => {
+  const documents = parseAllDocuments(await readFile(resolve('pnpm-lock.yaml'), 'utf8'));
+  for (const document of documents) {
+    assert.deepEqual(document.errors, []);
+    for (const entry of Object.values(document.toJS().packages ?? {})) {
+      const tarball = entry.resolution?.tarball;
+      if (tarball !== undefined) {
+        const url = new URL(tarball);
+        assert.equal(url.protocol, 'https:');
+        assert.equal(url.hostname, 'registry.npmjs.org');
+      }
+    }
+  }
 });
 
 test('packaged Action rejects missing project configuration from a clean consumer directory without dependencies', async () => {
