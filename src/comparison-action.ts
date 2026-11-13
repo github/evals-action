@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
+import { finished } from 'node:stream/promises';
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
@@ -25,11 +26,14 @@ const parse = (text: string): unknown => {
   try { return JSON.parse(text); } catch { throw new ComparisonError('comparison-malformed-json'); }
 };
 
-async function git(cwd: string, args: string[]): Promise<string> {
-  const result = await execute('git', ['--no-replace-objects', '--literal-pathspecs', '-C', cwd, ...args], {
+async function git(cwd: string, args: string[], input?: string): Promise<string> {
+  const operation = execute('git', ['--no-replace-objects', '--literal-pathspecs', '-C', cwd, ...args], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
-  return result.stdout.trim();
+  const writing = input === undefined ? undefined : finished(operation.child.stdin!, { cleanup: true });
+  if (input !== undefined) operation.child.stdin!.end(input);
+  const [result] = await Promise.all([operation, writing]);
+  return args.includes('-z') ? result.stdout : result.stdout.trim();
 }
 
 export async function restoreComparisonSource(cwd: string, context: ComparisonContext, entry: ComparisonEntry, source: string): Promise<void> {
@@ -63,12 +67,24 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
       }
     }
   };
+  const checkFilters = async () => {
+    const paths = await git(cwd, ['ls-files', '-z']);
+    for (const cached of [false, true]) {
+      const attributes = await git(cwd, ['check-attr', ...(cached ? ['--cached'] : []), '-z', 'filter', '--stdin'], paths);
+      if (attributes.split('\0').some((value, index) => index % 3 === 2 && !['unspecified', 'unset'].includes(value))) {
+        throw new ComparisonError('comparison-git-filters-unsupported');
+      }
+    }
+  };
   await checkPaths();
-  await git(cwd, ['restore', `--source=${source}`, '--staged', '--worktree', '--', entry.directory]);
+  await checkFilters();
+  await git(cwd, ['restore', `--source=${source}`, '--staged', '--', entry.directory]);
+  await checkFilters();
+  await git(cwd, ['restore', `--source=${source}`, '--worktree', '--', entry.directory]);
   await checkPaths();
-  await git(cwd, ['diff', '--exit-code', source, '--', entry.directory]);
+  await git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--exit-code', source, '--', entry.directory]);
   // This pathspec is constructed from a validated directory, never candidate shell text.
-  const outside = await execute('git', ['--no-replace-objects', '-C', cwd, 'diff', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
+  const outside = await execute('git', ['--no-replace-objects', '-C', cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
   if (outside.stdout || await git(cwd, ['ls-files', '--others', '--directory', '-z'])) {

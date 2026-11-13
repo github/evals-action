@@ -566,6 +566,24 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
   git('replace', '-d', head);
 
+  const attributes = join(cwd, '.git', 'info', 'attributes');
+  await writeFile(attributes, 'skills/draft/SKILL.md filter=shadow\n');
+  git('config', 'filter.shadow.smudge', 'echo FILTERED_SOURCE');
+  git('config', 'filter.shadow.clean', 'git --no-replace-objects show HEAD:skills/draft/SKILL.md');
+  git('config', 'filter.shadow.required', 'true');
+  expect(git('check-attr', 'filter', '--', 'skills/draft/SKILL.md')).toContain('filter: shadow');
+  await rm(join(cwd, 'skills', 'draft', 'SKILL.md'));
+  git('checkout-index', '--force', '--', 'skills/draft/SKILL.md');
+  expect((await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).trim()).toBe('FILTERED_SOURCE');
+  expect(git('diff', '--exit-code', head, '--', 'skills/draft/SKILL.md')).toBe('');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-git-filters-unsupported');
+  await writeFile(attributes, 'fixtures/measurement.txt filter=shadow\n');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-git-filters-unsupported');
+  await rm(attributes);
+  git('config', '--remove-section', 'filter.shadow');
+  await restoreComparisonSource(cwd, ctx, entry, head);
+  expect(await readFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'utf8')).toBe('after');
+
   const actualNative = await vi.importActual<typeof import('../src/native.js')>('../src/native.js');
   const tooling = await vi.importActual<typeof import('../src/tooling.js')>('../src/tooling.js');
   const manifest = createRequire(import.meta.url).resolve('@microsoft/vally-cli/package.json');

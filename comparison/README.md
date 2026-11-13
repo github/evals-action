@@ -159,6 +159,11 @@ measurement inputs from the comparison guards.
 All Git guards/restores disable replacement objects. Untracked-file checks
 include empty directories, including those inside the selected skill, so
 Before-created directory state cannot silently survive into After.
+Active custom Git filters on tracked files are unsupported and fail before
+worktree restoration. Both working-tree and cached attributes (including local
+overrides) are checked for every tracked path before and after staging the
+selected source. Ordinary text/EOL normalization is retained; diff guards
+disable external diff and text-conversion commands.
 
 Acquisition reuses the root Action's integrity-verified Vally installer:
 job-private manifest and generated integrity lock, script-disabled npm restore,
