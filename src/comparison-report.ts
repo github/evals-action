@@ -20,11 +20,13 @@ export interface ComparisonRow {
   model: string;
   state: 'graded' | 'error' | 'not-run';
   passed: boolean;
+  nativePassed?: boolean;
   checks: ComparisonCheck[];
 }
 
 export interface ComparisonArm {
   state: 'complete' | 'error' | 'not-run';
+  nativeOutcome?: 'passed' | 'failed' | 'error' | 'not-run' | 'cancelled' | 'unknown';
   rows: ComparisonRow[];
 }
 
@@ -49,8 +51,8 @@ function record(value: unknown): RecordValue {
   return value as RecordValue;
 }
 
-function exact(value: RecordValue, keys: string[]): void {
-  if (Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key))) {
+function exact(value: RecordValue, keys: string[], optional: string[] = []): void {
+  if (Object.keys(value).some((key) => !keys.includes(key) && !optional.includes(key)) || keys.some((key) => !Object.hasOwn(value, key))) {
     invalid('Unexpected comparison fields.');
   }
 }
@@ -103,6 +105,11 @@ export function collectNative(contents: string, runId: string, exitCode: number 
   // parseNativeEvidence owns source JSONL/schema validation; comparison adds coverage requirements.
   const records = contents.split(/\r?\n/).filter((line) => line.trim()).map((line) => record(JSON.parse(line)));
   const summary = records.at(-1)!;
+  const groups = summary.evals as RecordValue[];
+  const nativeVerdicts = new Map(groups.map((group) => {
+    if (typeof group.passed !== 'boolean') invalid('Invalid native eval verdict.');
+    return [groupIdentity(group), group.passed] as const;
+  }));
   const identities = new Set<string>();
   const observed = new Map<string, { run: number; skipped: number }>();
   const rows = records.slice(0, -1).map((trial): ComparisonRow => {
@@ -138,10 +145,11 @@ export function collectNative(contents: string, runId: string, exitCode: number 
       const projected = { id: `${index}:${type}`, name: label(check.configuredName ?? check.name ?? type), passed: check.passed };
       return [{ ...projected, reason: checkReason(projected) }];
     });
-    return { eval: evalName, stimulus, model: displayModel, state, passed: state === 'graded' && grade?.passed === true, checks };
+    const nativePassed = nativeVerdicts.get(groupIdentity(trial));
+    if (nativePassed === undefined) invalid('Missing native eval verdict.');
+    return { eval: evalName, stimulus, model: displayModel, state, passed: state === 'graded' && grade?.passed === true, nativePassed, checks };
   });
   if (rows.length > maxRows) invalid('Too many comparison cases.');
-  const groups = summary.evals as RecordValue[];
   const complete = groups.every((group) => {
     const bucket = observed.get(groupIdentity(group)) ?? { run: 0, skipped: 0 };
     return !group.hadExecutionErrors && !group.hadGradingErrors &&
@@ -152,21 +160,27 @@ export function collectNative(contents: string, runId: string, exitCode: number 
   return {
     state: complete && validExit && native.outcome !== 'error' && !rows.some((row) => row.state === 'error')
       ? rows.length ? 'complete' : 'not-run' : 'error',
+    nativeOutcome: native.outcome === 'passed' || native.outcome === 'failed' || native.outcome === 'not-run' ? native.outcome : 'error',
     rows,
   };
 }
 
 function safeArm(value: unknown): ComparisonArm {
   const data = record(value);
-  exact(data, ['state', 'rows']);
+  exact(data, ['state', 'rows'], ['nativeOutcome']);
   if (typeof data.state !== 'string' || !['complete', 'error', 'not-run'].includes(data.state) || !Array.isArray(data.rows) ||
       data.rows.length > maxRows) invalid('Invalid comparison arm.');
+  if (data.nativeOutcome !== undefined && (typeof data.nativeOutcome !== 'string' ||
+      !['passed', 'failed', 'error', 'not-run', 'cancelled', 'unknown'].includes(data.nativeOutcome))) {
+    invalid('Invalid comparison native verdict.');
+  }
   const identities = new Set<string>();
   const rows = data.rows.map((item): ComparisonRow => {
     const row = record(item);
-    exact(row, ['eval', 'stimulus', 'model', 'state', 'passed', 'checks']);
+    exact(row, ['eval', 'stimulus', 'model', 'state', 'passed', 'checks'], ['nativePassed']);
     if (typeof row.state !== 'string' || !['graded', 'error', 'not-run'].includes(row.state) || typeof row.passed !== 'boolean' ||
-        (row.state !== 'graded' && row.passed) || !Array.isArray(row.checks) || row.checks.length > maxChecks) {
+        (row.state !== 'graded' && row.passed) || !Array.isArray(row.checks) || row.checks.length > maxChecks ||
+        (row.nativePassed !== undefined && typeof row.nativePassed !== 'boolean')) {
       invalid('Invalid comparison case.');
     }
     const projected = { eval: label(row.eval), stimulus: label(row.stimulus), model: label(row.model) };
@@ -189,13 +203,18 @@ function safeArm(value: unknown): ComparisonArm {
     if ((row.state === 'graded' && !checks.length) || (row.state === 'not-run' && checks.length)) {
       invalid('Missing or unexpected comparison checks.');
     }
-    return { ...projected, state: row.state as ComparisonRow['state'], passed: row.passed, checks };
+    return { ...projected, state: row.state as ComparisonRow['state'], passed: row.passed,
+      ...(typeof row.nativePassed === 'boolean' ? { nativePassed: row.nativePassed } : {}), checks };
   });
   if ((data.state === 'not-run' && rows.some((row) => row.state !== 'not-run')) ||
       (data.state === 'complete' && (!rows.length || rows.some((row) => row.state === 'error')))) {
     invalid('Inconsistent comparison arm.');
   }
-  return { state: data.state as ComparisonArm['state'], rows };
+  if (data.nativeOutcome === 'passed' && rows.some((row) => row.nativePassed === false)) {
+    invalid('Inconsistent comparison native verdict.');
+  }
+  return { state: data.state as ComparisonArm['state'], rows,
+    ...(data.nativeOutcome !== undefined ? { nativeOutcome: data.nativeOutcome as NonNullable<ComparisonArm['nativeOutcome']> } : {}) };
 }
 
 function text(value: string): string {
@@ -217,10 +236,10 @@ function comparable(pair: ComparisonPair): boolean {
   const afterRows = new Map(pair.after.rows.map((row) => [rowIdentity(row), row]));
   return pair.before.rows.every((before) => {
     const after = afterRows.get(rowIdentity(before));
-    const afterIds = new Set(after?.checks.map((check) => check.id));
+    const afterChecks = new Map(after?.checks.map((check) => [check.id, check.name]));
     return before.state === 'graded' && after?.state === 'graded' &&
       before.checks.length === after.checks.length &&
-      before.checks.every((check) => afterIds.has(check.id));
+      before.checks.every((check) => afterChecks.get(check.id) === check.name);
   });
 }
 
@@ -230,7 +249,13 @@ function counts(arm?: ComparisonArm, row?: ComparisonRow): string {
   if (!row) return '❔ Unknown';
   if (row.state === 'error') return '⚠️ Error';
   if (row.state === 'not-run') return '⏭️ Not run';
-  return `${row.checks.filter((check) => check.passed).length}/${row.checks.length}`;
+  const passed = row.checks.filter((check) => check.passed).length;
+  return `${passed}/${row.checks.length}${passed === row.checks.length && row.nativePassed === false ? ' (native eval failed)' : ''}`;
+}
+
+function nativeVerdict(arm: ComparisonArm | undefined): string {
+  return ({ passed: '✅ Passed', failed: '❌ Failed', error: '⚠️ Error', 'not-run': '⏭️ Not run',
+    cancelled: '⏭️ Cancelled', unknown: '❔ Unknown' })[arm?.nativeOutcome ?? 'unknown'];
 }
 
 function delta(pair: ComparisonPair, model?: string): { added: number; resolved: number } {
@@ -311,6 +336,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
       append('⏭️ Not run — an existing skill in both revisions and its repo eval are required.', '');
       continue;
     }
+    append(`**Native verdicts:** Before ${nativeVerdict(pair.before)} → After ${nativeVerdict(pair.after)}.`, '');
     append(`| Eval : scenario (passing / total graders) | ${models.map(text).join(' | ')} |`,
       `| --- | ${models.map(() => '---').join(' | ')} |`);
     const rows = scenarios(pair);
@@ -321,7 +347,10 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
         const old = failures(before), current = failures(after);
         const added = difference(current, old), resolved = difference(old, current);
         const known = comparablePairs.has(pair) && before && after;
-        const icon = !known ? '' : added && resolved ? '🔄 ' : added ? '📉 ' : resolved ? '📈 ' : current.size ? '❌ ' : '✅ ';
+        const nativePass = pair.before?.nativeOutcome === 'passed' && pair.after?.nativeOutcome === 'passed' &&
+          before?.nativePassed === true && after?.nativePassed === true;
+        const icon = !known ? '' : added && resolved ? '🔄 ' : added ? '📉 ' : resolved ? '📈 ' :
+          current.size || before?.nativePassed === false || after?.nativePassed === false ? '❌ ' : nativePass ? '✅ ' : '';
         return `${icon}${counts(pair.before, before)} → ${counts(pair.after, after)}${known ? '' : ' (comparison unknown)'}`;
       });
       const short = row.stimulus.startsWith(`${row.eval}-`) ? row.stimulus.slice(row.eval.length + 1) : row.stimulus;
@@ -365,7 +394,7 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
   const evaluated = selection.skills.filter((skill) => pairs.some((pair) => pair.key === skill.key &&
     ((pair.before?.rows.length ?? 0) + (pair.after?.rows.length ?? 0) > 0))).length;
   append('<details>', `<summary>🌐 All skills: ${evaluated} with results · ${selection.skills.length - evaluated} not evaluated</summary>`, '',
-    '**Cells: passing scenarios / total recorded scenarios, Before → After.** Native scoring determines scenario passes; errors and missing results never pass.',
+    '**Cells: passing scenarios / total recorded scenarios, Before → After.** Per-trial grades determine these counts; native eval/arm verdicts are separate and can reject weighted scoring. Errors and missing results never pass.',
     'Only selected changed skills were evaluated. This run does not measure unchanged-skill regressions.', '',
     `| Skill (passing / total scenarios) | ${models.map(text).join(' | ')} |`, `| --- | ${models.map(() => '---').join(' | ')} |`);
   for (const skill of selection.skills) {
@@ -377,7 +406,9 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
         if (data?.state !== 'complete') return data?.state === 'not-run' ? '⏭️ Not run' : '⚠️ Error / incomplete';
         if (!rows.length) return '❔ Unknown';
         if (rows.some((row) => row.state !== 'graded')) return '⚠️ Partial / not run';
-        return `${rows.filter((row) => row.passed).length}/${rows.length}`;
+        return `${rows.filter((row) => row.passed).length}/${rows.length}${
+          rows.every((row) => row.passed) && (data.nativeOutcome === 'failed' || rows.some((row) => row.nativePassed === false))
+            ? ' (native eval failed)' : ''}`;
       }).join(' → ');
       if (!comparablePairs.has(pair)) return `${values} (comparison unknown)`;
       const { added, resolved } = delta(pair, model);

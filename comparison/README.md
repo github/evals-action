@@ -128,7 +128,9 @@ graders, fixtures and neighboring skills at the merge revision. Literal Git
 arguments, exact HEAD/parent checks and outside-directory/untracked drift checks
 prevent accidental measurement substitution. Untracked files include
 Git-ignored files: neither arm may consume ignored skill or fixture state left
-by an earlier arm. It authenticates current context again after approval and
+by an earlier arm. Index `assume-unchanged` and `skip-worktree` flags are
+rejected before restoring either arm, rather than trusting a diff that can hide
+modified measurement files. It authenticates current context again after approval and
 before **each** native arm. Before failure does not
 prevent After; cancellation does. One trial, one worker and zero retries are
 native CLI overrides, not a second runner. Every arm receives fresh HOME and
@@ -178,12 +180,20 @@ must match trusted job outputs. Intake accepts bounded regular UTF-8 JSON files,
 rejects symlinks/mixed identities/duplicate checks, and reconstructs allowlisted
 failure reasons instead of trusting arbitrary reason text. A missing arm is an
 error, not a pass. Native declared coverage and individual grader evidence must
-be complete before any new/resolved failure claims are made.
+be complete before any new/resolved failure claims are made. Both grader IDs
+and configured names must match; a renamed check is an unknown comparison,
+not a resolved failure.
 
 The comment shows per-skill eval/scenario rows and model columns with passing /
 total **graders** Before → After, visible After failures, collapsed Before
 failures, then collapsed inventory **scenario** counts and nested failure
 details. Execution errors, failed checks, not-run and unknown remain distinct.
+Native arm verdicts are displayed separately from evidence completeness and
+grader counts. Each projected row also retains its native eval verdict: all
+graders passing does not hide a native weighted-score rejection. The optional
+`nativeOutcome` arm field and `nativePassed` row field preserve these verdicts;
+legacy projections without them have unknown native verdicts, never inferred
+passes.
 There is no passing-grader wall, hardcoded cohort, full-matrix campaign or
 causality claim. Oversized comments fail explicitly rather than truncate.
 Authenticated bot author ID (including GitHub App installation bots),
@@ -200,6 +210,8 @@ Artifacts are untrusted data, not independent attestations of candidate code.
 No prompts, trajectories, model output, raw grader evidence, credentials or
 exception strings are uploaded or commented by this adapter. Displayed eval,
 scenario, model and check names must themselves be suitable for publication.
+Known native/API/reporting error codes are preserved in diagnostics; arbitrary
+exception messages remain private.
 
 Model-free native mock-executor and deterministic-grader tests qualify command
 translation and projection. Synthetic GitHub responses qualify provenance,

@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
+import { comparisonErrorCode, publishComparison, restoreComparisonSource, runComparisonAction, runComparisonPair } from '../src/comparison-action.js';
+import { NativeError } from '../src/native.js';
+import { ReportingError } from '../src/github.js';
 import type { ComparisonContext, ComparisonSelection } from '../src/comparison-context.js';
 import type { GitHubClient } from '../src/github.js';
 import type { EngineIdentity } from '../src/tooling.js';
@@ -287,7 +289,20 @@ it('fails oversized projections explicitly, uploads bounded error state and stil
   expect(passed).toBe(false);
   expect(run).toHaveBeenCalledTimes(2);
   expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-projection-too-large'));
-  expect(JSON.parse(await readFile(join(root, 'skill-abc-before.json'), 'utf8')).data).toEqual({ state: 'error', rows: [] });
+  expect(JSON.parse(await readFile(join(root, 'skill-abc-before.json'), 'utf8')).data).toEqual({ state: 'error', nativeOutcome: 'passed', rows: [] });
+});
+
+it('preserves known API and native failure codes without exposing unknown exception text', async () => {
+  for (const error of [new ReportingError('github-http-403'), new NativeError('native-version-mismatch')]) {
+    const directory = await mkdtemp(join(root, 'failure-'));
+    await runComparisonPair(context, selection, selection.include[0]!, engine, root, directory, '', { request: mocks.request },
+      { restore: async () => {}, current: async () => { throw error; }, run: mocks.native });
+    expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining(error.code));
+    expect(comparisonErrorCode(error, 'comparison-operation-failed')).toBe(error.code);
+  }
+  expect(comparisonErrorCode(new ReportingError('reporting-bot-token-required'), 'fallback')).toBe('reporting-bot-token-required');
+  expect(comparisonErrorCode(Object.assign(new Error('SECRET'), { code: 'SECRET' }), 'comparison-operation-failed'))
+    .toBe('comparison-operation-failed');
 });
 
 it('qualifies real Before-fail/After-pass mock execution, literal source restores and measurement drift guards', async () => {
@@ -331,6 +346,14 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   expect(await readFile(join(cwd, 'neighbor'), 'utf8')).toBe('merge context');
   await restoreComparisonSource(cwd, ctx, entry, head);
   expect(await readFile(join(cwd, entry.directory, 'SKILL.md'), 'utf8')).toBe('after');
+  for (const flag of ['assume-unchanged', 'skip-worktree']) {
+    git('update-index', `--${flag}`, '--', entry.evalPath);
+    await writeFile(join(cwd, entry.evalPath), 'hidden measurement change');
+    expect(git('diff', 'HEAD', '--', entry.evalPath)).toBe('');
+    await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('comparison-hidden-index-flags');
+    git('update-index', `--no-${flag}`, '--', entry.evalPath);
+    git('restore', '--', entry.evalPath);
+  }
   await expect(restoreComparisonSource(cwd, { ...ctx, merge: context.merge }, entry, head)).rejects.toThrow('revision-mismatch');
   await writeFile(join(cwd, 'neighbor'), 'candidate mutation');
   await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');

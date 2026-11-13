@@ -133,7 +133,7 @@ describe('native comparison projection', () => {
       footer({ passed: true }, { passed: true })), 'native', 1).state).toBe('error');
     expect(() => collectNative(jsonl(trial(), footer({ model: 'wrong' })), 'native', 1)).toThrow();
     expect(collectNative(jsonl(footer({}, { evals: [], passed: true })), 'native', 0))
-      .toEqual({ state: 'not-run', rows: [] });
+      .toEqual({ state: 'not-run', nativeOutcome: 'not-run', rows: [] });
     expect(collectNative(jsonl(footer({ stimuliRun: 0, stimuliTotal: 1 })), 'native', 1).state).toBe('error');
   });
 
@@ -185,6 +185,26 @@ describe('native comparison projection', () => {
     expect(report).not.toContain('SECRET');
   });
 
+  it('preserves native threshold rejection even when every individual grader passes', async () => {
+    const checked = trial({ gradeResult: { passed: true, score: 0.5, details: [
+      { graderType: 'completed', passed: true, score: 0.5 },
+    ] } });
+    const failed = collectNative(jsonl(checked, footer({
+      scoringApplied: true, overallScore: 0.5, threshold: 0.8, passed: false,
+    }, { passed: false })), 'native', 1);
+    expect(failed).toMatchObject({ state: 'complete', nativeOutcome: 'failed',
+      rows: [{ state: 'graded', passed: true, nativePassed: false }] });
+    const sample = { key: 'local/draft', before: failed, after: failed };
+    const rendered = renderComparison(selection(), [sample], evidence);
+    expect(rendered).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
+    expect(rendered).toContain('1/1 (native eval failed)');
+    expect(rendered).not.toContain('✅ 1/1 → 1/1');
+    const root = await directory();
+    await save(root, selection(), sample);
+    const loaded = await loadComparison(root, selection());
+    expect(loaded.pairs[0]!.after).toEqual(failed);
+  });
+
   it('recognizes nested grader errors without discarding other completed grader failures', () => {
     const data = collectNative(jsonl(trial({ gradeResult: {
       passed: false, score: 0, details: [
@@ -200,6 +220,29 @@ describe('native comparison projection', () => {
 });
 
 describe('comparison renderer', () => {
+  it('does not resolve a different named grader at the same index and type', () => {
+    const sample = pair();
+    sample.before.rows[0]!.checks = [{ id: '0:program', name: 'contract-A', passed: false, reason: '' }];
+    sample.after.rows[0]!.checks = [{ id: '0:program', name: 'contract-B', passed: true, reason: '' }];
+    const rendered = renderComparison(selection(), [sample], evidence);
+    expect(rendered).toContain('0 resolved · 📉 0 new failures');
+    expect(rendered).toContain('Before (comparison unknown) | contract-A');
+    expect(rendered).not.toContain('resolved After');
+  });
+
+  it('keeps native verdicts unknown for legacy projections and rejects malformed native fields', async () => {
+    const sample = pair();
+    for (const arm of [sample.before, sample.after]) {
+      delete arm.nativeOutcome;
+      for (const row of arm.rows) delete row.nativePassed;
+    }
+    const rendered = renderComparison(selection(), [sample], evidence);
+    expect(rendered).toContain('Native verdicts:** Before ❔ Unknown → After ❔ Unknown');
+    const root = await directory();
+    await save(root, selection(), sample);
+    await saveArm(root, { ...sample.after, nativeOutcome: ['passed'] });
+    await expect(loadComparison(root, selection())).rejects.toThrow('native verdict');
+  });
   it('renders the approved hierarchy, grader denominators, and scenario denominators without a passing wall', () => {
     const report = renderComparison(selection(), [pair()], evidence);
     expect(report).toContain('draft : positive | 📈 1/2 → 2/2');
@@ -285,6 +328,7 @@ describe('comparison renderer', () => {
 
   it('rejects oversized reports instead of silently truncating failures', () => {
     const sample = pair();
+    sample.after.nativeOutcome = 'failed';
     for (const arm of [sample.before, sample.after]) {
       arm.rows = Array.from({ length: 300 }, (_, index) => ({
         ...structuredClone(sample.before.rows[0]!), stimulus: `case-${index}`,

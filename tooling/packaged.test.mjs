@@ -146,11 +146,12 @@ test('packaged dependency inventory preserves the three unresolved upstream lice
   ]);
 });
 
-test('frozen installs do not depend on registry-specific mirror tarball overrides', async () => {
+test('frozen installs retain strong integrities and registry-neutral tarball resolution', async () => {
   const documents = parseAllDocuments(await readFile(resolve('pnpm-lock.yaml'), 'utf8'));
   for (const document of documents) {
     assert.deepEqual(document.errors, []);
     for (const entry of Object.values(document.toJS().packages ?? {})) {
+      assert.match(entry.resolution?.integrity ?? '', /^sha(?:256|384|512)-/);
       const tarball = entry.resolution?.tarball;
       if (tarball !== undefined) {
         const url = new URL(tarball);

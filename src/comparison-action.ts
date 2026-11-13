@@ -3,17 +3,21 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { authenticatedBotId, githubClient, takeSecretInput, type GitHubClient } from './github.js';
+import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
 import { exactVersion, parseInputs } from './inputs.js';
 import { acquireEngine, resolveRelease, type EngineIdentity } from './tooling.js';
-import { nativeEnvironment, runNative } from './native.js';
+import { NativeError, nativeEnvironment, runNative } from './native.js';
 import { authenticateComparison, assertContext, assertCurrentPullRequest, ComparisonError, validateComparisonSelection,
   type ComparisonContext, type ComparisonEntry, type ComparisonSelection } from './comparison-context.js';
 import { collectNative, loadComparison, renderComparison, type ComparisonArm } from './comparison-report.js';
 
 const execute = promisify(execFile);
 const maximum = 1024 * 1024;
+export function comparisonErrorCode(error: unknown, fallback: string): string {
+  return error instanceof ComparisonError || error instanceof NativeError || error instanceof ReportingError ? error.code : fallback;
+}
+
 const parse = (text: string): unknown => {
   if (Buffer.byteLength(text) > maximum) throw new ComparisonError('comparison-json-too-large');
   try { return JSON.parse(text); } catch { throw new ComparisonError('comparison-malformed-json'); }
@@ -31,6 +35,10 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
       await git(cwd, ['rev-parse', 'HEAD^1']) !== context.base ||
       await git(cwd, ['rev-parse', 'HEAD^2']) !== context.head) {
     throw new ComparisonError('comparison-checkout-revision-mismatch');
+  }
+  const index = await git(cwd, ['ls-files', '-v', '-z']);
+  if (index.split('\0').some((entry) => /^[a-zS] /.test(entry))) {
+    throw new ComparisonError('comparison-hidden-index-flags');
   }
   // Reject symlinked path components before Git or the evaluator can follow them.
   const checkPaths = async () => {
@@ -131,6 +139,9 @@ export async function runComparisonPair(
       const env = nativeEnvironment(inputs, process.env, home, '', token);
       Object.assign(env, { TMPDIR: tmp, TMP: tmp, TEMP: tmp });
       const operation = await dependencies.run(inputs, engine, cwd, native, env);
+      if (operation.result.outcome !== 'planned' && operation.result.outcome !== 'validated') {
+        data.nativeOutcome = operation.result.outcome;
+      }
       cancelled = operation.result.outcome === 'cancelled';
       passed &&= operation.result.outcome === 'passed';
       if (operation.files[0] && operation.result.nativeRunId) {
@@ -142,7 +153,7 @@ export async function runComparisonPair(
       if (data.state !== 'complete' || data.rows.some((row) => row.state !== 'graded')) passed = false;
     } catch (error) {
       passed = false;
-      core.warning(`Comparison ${arm} failed: ${error instanceof ComparisonError ? error.code : 'comparison-arm-error'}. No raw diagnostics published.`);
+      core.warning(`Comparison ${arm} failed: ${comparisonErrorCode(error, 'comparison-arm-error')}. No raw diagnostics published.`);
     }
     await writeFile(path, serialize(data), { mode: 0o600, flag: 'wx' });
     core.setOutput(`${arm}-path`, path);

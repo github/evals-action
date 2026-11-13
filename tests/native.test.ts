@@ -8,6 +8,7 @@ import { parseInputs } from '../src/inputs.js';
 import { parseStructuredReport, structuredReport, type Report } from '../src/reporting.js';
 import { sha256, type EngineIdentity } from '../src/tooling.js';
 import { inertEnvironment } from '../src/policy.js';
+import { collectNative } from '../src/comparison-report.js';
 
 const directories: string[] = [];
 const NATIVE_TEST_TIMEOUT_MS = 90_000;
@@ -464,6 +465,29 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     const brokenGrader = await runNative(inputs({ 'eval-paths': 'grader-error.eval.yaml' }), fixture.engine, fixture.project, fixture.output, env);
     expect(brokenGrader.result).toMatchObject({ outcome: 'error', category: 'execution', code: 'native-execution-error' });
     expect(brokenGrader.result).not.toHaveProperty('failed');
+  }, NATIVE_TEST_TIMEOUT_MS);
+
+  it('projects actual native scoring rejection separately from passing individual checks', async () => {
+    const fixture = await nativeFixture();
+    await writeFile(join(fixture.project, '.vally.yaml'), 'plugins:\n  grader: [./partial-score.mjs]\n');
+    await writeFile(join(fixture.project, 'partial-score.mjs'), [
+      'export function registerGraders(registry) { registry.register({',
+      "metadata: { name: 'partial-score', description: 'Deterministic score control', behavior: {}, costProfile: 'free',",
+      "determinism: 'static', reference: 'reference-free', temporalScope: 'trajectory-level' },",
+      'async grade() { return { passed: true, score: 0.5 }; } }); }',
+    ].join('\n'));
+    await writeFile(join(fixture.project, 'threshold.eval.yaml'), [
+      'name: deterministic-threshold', 'type: capability', 'defaults:', '  executor: mock', '  model: mock-only',
+      'stimuli:', '  - name: threshold', '    prompt: model-free-control', '    graders:', '      - type: partial-score',
+      'scoring:', '  weights:', '    partial-score: 1', '  threshold: 0.8',
+    ].join('\n'));
+    const selected = inputs({ 'eval-paths': 'threshold.eval.yaml', runs: '1', workers: '1', 'max-retries': '0' });
+    const operation = await runNative(selected, fixture.engine, fixture.project, fixture.output,
+      nativeEnvironment(selected, fixture.source, fixture.root, ''));
+    expect(operation.result).toMatchObject({ outcome: 'failed', groups: [{ passed: false, overallScore: 0.5, threshold: 0.8 }] });
+    const projected = collectNative(await readFile(operation.files[0]!, 'utf8'), operation.result.nativeRunId!, operation.exitCode ?? null);
+    expect(projected).toMatchObject({ state: 'complete', nativeOutcome: 'failed',
+      rows: [{ state: 'graded', passed: true, nativePassed: false, checks: [{ passed: true }] }] });
   }, NATIVE_TEST_TIMEOUT_MS);
 });
 
