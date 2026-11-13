@@ -35,7 +35,7 @@ vi.mock('../src/native.js', async (original) => ({
 const sha = (letter: string) => letter.repeat(40);
 const context: ComparisonContext = {
   repository: 'o/r', sourceWorkflow: '.github/workflows/notify.yml', sourceRun: '11', sourceAttempt: '3',
-  run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('c'),
+  run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('b'),
   trusted: sha('d'), base: sha('a'), merge: sha('c'),
 };
 const selection: ComparisonSelection = {
@@ -64,6 +64,7 @@ beforeEach(async () => {
     '/repos/o/r/issues/7/comments?per_page=100&page=1': [],
   };
   mocks.request.mockImplementation(async (method: string, path: string) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'github-actions[bot]' } } };
     if (method !== 'GET') return { id: 1 };
     if (!(path in responses)) throw new Error('Unexpected test route');
     return responses[path];
@@ -144,29 +145,50 @@ it('rejects unknown entries, missing billing credential and mutable Vally versio
 it('publishes bot-owned sticky comments with producing-order protection, current-head checks and size bounds', async () => {
   let comments: unknown[] = [];
   const request = vi.fn<GitHubClient['request']>(async (method, path) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'comparison-app[bot]' } } };
     if (path.endsWith('/pulls/7')) return pull();
     return method === 'GET' ? comments : { id: 1 };
   });
   const api = { request };
   expect(await publishComparison(selection, 'Before → After', api)).toBe('posted');
   const content = request.mock.calls.at(-1)![2]!.body as string;
-  comments = [{ id: 1, body: content, user: { login: 'github-actions[bot]', type: 'Bot' } }];
+  comments = [
+    { id: 1, body: content, user: { id: 42, login: 'comparison-app[bot]', type: 'Bot' } },
+    { id: 2, body: content.replace('run:8:2', 'run:999:1'), user: { id: 43, login: 'another[bot]', type: 'Bot' } },
+  ];
   await publishComparison(selection, 'Updated', api);
   expect(request.mock.calls.at(-1)![0]).toBe('PATCH');
-  comments = [{ id: 1, body: content.replace('run:8:2', 'run:9:1'), user: { login: 'github-actions[bot]', type: 'Bot' } }];
+  comments = [{ id: 1, body: content.replace('run:8:2', 'run:9:1'), user: { id: 42, login: 'comparison-app[bot]', type: 'Bot' } }];
   expect(await publishComparison(selection, 'Older', api)).toBe('stale');
   comments = [];
   await expect(publishComparison(selection, 'x'.repeat(60_001), api)).rejects.toThrow('too-large');
-  request.mockImplementation(async (_method, path) => path.endsWith('/pulls/7') ? { ...pull(), state: 'closed' } : []);
+  request.mockImplementation(async (_method, path) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'comparison-app[bot]' } } };
+    return path.endsWith('/pulls/7') ? { ...pull(), state: 'closed' } : [];
+  });
   await expect(publishComparison(selection, 'No stale write', api)).rejects.toThrow('stale-closed');
   expect(request.mock.calls.at(-1)![1]).toBe('/repos/o/r/pulls/7');
 });
 
 it('rejects duplicate bot markers, malformed comment listings and transport failures without posting', async () => {
   const body = '<!-- evals-comparison:o/r/.github/workflows/notify.yml -->';
-  const comment = { id: 1, body, user: { login: 'github-actions[bot]', type: 'Bot' } };
+  const comment = { id: 1, body, user: { id: 42, login: 'github-actions[bot]', type: 'Bot' } };
   for (const result of [{}, [null], [comment, comment]]) {
-    await expect(publishComparison(selection, 'Report', { request: async () => result })).rejects.toThrow();
+    await expect(publishComparison(selection, 'Report', { request: async (_method, path) =>
+      path === '/graphql' ? { data: { viewer: { databaseId: 42, login: 'github-actions[bot]' } } } : result })).rejects.toThrow();
+  }
+});
+
+it('refuses non-bot or unavailable publisher identities before listing or writing comments', async () => {
+  for (const response of [
+    { errors: [{ message: 'not authorized' }] },
+    { data: { viewer: { databaseId: 42, login: 'human' } } },
+    { data: { viewer: { databaseId: 0, login: 'comparison-app[bot]' } } },
+  ]) {
+    const request = vi.fn<GitHubClient['request']>(async () => response);
+    await expect(publishComparison(selection, 'Report', { request })).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('POST', '/graphql', expect.any(Object));
   }
 });
 
@@ -212,6 +234,36 @@ it('stale-head guards prevent either native arm and cancellation does not start 
   expect(run).toHaveBeenCalledTimes(1);
 });
 
+it.each(['skipped', 'ungraded'] as const)('rejects native passing arms that contain a %s selected scenario', async (missing) => {
+  const trial = {
+    type: 'trial-result', runId: 'native', itemId: 'graded', evalName: 'coverage', stimulus: 'graded',
+    model: 'mock', variant: 'main', evalFilePath: 'eval.yaml', status: 'success',
+    trajectory: { id: 'graded', output: '' },
+    gradeResult: { passed: true, score: 1, details: [{ passed: true, score: 1, graderType: 'completed' }] },
+  };
+  const contents = [
+    trial,
+    { ...trial, itemId: missing, stimulus: missing, status: missing === 'skipped' ? 'skipped' : 'success', gradeResult: null },
+    { type: 'run-summary', runId: 'native', passed: true, hadExecutionErrors: false, evals: [
+      { evalFilePath: 'eval.yaml', variant: 'main', model: 'mock', passed: true, scoringApplied: false,
+        stimuliRun: missing === 'skipped' ? 1 : 2, stimuliTotal: 2, stimuliSkipped: missing === 'skipped' ? 1 : 0 },
+    ] },
+  ].map((row) => JSON.stringify(row)).join('\n');
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async (_inputs, _engine, _cwd, directory) => {
+    const file = join(directory, 'native.log');
+    await writeFile(file, contents);
+    return { result: { outcome: 'passed', completeness: 'complete', category: 'none', code: 'passed', nativeRunId: 'native' },
+      files: [file], exitCode: 0 };
+  });
+  const passed = await runComparisonPair(context, selection, selection.include[0]!, engine, root, root, '', { request: mocks.request },
+    { restore: async () => {}, current: async () => {}, run });
+  expect(passed).toBe(false);
+  expect(run).toHaveBeenCalledTimes(2);
+  const arm = JSON.parse(await readFile(join(root, 'skill-abc-after.json'), 'utf8'));
+  expect(arm.data.rows[1]).toMatchObject({ state: missing === 'skipped' ? 'not-run' : 'error', passed: false });
+  expect(arm.data.rows[0]).toMatchObject({ state: 'graded', passed: true });
+});
+
 it('fails oversized projections explicitly, uploads bounded error state and still attempts After', async () => {
   const rows = Array.from({ length: 3000 }, (_, index) => ({
     type: 'trial-result', runId: 'native', itemId: String(index), evalName: 'size-control', stimulus: `case-${index}`,
@@ -244,6 +296,7 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await mkdir(join(cwd, 'evals'), { recursive: true });
   await writeFile(join(cwd, 'skills', 'draft', 'SKILL.md'), 'before');
   await writeFile(join(cwd, 'skills', 'draft', 'café.md'), 'unicode source');
+  await writeFile(join(cwd, '.gitignore'), 'skills/draft/*.cache\nfixtures/\n');
   await writeFile(join(cwd, '.vally.yaml'), 'plugins:\n  grader: [./source-grader.mjs]\n');
   await writeFile(join(cwd, 'evals', 'eval.yaml'), [
     'name: source-comparison', 'type: capability', 'defaults:', '  executor: mock', '  model: mock-only',
@@ -271,7 +324,7 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   const firstParent = git('rev-parse', 'HEAD');
   git('merge', '--no-ff', '-qm', 'merge', 'skill');
   const merge = git('rev-parse', 'HEAD');
-  const ctx = { ...context, merge, head, base: firstParent };
+  const ctx = { ...context, merge, head, runHead: head, base: firstParent };
   const entry = { ...selection.include[0]!, directory: 'skills/draft', evalPath: 'evals/eval.yaml', base: firstParent, head };
   await restoreComparisonSource(cwd, ctx, entry, firstParent);
   expect(await readFile(join(cwd, entry.directory, 'SKILL.md'), 'utf8')).toBe('before');
@@ -285,6 +338,16 @@ it('qualifies real Before-fail/After-pass mock execution, literal source restore
   await writeFile(join(cwd, 'unexpected'), 'untracked candidate mutation');
   await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
   await rm(join(cwd, 'unexpected'));
+  const ignoredSkill = join(cwd, 'skills', 'draft', 'before.cache');
+  await writeFile(ignoredSkill, 'untracked Before skill state');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
+  expect(await readFile(ignoredSkill, 'utf8')).toBe('untracked Before skill state');
+  await rm(ignoredSkill);
+  await mkdir(join(cwd, 'fixtures'));
+  const ignoredFixture = join(cwd, 'fixtures', 'before.cache');
+  await writeFile(ignoredFixture, 'untracked Before fixture state');
+  await expect(restoreComparisonSource(cwd, ctx, entry, head)).rejects.toThrow('measurement-files-changed');
+  await rm(ignoredFixture);
   await symlink(join(cwd, 'evals'), join(cwd, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   await expect(restoreComparisonSource(cwd, ctx, { ...entry, evalPath: 'linked/eval.yaml' }, head)).rejects.toThrow('symlinked');
   await rm(join(cwd, 'linked'));

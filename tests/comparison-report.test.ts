@@ -50,7 +50,7 @@ function selection(): ComparisonSelection {
     repository: 'example/repo', run: '999', attempt: '2', runNumber: 8, pullNumber: 3,
     sourceWorkflow: '.github/workflows/skill-evals.yml', sourceRun: '123', sourceAttempt: '1',
     trusted: 'd'.repeat(40), base: 'a'.repeat(40), head: 'b'.repeat(40),
-    merge: 'c'.repeat(40), runHead: 'c'.repeat(40), changed: ['local/draft'],
+    merge: 'c'.repeat(40), runHead: 'b'.repeat(40), changed: ['local/draft'],
     skills: [{ key: 'local/draft', hasEval: true }, { key: 'local/neighbor', hasEval: true },
       { key: 'remote/run', hasEval: false }],
     include: [{ key: 'local/draft', id: 'skill-aaaaaaaaaaaa', directory: 'plugins/local/skills/draft',

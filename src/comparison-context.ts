@@ -59,8 +59,10 @@ export async function authenticateComparison(
   producingAttempt = env.GITHUB_RUN_ATTEMPT,
 ): Promise<ComparisonContext> {
   const repository = env.GITHUB_REPOSITORY ?? '';
+  if (!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(sourceWorkflow)) {
+    throw new ComparisonError('comparison-invalid-source-workflow');
+  }
   if (env.GITHUB_EVENT_NAME !== 'workflow_run' || !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
-      !/^\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml$/.test(sourceWorkflow) ||
       !sha(env.GITHUB_SHA) || env.GITHUB_WORKFLOW_SHA !== env.GITHUB_SHA) {
     throw new ComparisonError('comparison-requires-trusted-workflow-run');
   }
@@ -96,6 +98,7 @@ export async function authenticateComparison(
   if (!positive(associated.number) || !sha(head) || object(source.pull_requests[0]).number !== associated.number) {
     throw new ComparisonError('comparison-source-pr-association-mismatch');
   }
+  if (run.head_sha !== head) throw new ComparisonError('comparison-source-head-mismatch');
   const identity = {
     repository, sourceWorkflow, sourceRun: String(source.id), sourceAttempt: String(source.run_attempt),
     run: String(runId), attempt: String(attempt), runNumber, pullNumber: associated.number,

@@ -2,7 +2,7 @@ import { parseDocument } from 'yaml';
 import { commentMarker, orderedBody, selectComment, type Comment, type CommentIdentity, type ReportOrder } from './comments.js';
 import { object } from './policy.js';
 import { escapeMarkdown, hasQualityDetails, renderQualitySection, type Report } from './reporting.js';
-import { ReportingError, type GitHubClient } from './github.js';
+import { authenticatedBotId, ReportingError, type GitHubClient } from './github.js';
 
 export const commentConcurrencyGroup = 'evals-${{ github.workflow_ref }}';
 export interface CommentContext {
@@ -105,11 +105,7 @@ export async function postReport(
   const sourceText = Buffer.from(source.content, 'base64').toString('utf8');
   assertSerializedReporter(sourceText, context);
   await currentPull(client, context, report.revision);
-  const response = object(await client.request('POST', '/graphql', { query: 'query { viewer { databaseId login } }' }));
-  if (response.errors !== undefined) throw new ReportingError('report-author-unavailable');
-  const viewer = object(object(response.data).viewer);
-  if (typeof viewer.login !== 'string' || !viewer.login.endsWith('[bot]')) throw new ReportingError('reporting-bot-token-required');
-  const author = positive(viewer.databaseId);
+  const author = await authenticatedBotId(client);
   const identity: CommentIdentity = {
     repository: context.repository, workflow: path, job: 'report', report: context.reportId,
   };

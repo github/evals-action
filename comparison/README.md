@@ -42,6 +42,10 @@ Call `context` before candidate selection:
 
 `source-workflow` is the notifier's exact path, not its display name. Context
 checks the REST API's producing attempt and workflow path, not artifact claims.
+Dotted filenames such as `.github/workflows/skill-evals.pr.yml` are supported;
+invalid selectors report an input-specific error. The source run's `head_sha`
+must equal the associated, still-current PR head; a branch-matching PR
+association alone cannot authenticate a newer revision.
 The trusted workflow ref must name the repository's default branch and its
 workflow SHA must equal `GITHUB_SHA`. Source cancellation, fork, closed/stale PR,
 ambiguous association or invalid merge parents fails closed. Before is the
@@ -122,8 +126,10 @@ Run supports Linux x64 and exact stable Vally versions only. It restores only
 the selected skill from the exact base parent, then head, while holding evals,
 graders, fixtures and neighboring skills at the merge revision. Literal Git
 arguments, exact HEAD/parent checks and outside-directory/untracked drift checks
-prevent accidental measurement substitution. It authenticates current context
-again after approval and before **each** native arm. Before failure does not
+prevent accidental measurement substitution. Untracked files include
+Git-ignored files: neither arm may consume ignored skill or fixture state left
+by an earlier arm. It authenticates current context again after approval and
+before **each** native arm. Before failure does not
 prevent After; cancellation does. One trial, one worker and zero retries are
 native CLI overrides, not a second runner. Every arm receives fresh HOME and
 TMP/TEMP directories and an allowlisted environment.
@@ -141,7 +147,10 @@ step; use a distinct name containing the selection producing attempt and entry
 id. Never upload `projection-directory` recursively: it also holds private
 native diagnostics. Use SHA-pinned upload/download Actions, seven-day retention
 or the repository's tighter policy, and `if-no-files-found: error`.
-The run step fails for either native failure/error/not-run/incomplete outcome.
+The run step fails for either native failure/error/not-run/incomplete outcome,
+including an otherwise passing native arm with any skipped or ungraded selected
+scenario. Every recorded row must be graded; native weighted scoring still
+determines the verdict rather than an invented all-graders-pass requirement.
 There is no report-only override. Partial paid-job reruns are rejected before
 acquisition or model execution: use **Re-run all jobs**.
 
@@ -177,8 +186,9 @@ failures, then collapsed inventory **scenario** counts and nested failure
 details. Execution errors, failed checks, not-run and unknown remain distinct.
 There is no passing-grader wall, hardcoded cohort, full-matrix campaign or
 causality claim. Oversized comments fail explicitly rather than truncate.
-Bot ownership, producing-run ordering and a final live PR-head check protect the
-sticky comment; workflow-level publisher serialization is still required.
+Authenticated bot author ID (including GitHub App installation bots),
+producing-run ordering and a final live PR-head check protect the sticky
+comment; workflow-level publisher serialization is still required.
 
 ## Retained exposure and acceptance limits
 

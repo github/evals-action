@@ -12,7 +12,7 @@ export function fixture() {
   const source = { id: 11, run_attempt: 3, pull_requests: [{ number: 7 }] };
   const run = {
     ...source, event: 'pull_request', status: 'completed', conclusion: 'success',
-    repository: { full_name: 'o/r' }, head_repository: { full_name: 'o/r' }, head_sha: sha('c'),
+    repository: { full_name: 'o/r' }, head_repository: { full_name: 'o/r' }, head_sha: sha('b'),
     workflow_id: 4, pull_requests: [{ number: 7, head: { sha: sha('b') } }],
   };
   const pull = { state: 'open', head: { sha: sha('b'), repo: { full_name: 'o/r' } }, merge_commit_sha: sha('c'), base: { sha: sha('e') } };
@@ -28,7 +28,7 @@ export function fixture() {
   });
   const context = {
     repository: 'o/r', sourceWorkflow: '.github/workflows/notify.yml', sourceRun: '11', sourceAttempt: '3',
-    run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('c'),
+    run: '99', attempt: '2', runNumber: 8, pullNumber: 7, head: sha('b'), runHead: sha('b'),
     trusted: sha('d'), base: sha('a'), merge: sha('c'),
   };
   const selection = {
@@ -63,12 +63,29 @@ it.each([
 it('rejects invalid source workflow selectors and future producing attempts', async () => {
   const f = fixture();
   for (const workflow of ['', '../notify.yml', '.github/workflows/notify.yml@main']) {
-    await expect(authenticateComparison({ workflow_run: f.source }, workflow, f.api, f.env)).rejects.toThrow();
+    await expect(authenticateComparison({ workflow_run: f.source }, workflow, f.api, f.env)).rejects.toThrow('comparison-invalid-source-workflow');
   }
   for (const attempt of ['0', '3', 'NaN']) {
     await expect(authenticateComparison({ workflow_run: f.source }, f.context.sourceWorkflow, f.api, f.env, attempt)).rejects.toThrow();
   }
   await expect(authenticateComparison({ workflow_run: { ...f.source, id: -1 } }, f.context.sourceWorkflow, f.api, f.env)).rejects.toThrow();
+});
+
+it('authenticates dotted source workflow filenames against the exact API path', async () => {
+  const f = fixture();
+  const path = '.github/workflows/skill-evals.pr.yml';
+  f.responses['/repos/o/r/actions/workflows/4'] = { path };
+  expect(await authenticateComparison({ workflow_run: f.source }, path, f.api, f.env)).toEqual({ ...f.context, sourceWorkflow: path });
+  await expect(authenticateComparison({ workflow_run: f.source }, '.github/workflows/skill-evals.yml', f.api, f.env))
+    .rejects.toThrow('source-workflow-mismatch');
+});
+
+it('rejects stale source heads even when the API associates the run with the current PR head', async () => {
+  const f = fixture();
+  f.run.head_sha = sha('e');
+  await expect(authenticateComparison({ workflow_run: f.source }, f.context.sourceWorkflow, f.api, f.env))
+    .rejects.toThrow('comparison-source-head-mismatch');
+  expect(f.api.request).not.toHaveBeenCalledWith('GET', '/repos/o/r/pulls/7');
 });
 
 it.each([

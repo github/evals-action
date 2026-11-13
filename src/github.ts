@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { object } from './policy.js';
 
 export interface GitHubClient {
   request(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<unknown>;
@@ -7,6 +8,17 @@ export interface GitHubClient {
 
 export class ReportingError extends Error {
   constructor(public readonly code: string) { super(code); }
+}
+
+export async function authenticatedBotId(client: GitHubClient): Promise<number> {
+  const response = object(await client.request('POST', '/graphql', { query: 'query { viewer { databaseId login } }' }));
+  if (response.errors !== undefined) throw new ReportingError('report-author-unavailable');
+  const viewer = object(object(response.data).viewer);
+  if (typeof viewer.login !== 'string' || !viewer.login.endsWith('[bot]')) throw new ReportingError('reporting-bot-token-required');
+  if (typeof viewer.databaseId !== 'number' || !Number.isSafeInteger(viewer.databaseId) || viewer.databaseId < 1) {
+    throw new ReportingError('invalid-report-identity');
+  }
+  return viewer.databaseId;
 }
 
 export function takeSecretInput(

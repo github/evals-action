@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { githubClient, takeSecretInput, type GitHubClient } from './github.js';
+import { authenticatedBotId, githubClient, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
 import { exactVersion, parseInputs } from './inputs.js';
 import { acquireEngine, resolveRelease, type EngineIdentity } from './tooling.js';
@@ -50,7 +50,7 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
   const outside = await execute('git', ['-C', cwd, 'diff', '--name-only', '-z', 'HEAD', '--', '.', `:(exclude,literal)${entry.directory}`], {
     env: inertEnvironment(process.env), timeout: 30_000, maxBuffer: 8 * maximum,
   });
-  if (outside.stdout || await git(cwd, ['ls-files', '--others', '--exclude-standard'])) {
+  if (outside.stdout || await git(cwd, ['ls-files', '--others'])) {
     throw new ComparisonError('comparison-measurement-files-changed');
   }
 }
@@ -60,14 +60,15 @@ export async function publishComparison(
 ): Promise<'posted' | 'stale'> {
   const marker = `<!-- evals-comparison:${selection.repository}/${selection.sourceWorkflow} -->`;
   const prefix = `/repos/${selection.repository}`;
+  const author = await authenticatedBotId(api);
   let existing: { id: number; body: string } | undefined;
   for (let page = 1; page <= 100; page++) {
     const batch = await api.request('GET', `${prefix}/issues/${selection.pullNumber}/comments?per_page=100&page=${page}`);
     if (!Array.isArray(batch)) throw new ComparisonError('comparison-invalid-comment-list');
     for (const raw of batch) {
       if (typeof raw !== 'object' || raw === null) throw new ComparisonError('comparison-invalid-comment');
-      const comment = raw as { id?: unknown; body?: unknown; user?: { login?: unknown; type?: unknown } };
-      if (comment.user?.login === 'github-actions[bot]' && comment.user.type === 'Bot' &&
+      const comment = raw as { id?: unknown; body?: unknown; user?: { id?: unknown } };
+      if (comment.user?.id === author &&
           typeof comment.body === 'string' && comment.body.startsWith(marker)) {
         if (existing || typeof comment.id !== 'number' || !Number.isSafeInteger(comment.id) || comment.id < 1) {
           throw new ComparisonError('comparison-ambiguous-comment');
@@ -122,10 +123,11 @@ export async function runComparisonPair(
       const home = join(native, 'home'), tmp = join(native, 'tmp');
       await mkdir(home, { mode: 0o700 });
       await mkdir(tmp, { mode: 0o700 });
-      const inputs = parseInputs((name) => ({
+      const values: Record<string, string> = {
         command: 'run', 'working-directory': '.', 'eval-paths': entry.evalPath,
         runs: '1', workers: '1', 'max-retries': '0',
-      })[name] ?? '');
+      };
+      const inputs = parseInputs((name) => values[name] ?? '');
       const env = nativeEnvironment(inputs, process.env, home, '', token);
       Object.assign(env, { TMPDIR: tmp, TMP: tmp, TEMP: tmp });
       const operation = await dependencies.run(inputs, engine, cwd, native, env);
@@ -137,7 +139,7 @@ export async function runComparisonPair(
         if (Buffer.byteLength(serialize(projected)) > maximum) throw new ComparisonError('comparison-projection-too-large');
         data = projected;
       }
-      if (data.state !== 'complete') passed = false;
+      if (data.state !== 'complete' || data.rows.some((row) => row.state !== 'graded')) passed = false;
     } catch (error) {
       passed = false;
       core.warning(`Comparison ${arm} failed: ${error instanceof ComparisonError ? error.code : 'comparison-arm-error'}. No raw diagnostics published.`);
