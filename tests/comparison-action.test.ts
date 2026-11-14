@@ -466,7 +466,7 @@ it.each(['before', 'after'] as const)('rejects a passing %s arm that changes act
   }
 });
 
-it('measures resolved file symlinks and rejects dangling or looping targets with a safe code', async ({ skip }) => {
+it('measures other resolved file symlinks and rejects dangling or looping targets with a safe code', async ({ skip }) => {
   const cwd = join(root, 'candidate'), skill = join(cwd, 'skills', 'draft');
   await mkdir(skill, { recursive: true });
   const source = join(skill, 'SKILL.md');
@@ -475,7 +475,9 @@ it('measures resolved file symlinks and rejects dangling or looping targets with
   await writeFile(source, 'after');
   expect(await measurementDigest(cwd, 'skills/draft')).toBe(unlinked);
   await writeFile(source, 'before');
-  try { await symlink(source, join(cwd, 'fixture.txt'), 'file'); }
+  const measurement = join(cwd, 'measurement.txt');
+  await writeFile(measurement, 'original fixture');
+  try { await symlink(measurement, join(cwd, 'fixture.txt'), 'file'); }
   catch (error) {
     if (process.platform === 'win32' && error instanceof Error && 'code' in error && error.code === 'EPERM') {
       return skip('Windows file symlink creation requires an unavailable privilege; Linux qualification remains required.');
@@ -483,7 +485,7 @@ it('measures resolved file symlinks and rejects dangling or looping targets with
     throw error;
   }
   const before = await measurementDigest(cwd, 'skills/draft');
-  await writeFile(source, 'after');
+  await writeFile(measurement, 'changed fixture');
   expect(await measurementDigest(cwd, 'skills/draft')).not.toBe(before);
   const fixture = join(cwd, 'fixture.txt');
   await rm(fixture);
@@ -492,6 +494,44 @@ it('measures resolved file symlinks and rejects dangling or looping targets with
   await rm(fixture);
   await symlink(fixture, fixture, 'file');
   await expect(measurementDigest(cwd, 'skills/draft')).rejects.toThrow('comparison-unsupported-measurement-symlink');
+});
+
+it.each([true, false])('rejects a tracked alias into the skill before native execution (alias: %s)', async (alias) => {
+  const cwd = join(root, 'candidate'), output = join(root, 'output');
+  await mkdir(join(cwd, 'skills', 'draft'), { recursive: true });
+  await mkdir(join(cwd, 'docs'));
+  await mkdir(output);
+  const source = join(cwd, 'skills', 'draft', 'SKILL.md');
+  await writeFile(source, 'before');
+  await writeFile(join(cwd, 'eval.yaml'), 'native configuration fixture');
+  await writeFile(join(cwd, 'docs', 'readme.md'), 'fixed measurement context');
+  if (alias) await symlink(source, join(cwd, 'docs', 'draft.md'), 'file');
+  const git = (...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8', env: inertEnvironment(process.env),
+  }).trim();
+  git('init', '-q'); git('config', 'core.symlinks', 'true');
+  git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD');
+  git('checkout', '-qb', 'skill');
+  await writeFile(source, 'after');
+  git('commit', '-qam', 'head');
+  const head = git('rev-parse', 'HEAD');
+  git('checkout', '-qb', 'merge', base);
+  git('merge', '--no-ff', '-qm', 'merge', 'skill');
+  const ctx = { ...context, base, head, runHead: head, merge: git('rev-parse', 'HEAD') };
+  const entry = { ...selection.include[0]!, directory: 'skills/draft', evalPath: 'eval.yaml', base, head };
+  if (alias) expect(git('ls-files', '--stage', '--', 'docs/draft.md')).toMatch(/^120000 /);
+  const observed: string[] = [];
+  const run = vi.fn<typeof import('../src/native.js').runNative>(async () => {
+    observed.push(await readFile(source, 'utf8'));
+    return { result: { outcome: 'failed', completeness: 'complete', category: 'none', code: 'fixture-failure' }, files: [] };
+  });
+  await runComparisonPair(ctx, { ...selection, ...ctx, include: [entry] }, entry, engine, cwd, output, '', { request: mocks.request },
+    { restore: restoreComparisonSource, current: async () => {}, run, measurements: measurementDigest });
+  expect(observed).toEqual(alias ? [] : ['before', 'after']);
+  expect(run).toHaveBeenCalledTimes(alias ? 0 : 2);
+  if (alias) expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-skill-measurement-alias-unsupported'));
 });
 
 it('rejects directory symlinks rather than ignoring their resolved measurement tree', async () => {

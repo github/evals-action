@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
 import { finished } from 'node:stream/promises';
 import { devNull } from 'node:os';
-import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { authenticatedBotId, githubClient, ReportingError, takeSecretInput, type GitHubClient } from './github.js';
 import { inertEnvironment, projectDirectory } from './policy.js';
@@ -106,6 +106,7 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
 
 export async function measurementDigest(cwd: string, skillDirectory: string): Promise<string> {
   const hash = createHash('sha256');
+  const skill = await realpath(join(cwd, ...skillDirectory.split('/')));
   const excluded = new Set([join(cwd, '.git'), join(cwd, ...skillDirectory.split('/'))]);
   const visit = async (directory: string): Promise<void> => {
     for (const name of (await readdir(directory)).sort()) {
@@ -118,6 +119,10 @@ export async function measurementDigest(cwd: string, skillDirectory: string): Pr
         try { info = await stat(path); }
         catch { throw new ComparisonError('comparison-unsupported-measurement-symlink'); }
         if (!info.isFile()) throw new ComparisonError('comparison-unsupported-measurement-symlink');
+        const target = relative(skill, await realpath(path));
+        if (target !== '..' && !target.startsWith(`..${sep}`) && !isAbsolute(target)) {
+          throw new ComparisonError('comparison-skill-measurement-alias-unsupported');
+        }
         hash.update(String(info.mode & 0o777)).update('\0');
       }
       if (info.isDirectory()) { hash.update('directory\0'); await visit(path); }

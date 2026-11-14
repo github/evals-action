@@ -163,6 +163,10 @@ while detecting byte changes that Git text/EOL normalization can hide.
 Regular-file symlinks include both their link text and resolved file bytes and
 permissions in the baseline. Directory/special-file symlink targets are
 unsupported and fail explicitly.
+File symlinks outside the selected skill that resolve into it are also
+unsupported: they fail before either native arm starts, rather than spending
+execution credits before discovering that the intended source switch changes
+measurement bytes. Other symlink targets still receive the same digest checks.
 Initialized/nonempty submodules are unsupported and fail explicitly; an empty
 uninitialized gitlink is allowed. Submodule ignore settings must not hide
 measurement inputs from the comparison guards.
