@@ -61,7 +61,7 @@ function label(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maxLabel) invalid('comparison-invalid-label', 'Invalid comparison label.');
   const plain = stripVTControlCharacters(value);
   if (/(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|bearer\s+\S+|(?:api[_-]?key|token|password)\s*[:=]\s*\S+)/i.test(plain) ||
-      plain.split(/[^A-Za-z0-9_-]/).some((part) => part.length >= 40 && /[A-Za-z]/.test(part) && /\d/.test(part))) {
+      plain.split(/[^A-Za-z0-9]/).some((part) => part.length >= 40 && /[A-Za-z]/.test(part) && /\d/.test(part))) {
     invalid('comparison-sensitive-label', 'Comparison labels must not contain credentials.');
   }
   return value;
@@ -240,9 +240,7 @@ function nativeOnlyFailure(arm: ComparisonArm | undefined, row: ComparisonRow | 
 }
 
 function counts(arm?: ComparisonArm, row?: ComparisonRow): string {
-  if (!arm || arm.state === 'error') return '⚠️ Error';
-  if (arm.state === 'not-run') return '⏭️ Not run';
-  if (!row) return '❔ Unknown';
+  if (!row) return !arm || arm.state === 'error' ? '⚠️ Error' : arm.state === 'not-run' ? '⏭️ Not run' : '❔ Unknown';
   if (row.state === 'error') return '⚠️ Error';
   if (row.state === 'not-run') return '⏭️ Not run';
   const passed = row.checks.filter((check) => check.passed).length;
@@ -301,9 +299,6 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
   }
   const findRow = (arm: ComparisonArm | undefined, row: Pick<ComparisonRow, 'eval' | 'stimulus' | 'model'>) =>
     arm ? indexes.get(arm)?.get(rowIdentity(row)) : undefined;
-  const models = [...new Set(pairs.flatMap((pair) =>
-    [...(pair.before?.rows ?? []), ...(pair.after?.rows ?? [])].map((row) => row.model)))].sort();
-  if (!models.length) models.push('Model not observed');
   const lines = [
     '## Skill eval results', '',
     `Before \`${text(selection.base.slice(0, 7))}\` → After \`${text(selection.head.slice(0, 7))}\` · [Run](${evidence})`, '',
@@ -317,6 +312,8 @@ export function renderComparison(selection: ComparisonSelection, inputPairs: Com
       append('⏭️ Not run — an existing skill in both revisions and its repo eval are required.', '');
       continue;
     }
+    const models = [...new Set([...(pair.before?.rows ?? []), ...(pair.after?.rows ?? [])].map((row) => row.model))].sort();
+    if (!models.length) models.push('Model not observed');
     append(`**Native verdicts:** Before ${nativeVerdict(pair.before)} → After ${nativeVerdict(pair.after)}.`, '');
     append(`| Eval : scenario (passing / total graders) | ${models.map(text).join(' | ')} |`,
       `| --- | ${models.map(() => '---').join(' | ')} |`);

@@ -278,6 +278,54 @@ describe('native comparison projection', () => {
 });
 
 describe('comparison renderer', () => {
+  it.each(['draft-uses-oauth2-authorization-code-flow-with-pkce',
+    'draft_uses_oauth2_authorization_code_flow_with_pkce'])('accepts ordinary long separated scenario and skill names: %s', (name) => {
+    const data = collectNative(jsonl(trial({ stimulus: name }), footer()), 'native', 1);
+    const selected = selection();
+    selected.changed = ['github-actions-workflow-troubleshooter-v2'];
+    const report = renderComparison(selected, [{ key: selected.changed[0]!, before: data, after: data }], evidence);
+    expect(report).toContain('### github-actions-workflow-troubleshooter-v2');
+    expect(report).toContain(name.replace(/^draft-/, '').replaceAll('_', '&#95;'));
+    expect(report).toContain('1/2 → 1/2');
+  });
+
+  it('preserves graded, skipped and error row evidence when the native arm has errors', () => {
+    const data = collectNative(jsonl(
+      trial(),
+      trial({ itemId: 'skipped', stimulus: 'draft-skipped', status: 'skipped', gradeResult: null }),
+      trial({ itemId: 'error', stimulus: 'draft-error', status: 'error', gradeResult: null }),
+      footer({ stimuliRun: 2, stimuliTotal: 3, stimuliSkipped: 1 }, { hadExecutionErrors: true }),
+    ), 'native', 1);
+    expect(data).toMatchObject({ state: 'error', nativeOutcome: 'error' });
+    const report = renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence);
+    expect(report).toContain('Native verdicts:** Before ⚠️ Error → After ⚠️ Error');
+    expect(report).toContain('draft : positive | 1/2 → 1/2 (comparison unknown)');
+    expect(report).toContain('draft : skipped | ⏭️ Not run → ⏭️ Not run (comparison unknown)');
+    expect(report).toContain('draft : error | ⚠️ Error → ⚠️ Error (comparison unknown)');
+  });
+
+  it('preserves recorded results without treating incomplete native coverage as comparable', () => {
+    const data = collectNative(jsonl(trial(), footer({ stimuliTotal: 2 })), 'native', 1);
+    expect(data.state).toBe('error');
+    const report = renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence);
+    expect(report).toContain('draft : positive | 1/2 → 1/2 (comparison unknown)');
+    expect(report).toContain('Native verdicts:** Before ❌ Failed → After ❌ Failed');
+  });
+
+  it('uses only each changed skill pair models and variants for its columns', () => {
+    const selected = selection();
+    selected.changed.push('local/neighbor');
+    const other = { ...pair(), key: 'local/neighbor' };
+    for (const arm of [other.before, other.after]) arm.rows[0]!.model = 'model-b / variant-b';
+    const report = renderComparison(selected, [pair(), other], evidence);
+    const [first, second] = report.split('### local/neighbor');
+    expect(first).toContain('| model-a |');
+    expect(first).not.toContain('model-b');
+    expect(second).toContain('| model-b / variant-b |');
+    expect(second).not.toContain('model-a');
+    expect(report).not.toContain('comparison unknown');
+  });
+
   it('shows only changed-skill Before/After results regardless of inventory size or unrelated pairs', () => {
     const selected = selection();
     selected.skills = [selected.skills[0]!, ...Array.from({ length: 999 }, (_, index) => ({

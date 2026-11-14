@@ -245,6 +245,9 @@ columns containing passing / total **graders** Before → After. There are no
 all-skills inventory, delta counters, failure-detail sections or compression
 campaigns. The run link provides further evidence. Execution errors, failed
 checks, not-run and unknown remain distinct.
+Columns are local to each changed skill's recorded models/variants. Recorded
+row counts/states remain visible when an arm has errors or incomplete coverage;
+the comparison stays unknown and the native verdict is not changed.
 Native arm verdicts are displayed separately from evidence completeness and
 grader counts. Each projected row also retains its native eval verdict: all
 graders passing does not hide a native weighted-score rejection. The optional
@@ -290,8 +293,10 @@ Prompts, trajectories, model output and raw grader evidence are excluded.
 Execution checks reject labels containing the exact execution credential before
 writing projections. Projection and publisher intake also reject recognizable
 GitHub tokens, bearer/API-key assignments and long mixed alphanumeric token-like
-labels, with a fixed safe error and no offending value. This is defense in depth,
-not proof against deliberately split/encoded exfiltration by credentialed
+labels, with a fixed safe error and no offending value.
+Hyphens and underscores delimit words in the generic length heuristic so
+ordinary long skill/scenario names remain valid.
+This is defense in depth, not proof against deliberately split/encoded exfiltration by credentialed
 candidate code. Names must be suitable for publication; ordinary network and
 credential exposure still require the workflow's approval boundary.
 Known native/API/reporting error codes are preserved in diagnostics; arbitrary
