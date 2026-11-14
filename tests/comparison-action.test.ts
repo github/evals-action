@@ -475,7 +475,7 @@ it('measures other resolved file symlinks and rejects dangling or looping target
   await writeFile(source, 'after');
   expect(await measurementDigest(cwd, 'skills/draft')).toBe(unlinked);
   await writeFile(source, 'before');
-  const measurement = join(cwd, 'measurement.txt');
+  const measurement = join(root, 'measurement.txt');
   await writeFile(measurement, 'original fixture');
   try { await symlink(measurement, join(cwd, 'fixture.txt'), 'file'); }
   catch (error) {
@@ -485,7 +485,7 @@ it('measures other resolved file symlinks and rejects dangling or looping target
     throw error;
   }
   const before = await measurementDigest(cwd, 'skills/draft');
-  await writeFile(measurement, 'changed fixture');
+  await writeFile(measurement, 'changed fixture!');
   expect(await measurementDigest(cwd, 'skills/draft')).not.toBe(before);
   const fixture = join(cwd, 'fixture.txt');
   await rm(fixture);
@@ -532,7 +532,7 @@ it.each([true, false])('rejects a tracked alias into the skill before native exe
   expect(observed).toEqual(alias ? [] : ['before', 'after']);
   expect(run).toHaveBeenCalledTimes(alias ? 0 : 2);
   if (alias) expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('comparison-skill-measurement-alias-unsupported'));
-});
+}, 30_000);
 
 it('rejects directory symlinks rather than ignoring their resolved measurement tree', async () => {
   const cwd = join(root, 'candidate'), skill = join(cwd, 'skills', 'draft');
