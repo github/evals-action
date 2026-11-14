@@ -5,6 +5,10 @@ sticky PR comment** with the suite, eval names, verdicts, and evidence links.
 Vally owns selection, execution and grading; the Action handles installation
 and GitHub integration.
 
+For approval-gated Before/After skill comparisons from a trusted `workflow_run`,
+use the separate [comparison subaction](comparison/README.md). The root Action's
+event and checkout policy is unchanged.
+
 Use `github/evals-action@v0` for the latest 0.x pilot release
 (currently [v0.1.0](https://github.com/github/evals-action/releases/tag/v0.1.0)).
 Use `@v0.1.0` to stay on that specific Action release. The `v0` tag advances as

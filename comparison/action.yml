@@ -1,0 +1,47 @@
+name: Compare skill evals
+description: Authenticate a source PR, run native Before/After arms, or publish bounded comparison projections.
+inputs:
+  command:
+    description: context, run, or report. Call each in its separately permissioned job.
+    required: true
+  source-workflow:
+    description: Exact trusted source workflow path, for example .github/workflows/skill-evals.yml.
+    required: true
+  github-token:
+    description: Job-scoped GitHub token for authenticated provenance and, only in report, commenting.
+    default: ${{ github.token }}
+  copilot-token:
+    description: Explicit execution credential, only in the approval-gated run job.
+  context:
+    description: Exact context output from the trusted selection job, never from an artifact.
+  selection:
+    description: Exact schema documented in comparison/README.md, from trusted selection job output.
+  producing-attempt:
+    description: Selection job's producing attempt. Required on run/report to reject partial paid retries and bind publisher retries.
+  comparison-id:
+    description: Selected include entry id for this run job.
+  working-directory:
+    description: Candidate merge checkout relative to GITHUB_WORKSPACE, for run only.
+  vally-version:
+    description: Exact stable native Vally version for run; latest is deliberately unsupported here.
+    default: '0.21.0'
+  artifact-directory:
+    description: Absolute downloaded projection directory, for report only. Contents are untrusted JSON data.
+outputs:
+  context:
+    description: Authenticated source/producer/PR/trusted-workflow/merge identity from context.
+  context-path:
+    description: Private local context.json path for the trusted repository selector; not an artifact authority.
+  merge:
+    description: Current verified PR merge SHA from context.
+  projection-directory:
+    description: Run's private output directory; do not upload recursively.
+  before-path:
+    description: Exact allowlisted Before JSON projection path.
+  after-path:
+    description: Exact allowlisted After JSON projection path.
+  outcome:
+    description: passed/failed for run, posted/stale for report. Posting never changes a native failure.
+runs:
+  using: node24
+  main: ../dist/comparison-index.cjs

@@ -343,7 +343,7 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
 export async function runNative(
   inputs: Inputs, engine: EngineIdentity, cwd: string, directory: string, env: NodeJS.ProcessEnv,
   invoke: Invoke = invokeVally,
-): Promise<{ result: NativeResult; files: string[] }> {
+): Promise<{ result: NativeResult; files: string[]; exitCode?: number | null }> {
   const runId = randomUUID();
   const commands = nativeArguments(inputs, cwd, directory, runId);
   if (sha256(await readFile(engine.entry)) !== engine.sha256) throw new NativeError('engine-executable-changed', 'dependency');
@@ -351,9 +351,11 @@ export async function runNative(
   if (version.cancelled) return { result: { outcome: 'cancelled', completeness: 'partial', category: 'execution', code: 'native-cancelled' }, files: [version.stdout, version.stderr] };
   if (version.code !== 0 || (await readFile(version.stdout, 'utf8')).trim() !== engine.version) throw new NativeError('native-version-mismatch', 'dependency');
   const files: string[] = [];
+  let exitCode: number | null | undefined;
   let result: NativeResult = { outcome: 'validated', completeness: 'unknown', category: 'none', code: 'native-lint-validated', executed: 0 };
   for (const args of commands) {
     const child = await invoke(engine, args, cwd, env, directory);
+    exitCode = child.code;
     files.push(child.stdout, child.stderr);
     if (child.cancelled) return { result: { outcome: 'cancelled', completeness: 'partial', category: 'execution', code: 'native-cancelled' }, files };
     if (inputs.command === 'lint') {
@@ -368,5 +370,5 @@ export async function runNative(
       }
     }
   }
-  return { result, files };
+  return { result, files, ...(exitCode !== undefined ? { exitCode } : {}) };
 }
