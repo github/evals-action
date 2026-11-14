@@ -103,9 +103,9 @@ export async function bundledLicenseNotices(inputContributions) {
     inventory: ordered.map(item => item.entry),
     text: [
       'THIRD-PARTY NOTICES', 'GitHub Evals Action', '',
-      'This inventory describes packages contributing code to dist/index.cjs.',
+      'This inventory describes packages contributing code to dist/index.cjs and dist/comparison-index.cjs.',
       'License text inclusion is evidence, not release approval. Missing terms remain unresolved.',
-      'Inline third-party comments are retained separately in index.cjs.LEGAL.txt.', '',
+      'Inline third-party comments are retained separately in index.cjs.LEGAL.txt and comparison-index.cjs.LEGAL.txt.', '',
       ...ordered.map(item => `${'='.repeat(72)}\n${item.text}\n`),
     ].join('\n'),
   };
