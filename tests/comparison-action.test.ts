@@ -222,6 +222,22 @@ it('rejects duplicate bot markers, malformed comment listings and transport fail
   }
 });
 
+it.each([
+  '', '<!-- run:8:bad -->', '<!-- run:-1:2 -->', 'prefix<!-- run:8:2 -->suffix',
+  '<!-- run:0:2 -->', '<!-- run:8:0 -->',
+  '<!-- run:9007199254740992:2 -->', '<!-- run:8:9007199254740992 -->',
+])('refuses to overwrite a marked report with invalid stored run order: %s', async (tag) => {
+  const marker = `<!-- evals-comparison:o/r/.github/workflows/notify.yml/${sha256(context.workflowRef)} -->`;
+  const request = vi.fn<GitHubClient['request']>(async (_method, path) => {
+    if (path === '/graphql') return { data: { viewer: { databaseId: 42, login: 'comparison-app[bot]' } } };
+    if (path.endsWith('/pulls/7')) return pull();
+    return [{ id: 1, body: `${marker}\n${tag}\nExisting report`, user: { id: 42 } }];
+  });
+  await expect(publishComparison(selection, 'Do not replace unknown order', { request }))
+    .rejects.toThrow('comparison-invalid-report-order');
+  expect(request.mock.calls.some(([method, path]) => method !== 'GET' && path.includes('/issues/'))).toBe(false);
+});
+
 it('keeps comment identity and run ordering separate for different trusted workflow refs', async () => {
   let comments: unknown[] = [];
   const request = vi.fn<GitHubClient['request']>(async (method, path) => {

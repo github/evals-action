@@ -157,7 +157,11 @@ export async function publishComparison(
     if (page === 100) throw new ComparisonError('comparison-comment-list-too-large');
   }
   const order = [selection.runNumber, Number(selection.attempt)];
-  const previous = existing?.body.match(/<!-- run:(\d+):(\d+) -->/);
+  const previous = existing?.body.match(/^<!-- run:(\d+):(\d+) -->$/m);
+  if (existing && (!previous || previous.slice(1).some((value) =>
+    !Number.isSafeInteger(Number(value)) || Number(value) < 1))) {
+    throw new ComparisonError('comparison-invalid-report-order');
+  }
   if (previous && (Number(previous[1]) > order[0]! ||
       Number(previous[1]) === order[0] && Number(previous[2]) > order[1]!)) return 'stale';
   const content = `${metadata}${body}`;

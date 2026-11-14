@@ -278,6 +278,8 @@ comment. Its marker is scoped to the authenticated trusted workflow ref as
 well as the source workflow, matching the scope of run numbers. Different
 trusted publishers consuming the same notifier do not share comment order.
 Workflow-level publisher serialization is still required.
+Existing marked reports with missing/malformed ordering tags or non-positive,
+unsafe run/attempt numbers are rejected rather than overwritten.
 Immediately before writing, the publisher rechecks both the PR head and
 selected merge SHA. Like other GitHub API read/write sequences, this is not
 an atomic transaction.
