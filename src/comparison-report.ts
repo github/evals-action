@@ -60,7 +60,7 @@ function exact(value: RecordValue, keys: string[], optional: string[] = []): voi
 function label(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maxLabel) invalid('comparison-invalid-label', 'Invalid comparison label.');
   const plain = stripVTControlCharacters(value);
-  if (/(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|bearer\s+\S+|(?:api[_-]?key|token|password)\s*[:=]\s*\S+)/i.test(plain) ||
+  if (/(?:^|[^A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})|bearer\s+\S+|(?:api[_-]?key|token|password)\s*[:=]\s*\S+/i.test(plain) ||
       plain.split(/[^A-Za-z0-9]/).some((part) => part.length >= 40 && /[A-Za-z]/.test(part) && /\d/.test(part))) {
     invalid('comparison-sensitive-label', 'Comparison labels must not contain credentials.');
   }
@@ -131,7 +131,7 @@ export function collectNative(contents: string, runId: string, exitCode: number 
       if (typeof check.passed !== 'boolean') invalid('comparison-invalid-native-grader-verdict', 'Invalid native grader verdict.');
       const type = check.graderType ?? check.kind ?? 'check';
       if (typeof type !== 'string' || !/^[a-z0-9._-]{1,128}$/.test(type)) invalid('comparison-invalid-native-grader-type', 'Invalid native grader type.');
-      const projected = { id: `${index}:${type}`, name: label(check.configuredName ?? check.name ?? type), passed: check.passed };
+      const projected = { id: label(`${index}:${type}`), name: label(check.configuredName ?? check.name ?? type), passed: check.passed };
       return [projected];
     });
     const nativePassed = nativeVerdicts.get(groupIdentity(trial));
@@ -152,7 +152,7 @@ export function collectNative(contents: string, runId: string, exitCode: number 
     nativeOutcome: native.outcome === 'passed' || native.outcome === 'failed' || native.outcome === 'not-run' ? native.outcome : 'error',
     rows,
   };
-  const labels = rows.flatMap((row) => [row.eval, row.stimulus, row.model, ...row.checks.map((check) => check.name)]);
+  const labels = rows.flatMap((row) => [row.eval, row.stimulus, row.model, ...row.checks.flatMap((check) => [check.id, check.name])]);
   if (secrets.some((secret) => secret && labels.some((value) => stripVTControlCharacters(value).includes(secret)))) {
     invalid('comparison-sensitive-label', 'Comparison labels must not contain credentials.');
   }
@@ -193,7 +193,7 @@ function safeArm(value: unknown): ComparisonArm {
       const index = check.id.split(':')[0]!;
       if (Number(index) >= maxChecks || checkIndexes.has(index)) invalid('comparison-invalid-check-index', 'Duplicate or invalid comparison check index.');
       checkIds.add(check.id); checkIndexes.add(index);
-      const projected = { id: check.id, name: label(check.name), passed: check.passed };
+      const projected = { id: label(check.id), name: label(check.name), passed: check.passed };
       return projected;
     });
     if ((row.state === 'graded' && !checks.length) || (row.state === 'not-run' && checks.length)) {

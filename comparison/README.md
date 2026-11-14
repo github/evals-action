@@ -294,6 +294,9 @@ Execution checks reject labels containing the exact execution credential before
 writing projections. Projection and publisher intake also reject recognizable
 GitHub tokens, bearer/API-key assignments and long mixed alphanumeric token-like
 labels, with a fixed safe error and no offending value.
+These checks cover check IDs as well as names. Classic GitHub-token prefixes
+must start at the label's beginning or a non-alphanumeric boundary and have an
+alphanumeric body.
 Hyphens and underscores delimit words in the generic length heuristic so
 ordinary long skill/scenario names remain valid.
 This is defense in depth, not proof against deliberately split/encoded exfiltration by credentialed

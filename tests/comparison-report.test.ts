@@ -104,6 +104,38 @@ describe('native comparison projection', () => {
       .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
   });
 
+  it.each(['graderType', 'kind'])('checks candidate-controlled %s IDs for exact execution credentials', (field) => {
+    const secret = 'lowercaseexecutioncredential';
+    const source = jsonl(trial({ gradeResult: { ...grade(), details: [
+      { [field]: secret, configuredName: 'ordinary-name', passed: true, score: 1 },
+    ] } }), footer());
+    expect(() => collectNative(source, 'native', 1, [secret]))
+      .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+  });
+
+  it('rejects recognizable credentials in check IDs before projection and publisher rendering', () => {
+    const token = 'ghp_' + 'a'.repeat(36);
+    const source = jsonl(trial({ gradeResult: { ...grade(), details: [
+      { graderType: token, configuredName: 'ordinary-name', passed: true, score: 1 },
+    ] } }), footer());
+    expect(() => collectNative(source, 'native', 1))
+      .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+    const sample = pair();
+    sample.after.rows[0]!.checks[0]!.id = `0:${token}`;
+    expect(() => renderComparison(selection(), [sample], evidence))
+      .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+  });
+
+  it.each(['weighs_tradeoffs_between_multiple_options', 'ghs_checks_several_ordinary_options'])(
+    'does not mistake an ordinary underscore name for a GitHub token: %s', (name) => {
+      const data = collectNative(jsonl(trial({ stimulus: name }), footer()), 'native', 1);
+      const selected = selection();
+      selected.changed = [name];
+      expect(renderComparison(selected, [{ key: name, before: data, after: data }], evidence))
+        .toContain(name.replaceAll('_', '&#95;'));
+    },
+  );
+
   it('uses the real native schema, retains individual counts, and drops private evidence', () => {
     const source = jsonl(trial(), footer());
     expect(parseNativeEvidence(source, 'native', 1).outcome).toBe('failed');
