@@ -604,6 +604,11 @@ it('qualifies a caller-mapped non-marketplace layout with native Before/After an
   const merge = git('rev-parse', 'HEAD');
   const ctx = { ...context, merge, head, runHead: head, base: firstParent };
   const entry = { ...selection.include[0]!, directory: 'skills/draft', evalPath: 'evals/eval.yaml', base: firstParent, head };
+  for (const mapping of [{ directory: 'skills/missing' }, { evalPath: 'evals/missing.yaml' }]) {
+    await expect(restoreComparisonSource(cwd, ctx, { ...entry, ...mapping }, head)).rejects.toMatchObject({
+      code: 'comparison-measurement-path-missing', message: 'comparison-measurement-path-missing',
+    });
+  }
   await restoreComparisonSource(cwd, ctx, entry, firstParent);
   expect(await readFile(join(cwd, entry.directory, 'SKILL.md'), 'utf8')).toBe('before');
   expect(await readFile(join(cwd, entry.directory, 'removed.md'), 'utf8')).toBe('removed by head');

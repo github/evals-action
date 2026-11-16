@@ -273,6 +273,8 @@ If `selection.json` is missing from the artifact root, publication fails with
 The same code covers a missing download directory. Shallow/unavailable checkout
 parent lookups use `comparison-checkout-revision-mismatch`; dangling or looping
 measurement symlinks use `comparison-unsupported-measurement-symlink`.
+Missing selected skill/eval paths use `comparison-measurement-path-missing`
+without exposing raw filesystem errors.
 Run setup failures distinguish `comparison-working-directory-invalid`,
 `comparison-vally-resolution-failed` and `comparison-vally-acquisition-failed`
 without exposing raw filesystem, registry or installation exception text.

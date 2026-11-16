@@ -72,7 +72,14 @@ export async function restoreComparisonSource(cwd: string, context: ComparisonCo
       let current = cwd;
       for (const component of path.split('/')) {
         current = join(current, component);
-        if ((await lstat(current)).isSymbolicLink()) throw new ComparisonError('comparison-symlinked-measurement-path');
+        try {
+          if ((await lstat(current)).isSymbolicLink()) throw new ComparisonError('comparison-symlinked-measurement-path');
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            throw new ComparisonError('comparison-measurement-path-missing');
+          }
+          throw error;
+        }
       }
     }
   };

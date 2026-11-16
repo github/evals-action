@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   collectNative, loadComparison, renderComparison,
   type ComparisonArm, type ComparisonPair, type ComparisonSelection,
@@ -13,7 +14,7 @@ afterEach(async () => {
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 async function directory(): Promise<string> {
-  const root = await mkdtemp(resolve('.comparison-report-'));
+  const root = await mkdtemp(join(tmpdir(), 'evals-comparison-report-'));
   directories.push(root);
   return root;
 }
