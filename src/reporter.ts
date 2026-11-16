@@ -1,7 +1,11 @@
 import { parseDocument } from 'yaml';
 import { commentMarker, orderedBody, selectComment, type Comment, type CommentIdentity, type ReportOrder } from './comments.js';
 import { object } from './policy.js';
-import { escapeMarkdown, hasQualityDetails, renderComparisonSection, renderQualitySection, type Report } from './reporting.js';
+import {
+  escapeMarkdown, formatDurationDelta, formatScoreDelta, formatTokenDelta,
+  hasQualityDetails, renderComparisonSection, renderQualitySection, renderVerdictSummaryTable,
+  type GroupVerdictEntry, type Report,
+} from './reporting.js';
 import { ReportingError, type GitHubClient } from './github.js';
 
 export const commentConcurrencyGroup = 'evals-${{ github.workflow_ref }}';
@@ -162,6 +166,27 @@ export async function postReport(
   return decision.action === 'create' ? 'created' : 'updated';
 }
 
+function renderGroupDetailsBlock(entry: GroupVerdictEntry, run: string, artifactId?: number): string {
+  const emoji = entry.verdict.split(' ')[0];
+  const baseGroup = entry.baseGroup;
+  const candGroup = entry.candGroup;
+  const sameTrials = baseGroup !== undefined && candGroup !== undefined && baseGroup.trials === candGroup.trials;
+  const modelName = candGroup?.model ? escapeMarkdown(candGroup.model) : baseGroup?.model ? escapeMarkdown(baseGroup.model) : '-';
+  const evidenceCell = artifactId !== undefined ? `[artifact](${run}/artifacts/${artifactId})` : '-';
+  return `<details>\n` +
+    `<summary>${emoji} <strong>${entry.name}</strong> — ${entry.why}</summary>\n\n` +
+    '| Metric | Baseline | Candidate | Delta |\n| --- | --- | --- | --- |\n' +
+    `| Verdict | ${baseGroup ? (baseGroup.trials === 0 ? 'not-run' : baseGroup.passed ? 'passed' : 'failed') : '-'} | ${candGroup ? (candGroup.trials === 0 ? 'not-run' : candGroup.passed ? 'passed' : 'failed') : '-'} | ${entry.transition} |\n` +
+    `| Model | ${baseGroup?.model ? escapeMarkdown(baseGroup.model) : '-'} | ${modelName} | - |\n` +
+    `| Scenarios / Trials | ${baseGroup ? `${baseGroup.stimuliRun}/${baseGroup.stimuliTotal} (${baseGroup.trials} trials)` : '-'} | ${candGroup ? `${candGroup.stimuliRun}/${candGroup.stimuliTotal} (${candGroup.trials} trials)` : '-'} | - |\n` +
+    `| Score | ${baseGroup?.overallScore !== undefined ? baseGroup.overallScore.toFixed(2) : '-'} | ${candGroup?.overallScore !== undefined ? `${candGroup.overallScore.toFixed(2)}${candGroup.threshold !== undefined ? ` (threshold ${candGroup.threshold.toFixed(2)})` : ''}` : '-'} | ${formatScoreDelta(baseGroup?.overallScore, candGroup?.overallScore)} |\n` +
+    `| Turns | ${baseGroup?.turns ?? '-'} | ${candGroup?.turns ?? '-'} | ${sameTrials && baseGroup?.turns !== undefined && candGroup?.turns !== undefined ? (candGroup.turns - baseGroup.turns > 0 ? `+${candGroup.turns - baseGroup.turns}` : `${candGroup.turns - baseGroup.turns}`) : '-'} |\n` +
+    `| Duration | ${baseGroup?.durationMs !== undefined ? `${baseGroup.durationMs}ms` : '-'} | ${candGroup?.durationMs !== undefined ? `${candGroup.durationMs}ms` : '-'} | ${sameTrials ? formatDurationDelta(baseGroup?.durationMs, candGroup?.durationMs) : '-'} |\n` +
+    `| Tokens | ${baseGroup?.tokens ? `${baseGroup.tokens.total} (${baseGroup.tokens.input ?? '-'} in / ${baseGroup.tokens.output ?? '-'} out)` : '-'} | ${candGroup?.tokens ? `${candGroup.tokens.total} (${candGroup.tokens.input ?? '-'} in / ${candGroup.tokens.output ?? '-'} out)` : '-'} | ${sameTrials ? formatTokenDelta(baseGroup?.tokens, candGroup?.tokens) : '-'} |\n` +
+    `| Evidence | - | ${evidenceCell} | - |\n\n` +
+    `</details>\n\n`;
+}
+
 export function renderComment(
   report: Report, artifactId: number | undefined, companion: { report: Report; artifactId: number } | undefined, run: string,
   baseline?: { report: Report; artifactId: number },
@@ -171,31 +196,99 @@ export function renderComment(
   const status = evaluation?.outcome ?? lint?.outcome ?? report.outcome;
   const rows = evaluation?.groups ?? [];
   const suite = evaluation?.suite;
-  const base = `# Evals: ${status}\n\n` +
-    (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
+  if (!baseline || !evaluation) {
+    const base = `# Evals: ${status}\n\n` +
+      (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
+      (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
+        ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
+      (evaluation ? `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
+        (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
+        (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
+        (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
+        (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
+          rows.slice(0, 100).map((group) =>
+            `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
+          ).join('\n') + '\n\n' +
+          (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
+    if (!evaluation) return base;
+    let output = base;
+    if (rows.length && hasQualityDetails(rows)) {
+      const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
+      const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
+      if (quality) output = `${output}${quality}\n\n`;
+    }
+    return output;
+  }
+
+  const { overallVerdict, entries, markdown: verdictTable } = renderVerdictSummaryTable(baseline.report, evaluation, 25);
+  let output = `# Evals: ${overallVerdict} (${status})\n\n` +
+    (verdictTable ? `${verdictTable}\n\n` : '') +
+    (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
+    (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '');
+
+  const allActionable = entries.filter((entry) => entry.verdict !== '✅ Ship');
+  const allPassingChanged = entries.filter((entry) => entry.verdict === '✅ Ship' && (entry.changed || entries.length === 1));
+  const unchangedPassing = entries.filter((entry) => entry.verdict === '✅ Ship' && !entry.changed && entries.length > 1);
+
+  let droppedActionable = allActionable.length > 25;
+  for (const entry of allActionable.slice(0, 25)) {
+    const block = renderGroupDetailsBlock(entry, run, artifactId);
+    if (Buffer.byteLength(output + block, 'utf8') <= 38_000) output += block;
+    else droppedActionable = true;
+  }
+  if (droppedActionable) {
+    output += 'Further groups are available in the structured artifact.\n\n';
+  }
+  if (allActionable.length > 0) {
+    output += '---\n\n';
+  }
+  let droppedPassing = allPassingChanged.length > 25;
+  for (const entry of allPassingChanged.slice(0, 25)) {
+    const block = renderGroupDetailsBlock(entry, run, artifactId);
+    if (Buffer.byteLength(output + block, 'utf8') <= 38_000) output += block;
+    else droppedPassing = true;
+  }
+  if (droppedPassing) {
+    output += 'Further groups are available in the structured artifact.\n\n';
+  }
+  if (unchangedPassing.length > 0) {
+    const totalScenarios = unchangedPassing.reduce((sum, entry) => sum + (entry.candGroup?.stimuliRun ?? 0), 0);
+    const unchangedBlock =
+      `<details>\n` +
+      `<summary>📋 <strong>Unchanged evals &amp; run configuration</strong> — ${unchangedPassing.length} passing (${totalScenarios}/${totalScenarios} scenarios)</summary>\n\n` +
+      '| Skill | Status | Scenarios (Before → After) | Details |\n| --- | --- | --- | --- |\n' +
+      unchangedPassing.slice(0, 25).map((entry) => {
+        const b = entry.baseGroup;
+        const c = entry.candGroup;
+        const model = c?.model ? escapeMarkdown(c.model) : b?.model ? escapeMarkdown(b.model) : 'default';
+        return `| \`${entry.name}\` | ✅ Unchanged | ${b ? `${b.stimuliRun}/${b.stimuliTotal}` : '-'} → ${c ? `${c.stimuliRun}/${c.stimuliTotal}` : '-'} | All scenarios passing on \`${model}\` |`;
+      }).join('\n') + '\n\n' +
+      `</details>\n\n`;
+    if (Buffer.byteLength(output + unchangedBlock, 'utf8') <= 40_000) output += unchangedBlock;
+  }
+
+  let telemetryBody =
+    (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : '**Selection:** Native eval paths or tags\n\n') +
     (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
       ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
-    (evaluation ? `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
-      (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
-      (baseline ? `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n` : '') +
-      (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
-      (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
-      (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
-        rows.slice(0, 100).map((group) =>
-          `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
-        ).join('\n') + '\n\n' +
-        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
-  if (!evaluation) return base;
-  let output = base;
+    `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
+    (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
+    `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n` +
+    (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
+      rows.slice(0, 100).map((group) =>
+        `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
+      ).join('\n') + '\n\n' +
+      (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '');
+
   if (rows.length && hasQualityDetails(rows)) {
-    const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
+    const maxQualityBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(output + telemetryBody, 'utf8')));
     const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
-    if (quality) output = `${output}${quality}\n\n`;
+    if (quality) telemetryBody = `${telemetryBody}${quality}\n\n`;
   }
-  if (baseline) {
-    const maxComparisonBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
-    const comparison = renderComparisonSection('### Baseline vs. Candidate comparison', baseline.report, evaluation, 25, maxComparisonBytes);
-    if (comparison) output = `${output}${comparison}\n\n`;
-  }
+  const maxComparisonBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(output + telemetryBody, 'utf8')));
+  const comparison = renderComparisonSection('### Baseline vs. Candidate comparison', baseline.report, evaluation, 25, maxComparisonBytes, overallVerdict);
+  if (comparison) telemetryBody = `${telemetryBody}${comparison}\n\n`;
+
+  output += `<details>\n<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong></summary>\n\n${telemetryBody.trim()}\n\n</details>\n\n`;
   return output;
 }

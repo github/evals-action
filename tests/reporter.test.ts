@@ -256,9 +256,53 @@ describe('one sticky PR report for direct Action calls', () => {
       report: baselineReport, artifactId: 125,
     })).toBe('created');
     const body = String(test.writes()[0]?.[2]?.body);
+    expect(body).toContain('# Evals: ✅ Ship (passed)');
+    expect(body).toContain('| Skill | Verdict | Why |');
+    expect(body).toContain('| **pr-description** | ✅ **Ship** | Fixed failing eval · score 0.94 → 1.00 (+0.06) · -31.5% output tokens (-456) · -11.4% duration |');
+    expect(body).toContain('<summary>✅ <strong>pr-description</strong> — Fixed failing eval · score 0.94 → 1.00 (+0.06) · -31.5% output tokens (-456) · -11.4% duration</summary>');
+    expect(body).toContain('<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong></summary>');
     expect(body).toContain('**Baseline:** failed - 2 trials - [Evidence](https://github.com/o/r/actions/runs/1000/artifacts/125)');
     expect(body).toContain('### Baseline vs. Candidate comparison');
+    expect(body).toContain('| Outcome | failed | passed (✅ Ship) | fixed |');
     expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -2 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+
+    // Multi-skill mixed verdict ordering: No ship and Re-run above ---, Ship and Unchanged/Telemetry below ---
+    const mixedBase: Report = {
+      ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'failed',
+      executed: 4, passed: 3, failed: 1, turns: 12, durationMs: 40_000,
+      tokens: { input: 80_000, output: 2_000, total: 82_000 },
+      groups: [
+        { identity: '1'.repeat(64), name: 'pr-description', model: 'claude-haiku-5.5', passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 0.5, threshold: 1, turns: 3, durationMs: 10_000, tokens: { input: 20_000, output: 800, total: 20_800 } },
+        { identity: '2'.repeat(64), name: 'release-plugins', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 3, durationMs: 10_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+        { identity: '3'.repeat(64), name: 'try-plugin-locally', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 3, durationMs: 10_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+        { identity: '4'.repeat(64), name: 'update-remote-pins', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 3, durationMs: 10_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+      ],
+    };
+    const mixedCand: Report = {
+      ...report, suite: 'smoke', outcome: 'failed',
+      executed: 3, passed: 2, failed: 1, turns: 9, durationMs: 30_000,
+      tokens: { input: 60_000, output: 1_200, total: 61_200 },
+      groups: [
+        { identity: '1'.repeat(64), name: 'pr-description', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 3, durationMs: 9_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+        { identity: '2'.repeat(64), name: 'release-plugins', model: 'claude-haiku-5.5', passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 0.75, threshold: 1, turns: 3, durationMs: 11_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+        { identity: '3'.repeat(64), name: 'try-plugin-locally', model: 'claude-haiku-5.5', passed: true, trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1 },
+        { identity: '4'.repeat(64), name: 'update-remote-pins', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 3, durationMs: 10_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+      ],
+    };
+    const mixedTest = fixture();
+    expect(await postReport(mixedTest.client, context, mixedCand, 123, undefined, {
+      report: mixedBase, artifactId: 125,
+    })).toBe('created');
+    const mixedBody = String(mixedTest.writes()[0]?.[2]?.body);
+    expect(mixedBody).toContain('# Evals: 🛑 No ship (failed)');
+    const hrIndex = mixedBody.indexOf('\n---\n');
+    expect(hrIndex).toBeGreaterThan(0);
+    expect(mixedBody.indexOf('<summary>🛑 <strong>release-plugins</strong>')).toBeLessThan(hrIndex);
+    expect(mixedBody.indexOf('<summary>⚠️ <strong>try-plugin-locally</strong>')).toBeLessThan(hrIndex);
+    expect(mixedBody.indexOf('<summary>✅ <strong>pr-description</strong>')).toBeGreaterThan(hrIndex);
+    expect(mixedBody.indexOf('<summary>📋 <strong>Unchanged evals &amp; run configuration</strong>')).toBeGreaterThan(hrIndex);
+    expect(mixedBody.indexOf('<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong>')).toBeGreaterThan(hrIndex);
+    expect(mixedBody).toContain('| Outcome | failed | failed (🛑 No ship) | regressed |');
 
     for (const badBaseline of [
       { report: { ...baselineReport, reportId: 'smoke' }, artifactId: 125 },

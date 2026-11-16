@@ -208,15 +208,142 @@ function formatGroupCell(group?: ReportGroup): string {
   return group.overallScore !== undefined ? `${verdict} (${group.overallScore.toFixed(2)})` : verdict;
 }
 
+export interface GroupVerdictEntry {
+  key: string;
+  name: string;
+  baseGroup: ReportGroup | undefined;
+  candGroup: ReportGroup | undefined;
+  verdict: '✅ Ship' | '🛑 No ship' | '⚠️ Re-run';
+  transition: string;
+  changed: boolean;
+  why: string;
+}
+
+export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidate: ReportGroup | undefined): {
+  verdict: '✅ Ship' | '🛑 No ship' | '⚠️ Re-run';
+  transition: string;
+  changed: boolean;
+  why: string;
+} {
+  const transition = classifyGroupTransition(baseline, candidate);
+  if (!candidate || candidate.trials === 0 || (baseline && baseline.trials === 0)) {
+    return {
+      verdict: '⚠️ Re-run',
+      transition,
+      changed: true,
+      why: !candidate ? 'Eval removed from candidate run' : 'No trials executed (not-run)',
+    };
+  }
+  const ship = candidate.passed && transition !== 'regressed';
+  const verdict = ship ? '✅ Ship' : '🛑 No ship';
+  const changed = transition !== 'unchanged';
+  const parts: string[] = [];
+  if (transition === 'fixed') {
+    parts.push('Fixed failing eval');
+  } else if (transition === 'regressed') {
+    parts.push(candidate.passed ? 'Score regressed' : 'Regressed to failing');
+  } else if (transition === 'improved-score') {
+    parts.push('Improved score');
+  } else if (transition === 'reduced-tokens') {
+    parts.push('Reduced token usage at parity');
+  } else if (transition === 'increased-tokens') {
+    parts.push('Increased token usage at parity');
+  } else if (transition === 'added') {
+    parts.push(candidate.passed ? 'New eval passing' : 'New eval failing');
+  } else {
+    parts.push(candidate.passed ? `Passing (${candidate.stimuliRun}/${candidate.stimuliTotal} scenarios)` : 'Still failing');
+  }
+  if (baseline?.overallScore !== undefined && candidate.overallScore !== undefined) {
+    parts.push(`score ${baseline.overallScore.toFixed(2)} → ${candidate.overallScore.toFixed(2)} (${formatScoreDelta(baseline.overallScore, candidate.overallScore)})`);
+  } else if (candidate.overallScore !== undefined) {
+    parts.push(`score ${candidate.overallScore.toFixed(2)}`);
+  }
+  const sameTrials = baseline !== undefined && baseline.trials === candidate.trials;
+  if (sameTrials && baseline?.tokens?.output !== undefined && candidate.tokens?.output !== undefined && baseline.tokens.output > 0) {
+    const outDelta = candidate.tokens.output - baseline.tokens.output;
+    if (outDelta !== 0) {
+      const sign = outDelta > 0 ? '+' : '';
+      const pct = ((outDelta / baseline.tokens.output) * 100).toFixed(1);
+      parts.push(`${sign}${pct}% output tokens (${sign}${outDelta})`);
+    }
+  }
+  if (sameTrials && baseline?.durationMs !== undefined && candidate.durationMs !== undefined && baseline.durationMs > 0) {
+    const durDelta = candidate.durationMs - baseline.durationMs;
+    if (durDelta !== 0) {
+      const sign = durDelta > 0 ? '+' : '';
+      const pct = ((durDelta / baseline.durationMs) * 100).toFixed(1);
+      parts.push(`${sign}${pct}% duration`);
+    }
+  }
+  return { verdict, transition, changed, why: parts.join(' · ') };
+}
+
+export function renderVerdictSummaryTable(
+  baseline: Report | undefined, candidate: Report, maxGroups = 25,
+): { overallVerdict: '✅ Ship' | '🛑 No ship' | '⚠️ Re-run'; entries: GroupVerdictEntry[]; markdown: string } {
+  const baseGroups = baseline?.groups ?? [];
+  const candGroups = candidate.groups ?? [];
+  const baseMap = new Map(baseGroups.map((group) => [group.identity, group]));
+  const candMap = new Map(candGroups.map((group) => [group.identity, group]));
+  const keys = [...new Set([...baseMap.keys(), ...candMap.keys()])];
+  const severityOrder: Record<'🛑 No ship' | '⚠️ Re-run' | '✅ Ship', number> = {
+    '🛑 No ship': 0,
+    '⚠️ Re-run': 1,
+    '✅ Ship': 2,
+  };
+  const entries: GroupVerdictEntry[] = keys
+    .map((key) => {
+      const baseGroup = baseMap.get(key);
+      const candGroup = candMap.get(key);
+      const name = escapeMarkdown((candGroup ?? baseGroup)!.name ?? (candGroup ?? baseGroup)!.identity.slice(0, 12));
+      const { verdict, transition, changed, why } = classifyGroupVerdict(baseGroup, candGroup);
+      return { key, name, baseGroup, candGroup, verdict, transition, changed, why };
+    })
+    .sort((a, b) => severityOrder[a.verdict] - severityOrder[b.verdict]);
+
+  if (entries.length === 0) {
+    const overallVerdict = candidate.outcome === 'passed'
+      ? '✅ Ship'
+      : candidate.outcome === 'failed'
+        ? '🛑 No ship'
+        : '⚠️ Re-run';
+    return { overallVerdict, entries, markdown: '' };
+  }
+  let hasNoShip = candidate.outcome === 'failed';
+  let hasRerun = ['error', 'not-run', 'cancelled'].includes(candidate.outcome);
+  for (const entry of entries) {
+    if (entry.verdict === '🛑 No ship') hasNoShip = true;
+    if (entry.verdict === '⚠️ Re-run') hasRerun = true;
+  }
+  const overallVerdict = hasNoShip ? '🛑 No ship' : hasRerun ? '⚠️ Re-run' : '✅ Ship';
+  const rows = entries.slice(0, maxGroups).map((entry) => {
+    const boldVerdict = entry.verdict.replace(/^(✅|🛑|⚠️)\s+(.*)$/u, '$1 **$2**');
+    return `| **${entry.name}** | ${boldVerdict} | ${entry.why} |`;
+  });
+  const markdown =
+    '| Skill | Verdict | Why |\n' +
+    '| --- | --- | --- |\n' +
+    rows.join('\n') +
+    (entries.length > rows.length ? '\n\nFurther groups are available in the structured artifact.' : '');
+  return { overallVerdict, entries, markdown };
+}
+
 export function renderComparisonSection(
-  heading: string, baseline: Report, candidate: Report, maxGroups = 25, maxBytes = 16_000,
+  heading: string, baseline: Report, candidate: Report, maxGroups = 25, maxBytes = 16_000, overallVerdict?: string,
 ): string {
   if (maxBytes <= 0) return '';
-  const outcomeTransition = baseline.outcome === 'failed' && candidate.outcome === 'passed'
+  const hasGroupRegression = (baseline.groups ?? []).some((baseGroup) => {
+    const candGroup = (candidate.groups ?? []).find((g) => g.identity === baseGroup.identity);
+    return classifyGroupTransition(baseGroup, candGroup) === 'regressed';
+  });
+  const outcomeTransition = baseline.outcome === 'failed' && candidate.outcome === 'passed' && !hasGroupRegression
     ? 'fixed'
-    : baseline.outcome === 'passed' && candidate.outcome === 'failed'
+    : (baseline.outcome === 'passed' && candidate.outcome === 'failed') || hasGroupRegression
       ? 'regressed'
-      : baseline.outcome === candidate.outcome ? 'unchanged' : `${baseline.outcome} -> ${candidate.outcome}`;
+      : baseline.outcome === candidate.outcome
+        ? (overallVerdict && overallVerdict !== '✅ Ship' ? overallVerdict : 'unchanged')
+        : `${baseline.outcome} -> ${candidate.outcome}`;
+  const candidateOutcomeCell = overallVerdict ? `${candidate.outcome} (${overallVerdict})` : candidate.outcome;
   const hasBothGroups = baseline.groups !== undefined && candidate.groups !== undefined;
   const baseGroups = baseline.groups ?? [];
   const candGroups = candidate.groups ?? [];
@@ -234,7 +361,7 @@ export function renderComparisonSection(
   const summaryTable =
     `${heading}\n\n` +
     '| Metric | Baseline | Candidate | Delta |\n| --- | --- | --- | --- |\n' +
-    `| Outcome | ${baseline.outcome} | ${candidate.outcome} | ${outcomeTransition} |\n` +
+    `| Outcome | ${baseline.outcome} | ${candidateOutcomeCell} | ${outcomeTransition} |\n` +
     `| Passed | ${baseline.passed ?? '-'} | ${candidate.passed ?? '-'} | ${formatSignedCount(baseline.passed, candidate.passed)} |\n` +
     `| Failed | ${baseline.failed ?? '-'} | ${candidate.failed ?? '-'} | ${formatSignedCount(baseline.failed, candidate.failed)} |\n` +
     `| Turns | ${baseline.turns ?? '-'} | ${candidate.turns ?? '-'} | ${workloadsMatch ? formatSignedCount(baseline.turns, candidate.turns) : '-'} |\n` +
