@@ -391,12 +391,17 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
     expect(actual.result).toMatchObject({ outcome: 'passed', executed: 4, passed: 2, failed: 0 });
     expect(actual.result.groups).toHaveLength(2);
     expect(actual.result.groups?.map((group) => group.name)).toEqual(['deterministic-pass', 'deterministic-pass']);
+    expect(actual.result.groups?.map((group) => group.model)).toEqual(['one', 'two']);
     for (const group of actual.result.groups ?? []) {
       expect(group).toMatchObject({ overallScore: 0.5, threshold: 0.5 });
+      expect(group.turns).toEqual(expect.any(Number));
       expect(group.durationMs).toEqual(expect.any(Number));
       expect(group.durationMs!).toBeGreaterThanOrEqual(0);
       expect(group.tokens).toEqual({ input: 0, output: 0, total: 0 });
     }
+    expect(actual.result.turns).toBe(
+      (actual.result.groups ?? []).reduce((sum, group) => sum + (group.turns ?? 0), 0),
+    );
     expect(actual.result.durationMs).toBe(
       (actual.result.groups ?? []).reduce((sum, group) => sum + (group.durationMs ?? 0), 0),
     );

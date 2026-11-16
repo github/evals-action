@@ -171,6 +171,7 @@ export function formatScoreDelta(baseline?: number, candidate?: number): string 
   if (baseline === undefined || candidate === undefined) return '-';
   const delta = candidate - baseline;
   if (Math.abs(delta) < 0.0005) return '0.00';
+  if (Math.abs(delta) < 0.005) return `${delta > 0 ? '+' : ''}${delta.toFixed(3)}`;
   return `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`;
 }
 
@@ -216,12 +217,14 @@ export function renderComparisonSection(
     : baseline.outcome === 'passed' && candidate.outcome === 'failed'
       ? 'regressed'
       : baseline.outcome === candidate.outcome ? 'unchanged' : `${baseline.outcome} -> ${candidate.outcome}`;
+  const hasBothGroups = baseline.groups !== undefined && candidate.groups !== undefined;
   const baseGroups = baseline.groups ?? [];
   const candGroups = candidate.groups ?? [];
   const baseMap = new Map(baseGroups.map((group) => [group.identity, group]));
   const candMap = new Map(candGroups.map((group) => [group.identity, group]));
   const keys = [...new Set([...baseMap.keys(), ...candMap.keys()])];
-  const workloadsMatch = baseline.selection === candidate.selection &&
+  const workloadsMatch = hasBothGroups &&
+    baseline.selection === candidate.selection &&
     baseline.executed !== undefined && baseline.executed === candidate.executed &&
     baseGroups.length === candGroups.length &&
     keys.every((key) => {
@@ -238,7 +241,7 @@ export function renderComparisonSection(
     `| Duration | ${formatDuration(baseline.durationMs)} | ${formatDuration(candidate.durationMs)} | ${workloadsMatch ? formatDurationDelta(baseline.durationMs, candidate.durationMs) : '-'} |\n` +
     `| Tokens | ${formatTokens(baseline.tokens)} | ${formatTokens(candidate.tokens)} | ${workloadsMatch ? formatTokenDelta(baseline.tokens, candidate.tokens) : '-'} |`;
   if (Buffer.byteLength(summaryTable, 'utf8') > maxBytes) return '';
-  if (baseGroups.length === 0 && candGroups.length === 0) return summaryTable;
+  if (!hasBothGroups || (baseGroups.length === 0 && candGroups.length === 0)) return summaryTable;
   const groupHeader = '\n\n| Eval | Baseline | Candidate | Score Delta | Turns Delta | Duration Delta | Token Delta | Transition |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n';
   const footer = '\n\nFurther groups are available in the structured artifact.';
   const footerBytes = Buffer.byteLength(footer, 'utf8');

@@ -286,7 +286,8 @@ pass `baseline-report-id: evals-baseline` to the `report` step:
 with `report-id: evals-baseline`), and aggregate turns, duration, and token deltas
 are shown when both arms share the same selection and per-eval trial counts.
 You can also pass `baseline-artifact-id` and `baseline-artifact-digest`
-explicitly instead of discovering the baseline artifact by `baseline-report-id`.
+explicitly instead of discovering the baseline artifact by `baseline-report-id`
+(matching `baseline-report-id`, or `<report-id>-baseline` when omitted).
 
 ## Commands
 
@@ -356,11 +357,13 @@ A passing check doesn't guarantee the AI will get it right every time.
 | `lint-artifact-id`, `lint-artifact-digest` | Companion lint evidence produced by all after successful lint. |
 | `native-diagnostics-path` | Local raw logs/output directory under runner temporary storage. |
 
-Structured artifacts contain status, revision, suite, bounded native eval names,
-engine/dependency identities, counts, verdicts and hashed group identities.
+Structured artifacts contain status, revision, suite, bounded native eval and
+model names, engine/dependency identities, counts, verdicts, optional
+score/turn/duration/token summaries, and hashed group identities.
 They exclude full source paths, prompts, model output and raw exception text.
-Names are Markdown-escaped in comments; do not store secrets in suite or eval
-names. Comments show at most 100 groups and link to the complete artifact.
+Names are Markdown-escaped in comments; do not store secrets in suite, eval, or
+model names. Comments show at most 100 groups (and up to 25 groups in quality
+and comparison tables) and link to the complete artifact.
 Raw JSONL above 64 MiB is refused rather than partially interpreted.
 
 Optional transcripts may contain prompts, secrets and proprietary code.

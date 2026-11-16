@@ -382,6 +382,9 @@ describe('minimal presentation projections', () => {
     expect(formatSignedCount(2, 2)).toBe('0');
     expect(formatScoreDelta(undefined, 1)).toBe('-');
     expect(formatScoreDelta(0.9, 0.9)).toBe('0.00');
+    expect(formatScoreDelta(0.9, 0.9004)).toBe('0.00');
+    expect(formatScoreDelta(0.9, 0.901)).toBe('+0.001');
+    expect(formatScoreDelta(0.9, 0.899)).toBe('-0.001');
     expect(formatScoreDelta(0.9, 0.7)).toBe('-0.20');
     expect(formatDurationDelta(undefined, 10)).toBe('-');
     expect(formatDurationDelta(100, 100)).toBe('0ms (0.0%)');
@@ -413,6 +416,9 @@ describe('minimal presentation projections', () => {
     const noGroups = renderComparisonSection('### Compare', { ...baseline, groups: [] }, { ...candidate, groups: [] });
     expect(noGroups).toContain('| Outcome | failed | passed | fixed |');
     expect(noGroups).not.toContain('| Eval | Baseline |');
+    const missingBaselineGroups = renderComparisonSection('### Compare', report({ outcome: 'error' }), candidate);
+    expect(missingBaselineGroups).toContain('| Outcome | error | passed | error -> passed |');
+    expect(missingBaselineGroups).not.toContain('| Eval | Baseline |');
     const regressedSummary = renderComparisonSection('### Compare', candidate, baseline);
     expect(regressedSummary).toContain('| Outcome | passed | failed | regressed |');
     const unchangedSummary = renderComparisonSection('### Compare', candidate, { ...candidate, executed: 4 });
