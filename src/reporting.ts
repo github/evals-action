@@ -346,11 +346,11 @@ export function renderComparisonSection(
     const candGroup = (candidate.groups ?? []).find((g) => g.identity === baseGroup.identity);
     return classifyGroupTransition(baseGroup, candGroup) === 'regressed';
   });
-  const outcomeTransition = (baseline.outcome === 'passed' && candidate.outcome === 'failed') || hasGroupRegression || overallVerdict === '🛑 No ship'
+  const outcomeTransition = (baseline.outcome === 'passed' && candidate.outcome === 'failed') || hasGroupRegression
     ? 'regressed'
     : overallVerdict === '⚠️ Re-run'
       ? '⚠️ Re-run'
-      : baseline.outcome === 'failed' && candidate.outcome === 'passed'
+      : baseline.outcome === 'failed' && candidate.outcome === 'passed' && overallVerdict !== '🛑 No ship'
         ? 'fixed'
         : baseline.outcome === candidate.outcome ? 'unchanged' : `${baseline.outcome} -> ${candidate.outcome}`;
   const candidateOutcomeCell = overallVerdict ? `${candidate.outcome} (${overallVerdict})` : candidate.outcome;

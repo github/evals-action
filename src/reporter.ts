@@ -171,7 +171,7 @@ function renderGroupDetailsBlock(entry: GroupVerdictEntry, run: string, artifact
   const baseGroup = entry.baseGroup;
   const candGroup = entry.candGroup;
   const sameTrials = baseGroup !== undefined && candGroup !== undefined && baseGroup.trials === candGroup.trials;
-  const modelName = candGroup?.model ? escapeMarkdown(candGroup.model) : baseGroup?.model ? escapeMarkdown(baseGroup.model) : '-';
+  const modelName = candGroup?.model ? escapeMarkdown(candGroup.model) : '-';
   const evidenceCell = artifactId !== undefined ? `[artifact](${run}/artifacts/${artifactId})` : '-';
   return `<details>\n` +
     `<summary>${emoji} <strong>${entry.name}</strong> — ${entry.why}</summary>\n\n` +
