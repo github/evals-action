@@ -150,7 +150,7 @@ export function classifyGroupTransition(baseline?: ReportGroup, candidate?: Repo
     if (scoreDelta >= 0.0005) return 'improved-score';
     if (scoreDelta <= -0.0005) return 'regressed';
   }
-  if (baseline.trials === candidate.trials && baseline.tokens !== undefined && candidate.tokens !== undefined) {
+  if (baseline.passed && candidate.passed && baseline.trials === candidate.trials && baseline.tokens !== undefined && candidate.tokens !== undefined) {
     if (candidate.tokens.total < baseline.tokens.total) return 'reduced-tokens';
     if (candidate.tokens.total > baseline.tokens.total) return 'increased-tokens';
     if (baseline.tokens.output !== undefined && candidate.tokens.output !== undefined) {
