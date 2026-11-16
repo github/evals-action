@@ -60,7 +60,8 @@ function exact(value: RecordValue, keys: string[], optional: string[] = []): voi
 function label(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maxLabel) invalid('comparison-invalid-label', 'Invalid comparison label.');
   const plain = stripVTControlCharacters(value);
-  if (/(?:^|[^A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})|bearer\s+\S+|(?:api[_-]?key|token|password)\s*[:=]\s*\S+/i.test(plain) ||
+  if (/(?:^|[^A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/i.test(plain) ||
+      /(?:\bbearer\s+|\b(?:api[_-]?key|token|password)\s*[:=]\s*)(?=[A-Za-z0-9._~+/-]*[A-Za-z])(?=[A-Za-z0-9._~+/-]*\d)[A-Za-z0-9._~+/-]{20,}/i.test(plain) ||
       plain.split(/[^A-Za-z0-9]/).some((part) => part.length >= 40 && /[A-Za-z]/.test(part) && /\d/.test(part))) {
     invalid('comparison-sensitive-label', 'Comparison labels must not contain credentials.');
   }

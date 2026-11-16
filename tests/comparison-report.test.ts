@@ -86,7 +86,9 @@ async function saveArm(root: string, data: unknown, overrides: Record<string, un
 }
 
 describe('native comparison projection', () => {
-  it.each(['ghp_' + 'a'.repeat(36), 'ghp_\u001b[31m' + 'a'.repeat(36), 'Bearer private-value', 'api_key=private-value',
+  it.each(['ghp_' + 'a'.repeat(36), 'ghp_\u001b[31m' + 'a'.repeat(36),
+    'Bearer abcdefghijklmnop1234', 'api_key=abcdefghijklmnop1234', 'token: abcdefghijklmnop1234',
+    'password=abcdefghijklmnop1234',
     'A1'.repeat(24)])('rejects credential-like labels before projection and publisher rendering', (secret) => {
     const source = jsonl(trial({ gradeResult: { ...grade(), details: [
       { graderType: 'completed', configuredName: secret, passed: true, score: 1 },
@@ -103,6 +105,21 @@ describe('native comparison projection', () => {
       footer({ model: 'opaque-execution-credential' })), 'native', 1, ['opaque-execution-credential']))
       .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
   });
+
+  it.each(['rejects bearer tokens without scope', 'token: budget respected',
+    'api_key=configuration example', 'password: validation message'])(
+    'accepts descriptive credential-related prose without discarding results: %s', (name) => {
+      const source = jsonl(trial({ stimulus: name, gradeResult: { ...grade(), details: [
+        { graderType: 'completed', configuredName: name, passed: true, score: 1 },
+      ] } }), footer());
+      const data = collectNative(source, 'native', 1);
+      expect(data).toMatchObject({ state: 'complete', rows: [{ stimulus: name, checks: [{ name }] }] });
+      expect(renderComparison(selection(), [{ key: 'local/draft', before: data, after: data }], evidence))
+        .toContain(name.replaceAll('_', '&#95;'));
+      expect(() => collectNative(source, 'native', 1, [name]))
+        .toThrow(expect.objectContaining({ code: 'comparison-sensitive-label' }));
+    },
+  );
 
   it.each(['graderType', 'kind'])('checks candidate-controlled %s IDs for exact execution credentials', (field) => {
     const secret = 'lowercaseexecutioncredential';
