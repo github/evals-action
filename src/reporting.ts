@@ -251,7 +251,7 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
   } else if (transition === 'fixed') {
     parts.push('Fixed failing eval');
   } else if (transition === 'regressed') {
-    parts.push(candidate.passed ? 'Score regressed' : 'Regressed to failing');
+    parts.push(candidate.passed || baseline?.passed === false ? 'Score regressed' : 'Regressed to failing');
   } else if (transition === 'improved-score') {
     parts.push('Improved score');
   } else if (transition === 'reduced-tokens') {
@@ -311,16 +311,17 @@ export function renderVerdictSummaryTable(
     })
     .sort((a, b) => severityOrder[a.verdict] - severityOrder[b.verdict]);
 
+  const baseIncomplete = baseline !== undefined && ['error', 'not-run', 'cancelled'].includes(baseline.outcome);
   if (entries.length === 0) {
-    const overallVerdict = candidate.outcome === 'passed'
-      ? '✅ Ship'
-      : candidate.outcome === 'failed'
-        ? '🛑 No ship'
+    const overallVerdict = candidate.outcome === 'failed'
+      ? '🛑 No ship'
+      : candidate.outcome === 'passed' && !baseIncomplete
+        ? '✅ Ship'
         : '⚠️ Re-run';
     return { overallVerdict, entries, markdown: '' };
   }
   let hasNoShip = candidate.outcome === 'failed';
-  let hasRerun = ['error', 'not-run', 'cancelled'].includes(candidate.outcome);
+  let hasRerun = ['error', 'not-run', 'cancelled'].includes(candidate.outcome) || baseIncomplete;
   for (const entry of entries) {
     if (entry.verdict === '🛑 No ship') hasNoShip = true;
     if (entry.verdict === '⚠️ Re-run') hasRerun = true;
