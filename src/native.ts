@@ -20,6 +20,7 @@ export interface NativeResult {
   executed?: number;
   passed?: number;
   failed?: number;
+  turns?: number;
   durationMs?: number;
   tokens?: ReportTokens;
   nativeRunId?: string;
@@ -143,6 +144,8 @@ interface BucketAccumulator {
   stimuli: Set<string>;
   skipped: number;
   name?: string;
+  turns: number;
+  turnTrials: number;
   durationMs: number;
   durationTrials: number;
   totalTokens: number;
@@ -155,6 +158,7 @@ interface BucketAccumulator {
 function emptyBucket(): BucketAccumulator {
   return {
     trials: 0, stimuli: new Set<string>(), skipped: 0,
+    turns: 0, turnTrials: 0,
     durationMs: 0, durationTrials: 0,
     totalTokens: 0, tokenTrials: 0,
     inputTokens: 0, outputTokens: 0, ioTokenTrials: 0,
@@ -217,6 +221,11 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
           if (trajectory.metrics !== undefined && trajectory.metrics !== null &&
               typeof trajectory.metrics === 'object' && !Array.isArray(trajectory.metrics)) {
             const metrics = trajectory.metrics as Record<string, unknown>;
+            const turnCount = safeNonNegativeInteger(metrics.turnCount);
+            if (turnCount !== undefined) {
+              bucket.turns += turnCount;
+              bucket.turnTrials++;
+            }
             if (metrics.tokenUsage !== undefined && metrics.tokenUsage !== null &&
                 typeof metrics.tokenUsage === 'object' && !Array.isArray(metrics.tokenUsage)) {
               const usage = metrics.tokenUsage as Record<string, unknown>;
@@ -279,6 +288,10 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     if (group.error !== undefined) executionErrors = true;
     const name = bucket.name ?? basename(group.evalFilePath);
     if (!name || name.length > 256 || /[\r\n]/.test(name)) throw new NativeError('invalid-native-eval-name', 'evidence');
+    const model = typeof group.model === 'string' && group.model.length > 0 && group.model.length <= 128 && !/[\r\n]/.test(group.model)
+      ? group.model
+      : undefined;
+    const groupTurns = bucket.trials > 0 && bucket.turnTrials === bucket.trials ? bucket.turns : undefined;
     const groupDurationMs = bucket.trials > 0 && bucket.durationTrials === bucket.trials ? bucket.durationMs : undefined;
     const groupTokens: ReportTokens | undefined = bucket.trials > 0 && bucket.tokenTrials === bucket.trials
       ? {
@@ -291,12 +304,14 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     groups.push({
       identity: key,
       name,
+      ...(model ? { model } : {}),
       passed: group.passed,
       trials: bucket.trials,
       stimuliRun,
       stimuliTotal,
       skipped,
       ...(bucket.trials > 0 && group.scoringApplied ? { overallScore: group.overallScore as number, threshold: group.threshold as number } : {}),
+      ...(groupTurns !== undefined ? { turns: groupTurns } : {}),
       ...(groupDurationMs !== undefined ? { durationMs: groupDurationMs } : {}),
       ...(groupTokens !== undefined ? { tokens: groupTokens } : {}),
     });
@@ -306,6 +321,9 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
   }
   const executed = groups.reduce((total, group) => total + group.trials, 0);
   const executedGroups = groups.filter((group) => group.trials > 0);
+  const turns = executedGroups.length > 0 && executedGroups.every((group) => group.turns !== undefined)
+    ? executedGroups.reduce((total, group) => total + group.turns!, 0)
+    : undefined;
   const durationMs = executedGroups.length > 0 && executedGroups.every((group) => group.durationMs !== undefined)
     ? executedGroups.reduce((total, group) => total + group.durationMs!, 0)
     : undefined;
@@ -325,6 +343,7 @@ export function parseNativeEvidence(text: string, runId: string, exitCode: numbe
     executed,
     nativeRunId: runId,
     groups,
+    ...(turns !== undefined ? { turns } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(tokens !== undefined ? { tokens } : {}),
   };

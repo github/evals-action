@@ -255,7 +255,7 @@ Artifacts uploaded by older Action versions require explicit IDs/digests.
 ### Baseline vs. Candidate PR comparison
 
 To include a **Baseline vs. Candidate comparison** table (Outcome, Passed/Failed,
-Score delta, Duration delta, and Token `in/out` + `%` delta) in the sticky PR
+Score delta, Turns delta, Duration delta, and Token `in/out` + `%` delta) in the sticky PR
 comment and job summary, run the baseline arm with a distinct `report-id`
 (such as `evals-baseline`), run the candidate arm with `report-id: evals`, and
 pass `baseline-report-id: evals-baseline` to the `report` step:
@@ -281,6 +281,10 @@ pass `baseline-report-id: evals-baseline` to the `report` step:
           baseline-report-id: evals-baseline
 ```
 
+`run-baseline` runs in the same workflow run, attempt, and PR checkout revision
+(restoring only the baseline skill or target files before invoking `command: run`
+with `report-id: evals-baseline`), and aggregate turns, duration, and token deltas
+are shown when both arms share the same selection and per-eval trial counts.
 You can also pass `baseline-artifact-id` and `baseline-artifact-digest`
 explicitly instead of discovering the baseline artifact by `baseline-report-id`.
 

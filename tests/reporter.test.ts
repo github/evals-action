@@ -141,12 +141,12 @@ describe('one sticky PR report for direct Action calls', () => {
     const test = fixture();
     const evaluation: Report = {
       ...report, suite: 'smoke', outcome: 'passed', executed: 2,
-      passed: 1, failed: 0, durationMs: 120,
+      passed: 1, failed: 0, turns: 4, durationMs: 120,
       tokens: { input: 300, output: 150, total: 450 },
       groups: [{
-        identity: 'a'.repeat(64), name: 'skill-check', passed: true,
+        identity: 'a'.repeat(64), name: 'skill-check', model: 'gpt-4o', passed: true,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 0.95, threshold: 0.8, durationMs: 120,
+        overallScore: 0.95, threshold: 0.8, turns: 4, durationMs: 120,
         tokens: { input: 300, output: 150, total: 450 },
       }],
     };
@@ -155,8 +155,8 @@ describe('one sticky PR report for direct Action calls', () => {
     const body = String(test.writes()[0]?.[2]?.body);
     expect(body).toContain('| Eval | Trials | Result |');
     expect(body).toContain('### Quality & token summary');
-    expect(body).toContain('| Eval | Verdict | Score | Duration | Tokens |');
-    expect(body).toContain('| skill-check | passed | 0.95 (threshold 0.80) | 120ms | 450 tokens (300 in / 150 out) |');
+    expect(body).toContain('| Eval | Model | Verdict | Score | Turns | Duration | Tokens |');
+    expect(body).toContain('| skill-check | gpt-4o | passed | 0.95 (threshold 0.80) | 4 | 120ms | 450 tokens (300 in / 150 out) |');
 
     const manyGroups = Array.from({ length: 40 }, (_, index) => ({
       identity: index.toString(16).padStart(64, '0'),
@@ -232,23 +232,23 @@ describe('one sticky PR report for direct Action calls', () => {
     const test = fixture();
     const baselineReport: Report = {
       ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'failed',
-      executed: 2, passed: 0, failed: 1, durationMs: 38_523,
+      executed: 2, passed: 0, failed: 1, turns: 8, durationMs: 38_523,
       tokens: { input: 71_752, output: 1_447, total: 73_199 },
       groups: [{
         identity: 'a'.repeat(64), name: 'pr-description', passed: false,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 0.9375, threshold: 1, durationMs: 38_523,
+        overallScore: 0.9375, threshold: 1, turns: 8, durationMs: 38_523,
         tokens: { input: 71_752, output: 1_447, total: 73_199 },
       }],
     };
     const candidateReport: Report = {
       ...report, suite: 'smoke', outcome: 'passed',
-      executed: 2, passed: 1, failed: 0, durationMs: 34_122,
+      executed: 2, passed: 1, failed: 0, turns: 6, durationMs: 34_122,
       tokens: { input: 72_017, output: 991, total: 73_008 },
       groups: [{
         identity: 'a'.repeat(64), name: 'pr-description', passed: true,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 1, threshold: 1, durationMs: 34_122,
+        overallScore: 1, threshold: 1, turns: 6, durationMs: 34_122,
         tokens: { input: 72_017, output: 991, total: 73_008 },
       }],
     };
@@ -258,7 +258,7 @@ describe('one sticky PR report for direct Action calls', () => {
     const body = String(test.writes()[0]?.[2]?.body);
     expect(body).toContain('**Baseline:** failed - 2 trials - [Evidence](https://github.com/o/r/actions/runs/1000/artifacts/125)');
     expect(body).toContain('### Baseline vs. Candidate comparison');
-    expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+    expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -2 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
 
     for (const badBaseline of [
       { report: { ...baselineReport, reportId: 'smoke' }, artifactId: 125 },

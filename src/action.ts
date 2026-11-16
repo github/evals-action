@@ -191,6 +191,7 @@ export async function runAction(): Promise<void> {
       report.code = 'vally-execution-failed';
       report.category = 'execution';
       delete report.executed;
+      delete report.turns;
       delete report.durationMs;
       delete report.tokens;
       if (executionInputs.command === 'run') {

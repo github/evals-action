@@ -266,25 +266,25 @@ describe('native evidence projection', () => {
     }), 'id', 1)).toMatchObject({ outcome: 'error', category: 'execution' });
     expect(() => parseNativeEvidence(format({ passed: true, score: 1, details: 'invalid' }), 'id', 0)).toThrow();
   });
-  it('extracts overallScore, threshold, durationMs, and token usage at the group level without leaking stimulus names', () => {
+  it('extracts overallScore, threshold, turns, durationMs, model, and token usage at the group level without leaking stimulus names', () => {
     const trial1 = {
       type: 'trial-result', runId: 'id', itemId: 'item-1', evalFilePath: '/private/eval.yaml',
-      evalName: 'skill-eval', variant: 'default', stimulus: 'private-case-alpha', status: 'success',
+      evalName: 'skill-eval', variant: 'default', model: 'gpt-4o', stimulus: 'private-case-alpha', status: 'success',
       durationMs: 120,
       gradeResult: { passed: true, score: 0.95 },
-      trajectory: { id: 't1', output: 'ok', metrics: { tokenUsage: { inputTokens: 300, outputTokens: 150, totalTokens: 450 } } },
+      trajectory: { id: 't1', output: 'ok', metrics: { turnCount: 3, tokenUsage: { inputTokens: 300, outputTokens: 150, totalTokens: 450 } } },
     };
     const trial2 = {
       type: 'trial-result', runId: 'id', itemId: 'item-2', evalFilePath: '/private/eval.yaml',
-      evalName: 'skill-eval', variant: 'default', stimulus: 'private-case-beta', status: 'success',
+      evalName: 'skill-eval', variant: 'default', model: 'gpt-4o', stimulus: 'private-case-beta', status: 'success',
       durationMs: 80,
       gradeResult: { passed: false, score: 0.5 },
-      trajectory: { id: 't2', output: 'partial', metrics: { tokenUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 } } },
+      trajectory: { id: 't2', output: 'partial', metrics: { turnCount: 2, tokenUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 } } },
     };
     const summary = {
       type: 'run-summary', runId: 'id', passed: true, hadExecutionErrors: false,
       evals: [{
-        evalFilePath: '/private/eval.yaml', variant: 'default', passed: true,
+        evalFilePath: '/private/eval.yaml', variant: 'default', model: 'gpt-4o', passed: true,
         scoringApplied: true, overallScore: 0.725, threshold: 0.7, stimuliRun: 2, stimuliTotal: 2,
       }],
     };
@@ -294,28 +294,33 @@ describe('native evidence projection', () => {
       executed: 2,
       passed: 1,
       failed: 0,
+      turns: 5,
       durationMs: 200,
       tokens: { input: 400, output: 200, total: 600 },
     });
     expect(parsed.groups?.[0]).toMatchObject({
       name: 'skill-eval',
+      model: 'gpt-4o',
       passed: true,
       trials: 2,
       overallScore: 0.725,
       threshold: 0.7,
+      turns: 5,
       durationMs: 200,
       tokens: { input: 400, output: 200, total: 600 },
     });
     expect(parsed.groups?.[0]).not.toHaveProperty('cases');
     expect(JSON.stringify(parsed)).not.toMatch(/private-case-alpha|private-case-beta/);
 
-    // Partial trial duration or token coverage omits group/top-level metrics rather than reporting incomplete totals.
+    // Partial trial duration, turn, or token coverage omits group/top-level metrics rather than reporting incomplete totals.
     const partialTrial2 = {
       ...trial2,
       durationMs: undefined,
       trajectory: { id: 't2', output: 'partial', metrics: { tokenUsage: { inputTokens: 100, totalTokens: 150 } } },
     };
     const partialParsed = parseNativeEvidence([trial1, partialTrial2, summary].map((row) => JSON.stringify(row)).join('\n'), 'id', 0);
+    expect(partialParsed.turns).toBeUndefined();
+    expect(partialParsed.groups?.[0]?.turns).toBeUndefined();
     expect(partialParsed.durationMs).toBeUndefined();
     expect(partialParsed.groups?.[0]?.durationMs).toBeUndefined();
     expect(partialParsed.tokens).toEqual({ total: 600 });
@@ -414,6 +419,7 @@ describe('real Vally CLI, built-in mock executor, no models', () => {
       ...(actual.result.executed !== undefined ? { executed: actual.result.executed } : {}),
       ...(actual.result.passed !== undefined ? { passed: actual.result.passed } : {}),
       ...(actual.result.failed !== undefined ? { failed: actual.result.failed } : {}),
+      ...(actual.result.turns !== undefined ? { turns: actual.result.turns } : {}),
       ...(actual.result.durationMs !== undefined ? { durationMs: actual.result.durationMs } : {}),
       ...(actual.result.tokens !== undefined ? { tokens: actual.result.tokens } : {}),
       ...(actual.result.nativeRunId !== undefined ? { nativeRunId: actual.result.nativeRunId } : {}),

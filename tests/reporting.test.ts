@@ -138,12 +138,13 @@ describe('minimal presentation projections', () => {
     };
     const rich = report({
       outcome: 'passed', executed: 2, passed: 1, failed: 0,
+      turns: 6,
       durationMs: 120,
       tokens: { input: 300, output: 150, total: 450 },
       groups: [{
-        identity: 'c'.repeat(64), name: 'rich-eval', passed: true,
+        identity: 'c'.repeat(64), name: 'rich-eval', model: 'gpt-4o', passed: true,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 0.95, threshold: 0.8, durationMs: 120,
+        overallScore: 0.95, threshold: 0.8, turns: 6, durationMs: 120,
         tokens: { input: 300, output: 150, total: 450 },
       }],
     });
@@ -151,11 +152,11 @@ describe('minimal presentation projections', () => {
     const parsed = parseStructuredReport(serialized, expectation);
     expect(parsed).toEqual(rich);
     const summary = renderSummary(parsed);
-    expect(summary).toContain('Duration: 120ms. Tokens: 450 (300 in / 150 out).');
+    expect(summary).toContain('Turns: 6. Duration: 120ms. Tokens: 450 (300 in / 150 out).');
     expect(summary).toContain('| Eval | Trials executed | Stimuli run | Skipped | Native verdict |');
     expect(summary).toContain('## Quality and token usage');
-    expect(summary).toContain('| Eval | Verdict | Score | Duration | Tokens |');
-    expect(summary).toContain('| rich-eval | passed | 0.95 (threshold 0.80) | 120ms | 450 tokens (300 in / 150 out) |');
+    expect(summary).toContain('| Eval | Model | Verdict | Score | Turns | Duration | Tokens |');
+    expect(summary).toContain('| rich-eval | gpt-4o | passed | 0.95 (threshold 0.80) | 6 | 120ms | 450 tokens (300 in / 150 out) |');
 
     // Enforces 25-group cap and UTF-8 byte budget on the quality table.
     const manyGroups = Array.from({ length: 30 }, (_, index) => ({
@@ -188,6 +189,7 @@ describe('minimal presentation projections', () => {
     const cjkGroups = Array.from({ length: 1000 }, (_, index) => ({
       identity: index.toString(16).padStart(64, '0'),
       name: `${'測'.repeat(220)}${index}`,
+      model: 'gpt-4o',
       passed: true,
       trials: 1,
       stimuliRun: 1,
@@ -195,6 +197,7 @@ describe('minimal presentation projections', () => {
       skipped: 0,
       overallScore: 0.95,
       threshold: 0.8,
+      turns: 3,
       durationMs: 10,
       tokens: { input: 5, output: 5, total: 10 },
     }));
@@ -203,6 +206,7 @@ describe('minimal presentation projections', () => {
       executed: 1000,
       passed: 1000,
       failed: 0,
+      turns: 3_000,
       durationMs: 10_000,
       tokens: { input: 5_000, output: 5_000, total: 10_000 },
       groups: cjkGroups,
@@ -210,14 +214,17 @@ describe('minimal presentation projections', () => {
     const cjkSerialized = structuredReport(cjkReport);
     expect(Buffer.byteLength(cjkSerialized, 'utf8')).toBeLessThanOrEqual(1_000_000);
     const cjkParsed = parseStructuredReport(cjkSerialized, expectation);
+    expect(cjkParsed.turns).toBe(3_000);
     expect(cjkParsed.durationMs).toBe(10_000);
     expect(cjkParsed.tokens).toEqual({ input: 5_000, output: 5_000, total: 10_000 });
     expect(cjkParsed.groups).toHaveLength(1000);
     expect(cjkParsed.groups?.[0]?.overallScore).toBeUndefined();
+    expect(cjkParsed.groups?.[0]?.turns).toBeUndefined();
 
     const escapedControlGroups = Array.from({ length: 1000 }, (_, i) => ({
       identity: i.toString(16).padStart(64, '0'),
       name: `${'\u0001'.repeat(134)}${i}`,
+      model: 'gpt-4o',
       passed: true,
       trials: 1,
       stimuliRun: 1,
@@ -225,6 +232,7 @@ describe('minimal presentation projections', () => {
       skipped: 0,
       overallScore: 0.9,
       threshold: 0.8,
+      turns: 3,
       durationMs: 10,
       tokens: { input: 5, output: 5, total: 10 },
     }));
@@ -233,6 +241,7 @@ describe('minimal presentation projections', () => {
       executed: 1000,
       passed: 1000,
       failed: 0,
+      turns: 3_000,
       durationMs: 10_000,
       tokens: { input: 5_000, output: 5_000, total: 10_000 },
       groups: escapedControlGroups,
@@ -242,6 +251,8 @@ describe('minimal presentation projections', () => {
     const escapedControlParsed = parseStructuredReport(escapedControlSerialized, expectation);
     expect(escapedControlParsed.groups).toHaveLength(1000);
     expect(escapedControlParsed.groups?.[0]?.name).toBeUndefined();
+    expect(escapedControlParsed.groups?.[0]?.model).toBeUndefined();
+    expect(escapedControlParsed.turns).toBe(3_000);
     expect(escapedControlParsed.durationMs).toBe(10_000);
     expect(escapedControlParsed.tokens).toEqual({ input: 5_000, output: 5_000, total: 10_000 });
 
@@ -265,6 +276,8 @@ describe('minimal presentation projections', () => {
       groups: [{ ...rich.groups![0], ...overrides }],
     });
     for (const invalid of [
+      JSON.stringify({ ...rich, turns: -1 }),
+      JSON.stringify({ ...rich, turns: 999 }),
       JSON.stringify({ ...rich, durationMs: -1 }),
       JSON.stringify({ ...rich, durationMs: 999 }),
       JSON.stringify({ ...rich, tokens: { total: -1 } }),
@@ -272,6 +285,7 @@ describe('minimal presentation projections', () => {
       JSON.stringify({ ...rich, tokens: { input: 300, output: 200, total: 450 } }),
       JSON.stringify({ ...rich, tokens: { input: 300, output: 150, total: 999 } }),
       JSON.stringify({ ...rich, tokens: { total: 10, extra: 1 } }),
+      JSON.stringify({ ...report(), turns: 2, groups: [] }),
       JSON.stringify({ ...report(), durationMs: 10, groups: [] }),
       JSON.stringify({ ...report(), tokens: { total: 10 }, groups: [] }),
       JSON.stringify({
@@ -288,15 +302,26 @@ describe('minimal presentation projections', () => {
           },
         ],
       }),
+      badGroup({ model: 'bad\nmodel' }),
+      badGroup({ model: 'm'.repeat(129) }),
       badGroup({ overallScore: 1.2 }),
       badGroup({ overallScore: -0.1 }),
       badGroup({ threshold: 2 }),
       badGroup({ overallScore: 0.9, threshold: undefined }),
+      badGroup({ turns: -1 }),
       badGroup({ durationMs: -5 }),
       badGroup({ tokens: { input: -1, output: 5, total: 4 } }),
       badGroup({ tokens: { input: 10, total: 10 } }),
       badGroup({ tokens: { input: 6, output: 6, total: 10 } }),
       badGroup({ cases: [{ stimulus: 'not-allowed', passed: true }] }),
+      JSON.stringify({
+        ...report({ outcome: 'not-run', executed: 0, passed: 0, failed: 0 }),
+        groups: [{
+          identity: 'c'.repeat(64), name: 'skipped-eval', passed: true,
+          trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1,
+          turns: 1,
+        }],
+      }),
       JSON.stringify({
         ...report({ outcome: 'not-run', executed: 0, passed: 0, failed: 0 }),
         groups: [{
@@ -321,23 +346,25 @@ describe('minimal presentation projections', () => {
     const baseline = report({
       reportId: 'evals-baseline',
       outcome: 'failed', executed: 2, passed: 0, failed: 1,
+      turns: 8,
       durationMs: 38_523,
       tokens: { input: 71_752, output: 1_447, total: 73_199 },
       groups: [{
         identity: 'c'.repeat(64), name: 'pr-description', passed: false,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 0.9375, threshold: 1, durationMs: 38_523,
+        overallScore: 0.9375, threshold: 1, turns: 8, durationMs: 38_523,
         tokens: { input: 71_752, output: 1_447, total: 73_199 },
       }],
     });
     const candidate = report({
       outcome: 'passed', executed: 2, passed: 1, failed: 0,
+      turns: 6,
       durationMs: 34_122,
       tokens: { input: 72_017, output: 991, total: 73_008 },
       groups: [{
         identity: 'c'.repeat(64), name: 'pr-description', passed: true,
         trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
-        overallScore: 1, threshold: 1, durationMs: 34_122,
+        overallScore: 1, threshold: 1, turns: 6, durationMs: 34_122,
         tokens: { input: 72_017, output: 991, total: 73_008 },
       }],
     });
@@ -346,9 +373,10 @@ describe('minimal presentation projections', () => {
     expect(summary).toContain('| Outcome | failed | passed | fixed |');
     expect(summary).toContain('| Passed | 0 | 1 | +1 |');
     expect(summary).toContain('| Failed | 1 | 0 | -1 |');
+    expect(summary).toContain('| Turns | 8 | 6 | -2 |');
     expect(summary).toContain('| Duration | 38523ms | 34122ms | -4401ms (-11.4%) |');
     expect(summary).toContain('| Tokens | 73199 tokens (71752 in / 1447 out) | 73008 tokens (72017 in / 991 out) | -191 tokens (-0.3%; out: -456 / -31.5%) |');
-    expect(summary).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+    expect(summary).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -2 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
 
     expect(formatSignedCount(undefined, 1)).toBe('-');
     expect(formatSignedCount(2, 2)).toBe('0');
@@ -372,8 +400,12 @@ describe('minimal presentation projections', () => {
     expect(classifyGroupTransition(candGroup, baseGroup)).toBe('regressed');
     expect(classifyGroupTransition({ ...candGroup, overallScore: 0.8 }, { ...candGroup, overallScore: 0.95 })).toBe('improved-score');
     expect(classifyGroupTransition({ ...candGroup, overallScore: 0.95 }, { ...candGroup, overallScore: 0.8 })).toBe('regressed');
+    expect(classifyGroupTransition({ ...candGroup, overallScore: 0.9 }, { ...candGroup, overallScore: 0.9002 })).toBe('unchanged');
     expect(classifyGroupTransition({ ...candGroup, tokens: { total: 200 } }, { ...candGroup, tokens: { total: 100 } })).toBe('reduced-tokens');
     expect(classifyGroupTransition({ ...candGroup, tokens: { total: 100 } }, { ...candGroup, tokens: { total: 200 } })).toBe('increased-tokens');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { input: 100, output: 100, total: 200 } }, { ...candGroup, tokens: { input: 250, output: 80, total: 330 } })).toBe('increased-tokens');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { input: 100, output: 100, total: 200 } }, { ...candGroup, tokens: { input: 120, output: 80, total: 200 } })).toBe('reduced-tokens');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { input: 100, output: 80, total: 200 } }, { ...candGroup, tokens: { input: 80, output: 100, total: 200 } })).toBe('increased-tokens');
     expect(classifyGroupTransition({ ...candGroup, tokens: { total: 100 } }, { ...candGroup, tokens: { total: 100 } })).toBe('unchanged');
 
     expect(renderComparisonSection('### Compare', baseline, candidate, 25, 0)).toBe('');
@@ -388,10 +420,10 @@ describe('minimal presentation projections', () => {
     expect(unchangedSummary).toContain('| Duration | 34122ms | 34122ms | - |');
     const otherTransition = renderComparisonSection('### Compare', report({ outcome: 'error' }), report({ outcome: 'cancelled' }));
     expect(otherTransition).toContain('| Outcome | error | cancelled | error -> cancelled |');
-    const tightBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 380);
+    const tightBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 410);
     expect(tightBudget).toContain('| Outcome | failed | passed | fixed |');
     expect(tightBudget).not.toContain('| pr-description |');
-    const rowOverflowBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 460);
+    const rowOverflowBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 510);
     expect(rowOverflowBudget).toContain('| Outcome | failed | passed | fixed |');
     expect(rowOverflowBudget).not.toContain('| pr-description |');
   });
