@@ -304,6 +304,52 @@ describe('one sticky PR report for direct Action calls', () => {
     expect(mixedBody.indexOf('<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong>')).toBeGreaterThan(hrIndex);
     expect(mixedBody).toContain('| Outcome | failed | failed (🛑 No ship) | regressed |');
 
+    // Zero-trial baseline with failing candidate classifies as No ship, and skipped scenarios in unchanged passing are reported accurately
+    const zeroBase: Report = {
+      ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'not-run', executed: 0, passed: 0, failed: 0,
+      groups: [
+        { identity: '1'.repeat(64), name: 'failed-cand', model: 'claude-haiku-5.5', passed: true, trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1 },
+        { identity: '2'.repeat(64), name: 'partial-skip', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 2, skipped: 1 },
+        { identity: '3'.repeat(64), name: 'other-pass', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 },
+      ],
+    };
+    const zeroCand: Report = {
+      ...report, suite: 'smoke', outcome: 'failed', executed: 3, passed: 2, failed: 1,
+      groups: [
+        { identity: '1'.repeat(64), name: 'failed-cand', model: 'claude-haiku-5.5', passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 0.25, threshold: 1 },
+        { identity: '2'.repeat(64), name: 'partial-skip', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 2, skipped: 1 },
+        { identity: '3'.repeat(64), name: 'other-pass', model: 'claude-haiku-5.5', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 },
+      ],
+    };
+    const zeroTest = fixture();
+    expect(await postReport(zeroTest.client, context, zeroCand, 123, undefined, { report: zeroBase, artifactId: 125 })).toBe('created');
+    const zeroBody = String(zeroTest.writes()[0]?.[2]?.body);
+    expect(zeroBody).toContain('| **failed-cand** | 🛑 **No ship** | Failed in candidate (baseline not-run) · score 0.25 |');
+    expect(zeroBody).toContain('2 passing (2/3 scenarios)');
+    expect(zeroBody).toContain('Passed (1 skipped) on `claude-haiku-5.5`');
+
+    // 100 ampersand-heavy unchanged comparison groups remain under the 60 KB comment budget
+    const heavyGroups = Array.from({ length: 100 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `${'&'.repeat(90)}-${index}`,
+      model: 'claude-haiku-5.5',
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 1,
+      threshold: 1,
+      turns: 2,
+      durationMs: 50,
+      tokens: { input: 20, output: 30, total: 50 },
+    }));
+    const heavyBase: Report = { ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'passed', executed: 100, passed: 100, failed: 0, turns: 200, durationMs: 5000, tokens: { input: 2000, output: 3000, total: 5000 }, groups: heavyGroups };
+    const heavyCand: Report = { ...report, suite: 'smoke', outcome: 'passed', executed: 100, passed: 100, failed: 0, turns: 200, durationMs: 5000, tokens: { input: 2000, output: 3000, total: 5000 }, groups: heavyGroups };
+    const heavyTest = fixture();
+    expect(await postReport(heavyTest.client, context, heavyCand, 123, undefined, { report: heavyBase, artifactId: 125 })).toBe('created');
+    expect(Buffer.byteLength(String(heavyTest.writes()[0]?.[2]?.body), 'utf8')).toBeLessThanOrEqual(60_000);
+
     for (const badBaseline of [
       { report: { ...baselineReport, reportId: 'smoke' }, artifactId: 125 },
       { report: { ...baselineReport, command: 'lint' }, artifactId: 125 },

@@ -252,19 +252,33 @@ export function renderComment(
     output += 'Further groups are available in the structured artifact.\n\n';
   }
   if (unchangedPassing.length > 0) {
-    const totalScenarios = unchangedPassing.reduce((sum, entry) => sum + (entry.candGroup?.stimuliRun ?? 0), 0);
-    const unchangedBlock =
+    const totalRun = unchangedPassing.reduce((sum, entry) => sum + (entry.candGroup?.stimuliRun ?? 0), 0);
+    const totalStimuli = unchangedPassing.reduce((sum, entry) => sum + (entry.candGroup?.stimuliTotal ?? 0), 0);
+    const unchangedHeader =
       `<details>\n` +
-      `<summary>📋 <strong>Unchanged evals &amp; run configuration</strong> — ${unchangedPassing.length} passing (${totalScenarios}/${totalScenarios} scenarios)</summary>\n\n` +
-      '| Skill | Status | Scenarios (Before → After) | Details |\n| --- | --- | --- | --- |\n' +
-      unchangedPassing.slice(0, 25).map((entry) => {
-        const b = entry.baseGroup;
-        const c = entry.candGroup;
-        const model = c?.model ? escapeMarkdown(c.model) : b?.model ? escapeMarkdown(b.model) : 'default';
-        return `| \`${entry.name}\` | ✅ Unchanged | ${b ? `${b.stimuliRun}/${b.stimuliTotal}` : '-'} → ${c ? `${c.stimuliRun}/${c.stimuliTotal}` : '-'} | All scenarios passing on \`${model}\` |`;
-      }).join('\n') + '\n\n' +
-      `</details>\n\n`;
-    if (Buffer.byteLength(output + unchangedBlock, 'utf8') <= 40_000) output += unchangedBlock;
+      `<summary>📋 <strong>Unchanged evals &amp; run configuration</strong> — ${unchangedPassing.length} passing (${totalRun}/${totalStimuli} scenarios)</summary>\n\n` +
+      '| Skill | Status | Scenarios (Before → After) | Details |\n| --- | --- | --- | --- |\n';
+    const unchangedFooter = '\n\nFurther groups are available in the structured artifact.\n\n</details>\n\n';
+    const unchangedClose = '\n\n</details>\n\n';
+    const unchangedRows: string[] = [];
+    let usedUnchanged = Buffer.byteLength(output + unchangedHeader + unchangedClose, 'utf8');
+    for (const entry of unchangedPassing.slice(0, 25)) {
+      const b = entry.baseGroup;
+      const c = entry.candGroup;
+      const model = c?.model ? escapeMarkdown(c.model) : b?.model ? escapeMarkdown(b.model) : 'default';
+      const detail = c && c.skipped > 0
+        ? `Passed (${c.skipped} skipped) on \`${model}\``
+        : `All scenarios passing on \`${model}\``;
+      const row = `| \`${entry.name}\` | ✅ Unchanged | ${b ? `${b.stimuliRun}/${b.stimuliTotal}` : '-'} → ${c ? `${c.stimuliRun}/${c.stimuliTotal}` : '-'} | ${detail} |`;
+      const rowBytes = Buffer.byteLength((unchangedRows.length ? '\n' : '') + row, 'utf8');
+      if (usedUnchanged + rowBytes + Buffer.byteLength(unchangedFooter, 'utf8') > 38_000) break;
+      unchangedRows.push(row);
+      usedUnchanged += rowBytes;
+    }
+    if (unchangedRows.length > 0) {
+      output += unchangedHeader + unchangedRows.join('\n') +
+        (unchangedRows.length < unchangedPassing.length ? unchangedFooter : unchangedClose);
+    }
   }
 
   let telemetryBody =
@@ -273,12 +287,21 @@ export function renderComment(
       ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
     `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
     (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
-    `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n` +
-    (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
-      rows.slice(0, 100).map((group) =>
-        `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
-      ).join('\n') + '\n\n' +
-      (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '');
+    `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n`;
+
+  if (rows.length) {
+    const evalTableHeader = '| Eval | Trials | Result |\n| --- | ---: | --- |\n';
+    const evalRows: string[] = [];
+    for (const group of rows.slice(0, 25)) {
+      const evalRow = `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`;
+      if (Buffer.byteLength(output + telemetryBody + evalTableHeader + evalRows.join('\n') + '\n' + evalRow, 'utf8') > 46_000) break;
+      evalRows.push(evalRow);
+    }
+    if (evalRows.length > 0) {
+      telemetryBody += evalTableHeader + evalRows.join('\n') + '\n\n' +
+        (evalRows.length < rows.length ? `${rows.length - evalRows.length} further groups are in the structured artifact.\n\n` : '');
+    }
+  }
 
   if (rows.length && hasQualityDetails(rows)) {
     const maxQualityBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(output + telemetryBody, 'utf8')));

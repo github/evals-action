@@ -226,7 +226,7 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
   why: string;
 } {
   const transition = classifyGroupTransition(baseline, candidate);
-  if (!candidate || candidate.trials === 0 || (baseline && baseline.trials === 0)) {
+  if (!candidate || candidate.trials === 0) {
     return {
       verdict: '⚠️ Re-run',
       transition,
@@ -234,11 +234,21 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
       why: !candidate ? 'Eval removed from candidate run' : 'No trials executed (not-run)',
     };
   }
+  if (baseline && baseline.trials === 0 && candidate.passed) {
+    return {
+      verdict: '⚠️ Re-run',
+      transition,
+      changed: true,
+      why: 'Baseline had no trials executed (not-run)',
+    };
+  }
   const ship = candidate.passed && transition !== 'regressed';
   const verdict = ship ? '✅ Ship' : '🛑 No ship';
   const changed = transition !== 'unchanged';
   const parts: string[] = [];
-  if (transition === 'fixed') {
+  if (baseline && baseline.trials === 0 && !candidate.passed) {
+    parts.push('Failed in candidate (baseline not-run)');
+  } else if (transition === 'fixed') {
     parts.push('Fixed failing eval');
   } else if (transition === 'regressed') {
     parts.push(candidate.passed ? 'Score regressed' : 'Regressed to failing');
