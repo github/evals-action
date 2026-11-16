@@ -174,6 +174,7 @@ export function renderComment(
   const status = evaluation?.outcome ?? lint?.outcome ?? report.outcome;
   const rows = evaluation?.groups ?? [];
   const suite = evaluation?.suite;
+  const maxEvalRows = baseline ? 25 : 100;
   const detailsBody =
     (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
     (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
@@ -184,10 +185,10 @@ export function renderComment(
       (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
       (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
       (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
-        rows.slice(0, 100).map((group) =>
+        rows.slice(0, maxEvalRows).map((group) =>
           `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
         ).join('\n') + '\n\n' +
-        (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
+        (rows.length > maxEvalRows ? `${rows.length - maxEvalRows} further groups are in the structured artifact.\n\n` : '') : '') : '');
   if (!evaluation) return `# Evals: ${status}\n\n${detailsBody}`;
   if (!baseline) {
     let output = `# Evals: ${status}\n\n${detailsBody}`;

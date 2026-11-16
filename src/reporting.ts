@@ -248,10 +248,16 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
   const parts: string[] = [];
   if (baseline && baseline.trials === 0 && !candidate.passed) {
     parts.push('Failed in candidate (baseline not-run)');
+  } else if (!candidate.passed) {
+    if (transition === 'regressed' && baseline?.passed) parts.push('Regressed to failing');
+    else if (transition === 'regressed') parts.push('Still failing (score regressed)');
+    else if (transition === 'improved-score') parts.push('Still failing (score improved)');
+    else if (transition === 'added') parts.push('New eval failing');
+    else parts.push('Still failing');
   } else if (transition === 'fixed') {
     parts.push('Fixed failing eval');
   } else if (transition === 'regressed') {
-    parts.push(candidate.passed || baseline?.passed === false ? 'Score regressed' : 'Regressed to failing');
+    parts.push('Score regressed');
   } else if (transition === 'improved-score') {
     parts.push('Improved score');
   } else if (transition === 'reduced-tokens') {
@@ -259,9 +265,9 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
   } else if (transition === 'increased-tokens') {
     parts.push('Increased token usage at parity');
   } else if (transition === 'added') {
-    parts.push(candidate.passed ? 'New eval passing' : 'New eval failing');
+    parts.push('New eval passing');
   } else {
-    parts.push(candidate.passed ? `Passing (${candidate.stimuliRun}/${candidate.stimuliTotal} scenarios)` : 'Still failing');
+    parts.push(`Passing (${candidate.stimuliRun}/${candidate.stimuliTotal} scenarios)`);
   }
   if (baseline?.overallScore !== undefined && candidate.overallScore !== undefined) {
     parts.push(`score ${baseline.overallScore.toFixed(2)} → ${candidate.overallScore.toFixed(2)} (${formatScoreDelta(baseline.overallScore, candidate.overallScore)})`);
@@ -289,13 +295,15 @@ export function classifyGroupVerdict(baseline: ReportGroup | undefined, candidat
 }
 
 export function renderVerdictSummaryTable(
-  baseline: Report | undefined, candidate: Report, maxGroups = 25,
+  baseline: Report | undefined, candidate: Report, maxGroups = 25, maxBytes = 16_000,
 ): { overallVerdict: '✅ Ship' | '🛑 No ship' | '⚠️ Re-run'; entries: GroupVerdictEntry[]; markdown: string } {
   const baseGroups = baseline?.groups ?? [];
   const candGroups = candidate.groups ?? [];
   const baseMap = new Map(baseGroups.map((group) => [group.identity, group]));
   const candMap = new Map(candGroups.map((group) => [group.identity, group]));
   const keys = [...new Set([...baseMap.keys(), ...candMap.keys()])];
+  const baseIncomplete = baseline !== undefined && ['error', 'not-run', 'cancelled'].includes(baseline.outcome);
+  const candIncomplete = ['error', 'not-run', 'cancelled'].includes(candidate.outcome);
   const severityOrder: Record<'🛑 No ship' | '⚠️ Re-run' | '✅ Ship', number> = {
     '🛑 No ship': 0,
     '⚠️ Re-run': 1,
@@ -306,12 +314,17 @@ export function renderVerdictSummaryTable(
       const baseGroup = baseMap.get(key);
       const candGroup = candMap.get(key);
       const name = escapeMarkdown((candGroup ?? baseGroup)!.name ?? (candGroup ?? baseGroup)!.identity.slice(0, 12));
-      const { verdict, transition, changed, why } = classifyGroupVerdict(baseGroup, candGroup);
+      let { verdict, transition, changed, why } = classifyGroupVerdict(baseGroup, candGroup);
+      if (verdict !== '🛑 No ship' && (baseIncomplete || candIncomplete)) {
+        verdict = '⚠️ Re-run';
+        changed = true;
+        if (baseIncomplete && !baseGroup) why = 'Baseline did not complete';
+        else if (candIncomplete) why = 'Candidate run did not complete';
+      }
       return { key, name, baseGroup, candGroup, verdict, transition, changed, why };
     })
     .sort((a, b) => severityOrder[a.verdict] - severityOrder[b.verdict]);
 
-  const baseIncomplete = baseline !== undefined && ['error', 'not-run', 'cancelled'].includes(baseline.outcome);
   if (entries.length === 0) {
     const overallVerdict = candidate.outcome === 'failed'
       ? '🛑 No ship'
@@ -321,21 +334,32 @@ export function renderVerdictSummaryTable(
     return { overallVerdict, entries, markdown: '' };
   }
   let hasNoShip = candidate.outcome === 'failed';
-  let hasRerun = ['error', 'not-run', 'cancelled'].includes(candidate.outcome) || baseIncomplete;
+  let hasRerun = candIncomplete || baseIncomplete;
   for (const entry of entries) {
     if (entry.verdict === '🛑 No ship') hasNoShip = true;
     if (entry.verdict === '⚠️ Re-run') hasRerun = true;
   }
   const overallVerdict = hasNoShip ? '🛑 No ship' : hasRerun ? '⚠️ Re-run' : '✅ Ship';
-  const rows = entries.slice(0, maxGroups).map((entry) => {
+  if (maxBytes <= 0) return { overallVerdict, entries, markdown: '' };
+  const header = '| Skill | Verdict | Why |\n| --- | --- | --- |\n';
+  const footer = '\n\nFurther groups are available in the structured artifact.';
+  const footerBytes = Buffer.byteLength(footer, 'utf8');
+  let usedBytes = Buffer.byteLength(header, 'utf8');
+  const rows: string[] = [];
+  const limit = Math.min(entries.length, maxGroups);
+  for (let index = 0; index < limit; index++) {
+    const entry = entries[index]!;
     const boldVerdict = entry.verdict.replace(/^(✅|🛑|⚠️)\s+(.*)$/u, '$1 **$2**');
-    return `| **${entry.name}** | ${boldVerdict} | ${entry.why} |`;
-  });
-  const markdown =
-    '| Skill | Verdict | Why |\n' +
-    '| --- | --- | --- |\n' +
-    rows.join('\n') +
-    (entries.length > rows.length ? '\n\nFurther groups are available in the structured artifact.' : '');
+    const row = `| **${entry.name}** | ${boldVerdict} | ${entry.why} |`;
+    const rowBytes = Buffer.byteLength((rows.length ? '\n' : '') + row, 'utf8');
+    const needsFooter = index + 1 < entries.length;
+    if (usedBytes + rowBytes + (needsFooter ? footerBytes : 0) > maxBytes) break;
+    rows.push(row);
+    usedBytes += rowBytes;
+  }
+  const markdown = rows.length === 0
+    ? ''
+    : header + rows.join('\n') + (rows.length < entries.length ? footer : '');
   return { overallVerdict, entries, markdown };
 }
 

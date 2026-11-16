@@ -265,6 +265,53 @@ describe('one sticky PR report for direct Action calls', () => {
     expect(body).toContain('| Outcome | failed | passed (✅ Ship) | fixed |');
     expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -2 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
 
+    // Mixed verdicts (No ship, Re-run, still-failing token deltas) and 100-group comment byte budget
+    const mixedBase: Report = {
+      ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'failed',
+      executed: 2, passed: 1, failed: 1, turns: 4, durationMs: 20_000,
+      tokens: { input: 40_000, output: 1_000, total: 41_000 },
+      groups: [
+        { identity: '1'.repeat(64), name: 'still-failing', passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 0.5, threshold: 1, turns: 2, durationMs: 10_000, tokens: { input: 20_000, output: 600, total: 20_600 } },
+        { identity: '2'.repeat(64), name: 'skipped-cand', passed: true, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 1, threshold: 1, turns: 2, durationMs: 10_000, tokens: { input: 20_000, output: 400, total: 20_400 } },
+      ],
+    };
+    const mixedCand: Report = {
+      ...report, suite: 'smoke', outcome: 'failed',
+      executed: 1, passed: 0, failed: 1, turns: 2, durationMs: 9_000,
+      tokens: { input: 20_000, output: 500, total: 20_500 },
+      groups: [
+        { identity: '1'.repeat(64), name: 'still-failing', passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0, overallScore: 0.5, threshold: 1, turns: 2, durationMs: 9_000, tokens: { input: 20_000, output: 500, total: 20_500 } },
+        { identity: '2'.repeat(64), name: 'skipped-cand', passed: true, trials: 0, stimuliRun: 0, stimuliTotal: 1, skipped: 1 },
+      ],
+    };
+    const mixedTest = fixture();
+    expect(await postReport(mixedTest.client, context, mixedCand, 123, undefined, { report: mixedBase, artifactId: 125 })).toBe('created');
+    const mixedBody = String(mixedTest.writes()[0]?.[2]?.body);
+    expect(mixedBody).toContain('# Evals: 🛑 No ship (failed)');
+    expect(mixedBody).toContain('| **still-failing** | 🛑 **No ship** | Still failing · score 0.50 → 0.50 (0.00) · -16.7% output tokens (-100) · -10.0% duration |');
+    expect(mixedBody).toContain('| **skipped-cand** | ⚠️ **Re-run** | No trials executed (not-run) |');
+
+    const heavyGroups = Array.from({ length: 100 }, (_, index) => ({
+      identity: index.toString(16).padStart(64, '0'),
+      name: `${'&'.repeat(90)}-${index}`,
+      model: 'claude-haiku-5.5',
+      passed: true,
+      trials: 1,
+      stimuliRun: 1,
+      stimuliTotal: 1,
+      skipped: 0,
+      overallScore: 1,
+      threshold: 1,
+      turns: 2,
+      durationMs: 50,
+      tokens: { input: 20, output: 30, total: 50 },
+    }));
+    const heavyBase: Report = { ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'passed', executed: 100, passed: 100, failed: 0, turns: 200, durationMs: 5000, tokens: { input: 2000, output: 3000, total: 5000 }, groups: heavyGroups };
+    const heavyCand: Report = { ...report, suite: 'smoke', outcome: 'passed', executed: 100, passed: 100, failed: 0, turns: 200, durationMs: 5000, tokens: { input: 2000, output: 3000, total: 5000 }, groups: heavyGroups };
+    const heavyTest = fixture();
+    expect(await postReport(heavyTest.client, context, heavyCand, 123, undefined, { report: heavyBase, artifactId: 125 })).toBe('created');
+    expect(Buffer.byteLength(String(heavyTest.writes()[0]?.[2]?.body), 'utf8')).toBeLessThanOrEqual(60_000);
+
     for (const badBaseline of [
       { report: { ...baselineReport, reportId: 'smoke' }, artifactId: 125 },
       { report: { ...baselineReport, command: 'lint' }, artifactId: 125 },

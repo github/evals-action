@@ -254,14 +254,13 @@ Artifacts uploaded by older Action versions require explicit IDs/digests.
 
 ### Baseline vs. Candidate PR comparison
 
-To include a top-level **Ship / No-ship / Re-run verdict summary table** and
-collapsible per-eval and **Baseline vs. Candidate comparison** `<details>`
-sections (with actionable `🛑 No ship` and `⚠️ Re-run` sections ordered above
-`---` and passing evals, unchanged coverage, and full score/turns/duration/token
-telemetry below `---`) in the sticky PR comment, run the baseline arm with a
-distinct `report-id` (such as `evals-baseline`), run the candidate arm with
-`report-id: evals`, and pass `baseline-report-id: evals-baseline` to the
-`report` step:
+To include a top-level **Ship / No-ship / Re-run verdict summary table** (`✅ Ship`,
+`🛑 No ship`, `⚠️ Re-run`) and a collapsible **Telemetry, token deltas & run
+evidence** `<details>` section (`Baseline vs. Candidate comparison`, `Quality &
+token summary`, and evidence links) in the sticky PR comment, run the baseline
+arm with a distinct `report-id` (such as `evals-baseline`), run the candidate
+arm with `report-id: evals`, and pass `baseline-report-id: evals-baseline` to
+the `report` step:
 
 ```yaml
   report:
