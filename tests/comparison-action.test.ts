@@ -99,6 +99,16 @@ it('emits authenticated context without acquisition, execution or publication', 
   expect(mocks.request.mock.calls.every(([method]) => method === 'GET')).toBe(true);
 });
 
+it.each(['', '   '])('names the comparison github-token input when its value is empty: %j', async (token) => {
+  mocks.inputs['github-token'] = token;
+  await expect(runComparisonAction()).rejects.toMatchObject({
+    code: 'comparison-github-token-required', message: 'comparison-github-token-required',
+  });
+  expect(mocks.request).not.toHaveBeenCalled();
+  expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.native).not.toHaveBeenCalled();
+});
+
 it('preserves fixed recovery hints but keeps arbitrary error text private', () => {
   const hint = 'Missing selection.json at the artifact root; use a flat download layout with merge-multiple: true.';
   expect(comparisonFailureMessage(new ComparisonError('comparison-selection-artifact-missing', hint)))
@@ -115,7 +125,7 @@ it('rejects invalid commands, execution credentials on controls, partial paid re
   ]) {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     Object.defineProperty(process, 'arch', { value: 'x64' });
-    mocks.inputs = { 'source-workflow': context.sourceWorkflow, ...input };
+    mocks.inputs = { 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, ...input };
     await expect(runComparisonAction()).rejects.toThrow();
   }
   Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -126,7 +136,7 @@ it('rejects invalid commands, execution credentials on controls, partial paid re
 
 it('reports only exact trusted selection and producing attempt and posts missing arms as incomplete', async () => {
   await writeFile(join(root, 'selection.json'), JSON.stringify(selection));
-  mocks.inputs = { command: 'report', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+  mocks.inputs = { command: 'report', 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
     selection: JSON.stringify(selection), 'producing-attempt': '2', 'artifact-directory': root };
   await runComparisonAction();
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'posted');
@@ -145,7 +155,7 @@ it('rejects unknown entries, missing billing credential and mutable Vally versio
   Object.defineProperty(process, 'platform', { value: 'linux' });
   Object.defineProperty(process, 'arch', { value: 'x64' });
   await mkdir(join(root, 'candidate'));
-  const baseline = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+  const baseline = { command: 'run', 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
     selection: JSON.stringify(selection), 'producing-attempt': '2', 'comparison-id': 'skill-abc',
     'working-directory': 'candidate', 'vally-version': '0.21.0', 'copilot-token': 'synthetic' };
   for (const change of [{ 'comparison-id': 'not-selected' }, { 'copilot-token': '' }, { 'vally-version': 'latest' }]) {
@@ -160,7 +170,7 @@ it('rejects unknown entries, missing billing credential and mutable Vally versio
 it.each(['missing', '..'])('reports invalid working-directory %s with a fixed safe setup code', async (workingDirectory) => {
   Object.defineProperty(process, 'platform', { value: 'linux' });
   Object.defineProperty(process, 'arch', { value: 'x64' });
-  mocks.inputs = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+  mocks.inputs = { command: 'run', 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
     selection: JSON.stringify(selection), 'producing-attempt': '2', 'comparison-id': 'skill-abc',
     'working-directory': workingDirectory, 'vally-version': '0.21.0', 'copilot-token': 'synthetic' };
   await expect(runComparisonAction()).rejects.toMatchObject({
@@ -175,7 +185,7 @@ it.each(['resolution', 'acquisition'] as const)('reports Vally %s failures witho
   Object.defineProperty(process, 'platform', { value: 'linux' });
   Object.defineProperty(process, 'arch', { value: 'x64' });
   await mkdir(join(root, 'candidate'));
-  mocks.inputs = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
+  mocks.inputs = { command: 'run', 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(context),
     selection: JSON.stringify(selection), 'producing-attempt': '2', 'comparison-id': 'skill-abc',
     'working-directory': 'candidate', 'vally-version': '0.21.0', 'copilot-token': 'synthetic' };
   (phase === 'resolution' ? mocks.release : mocks.acquire).mockRejectedValueOnce(new Error('SECRET_PRIVATE_EXCEPTION'));
@@ -767,7 +777,7 @@ it('qualifies a caller-mapped non-marketplace layout with native Before/After an
     if (path === `/repos/o/r/git/commits/${merge}`) return { sha: merge, parents: [{ sha: firstParent }, { sha: head }] };
     return priorRequest(method, path);
   });
-  mocks.inputs = { command: 'run', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(ctx),
+  mocks.inputs = { command: 'run', 'github-token': 'read-token', 'source-workflow': context.sourceWorkflow, context: JSON.stringify(ctx),
     selection: JSON.stringify(selected), 'producing-attempt': '2', 'comparison-id': entry.id,
     'working-directory': 'candidate', 'vally-version': '0.21.0', 'copilot-token': 'synthetic-unused' };
   // The host is Windows; execution support is Linux-only, but this model-free control exercises

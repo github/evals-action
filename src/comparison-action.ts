@@ -258,6 +258,7 @@ export async function runComparisonAction(): Promise<void> {
   if (command === 'run' && (process.platform !== 'linux' || process.arch !== 'x64')) {
     throw new ComparisonError('comparison-requires-linux-x64');
   }
+  if (!token) throw new ComparisonError('comparison-github-token-required');
   const api = githubClient(token, process.env.RUNNER_TEMP!);
   const payload = parse(await readFile(process.env.GITHUB_EVENT_PATH!, 'utf8'));
   const producing = core.getInput('producing-attempt').trim() || process.env.GITHUB_RUN_ATTEMPT;
