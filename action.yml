@@ -46,6 +46,12 @@ inputs:
     description: Optional lint artifact override, paired with lint-artifact-digest. Otherwise discovered alongside the run. Supports the shared report ID or legacy prefix plus -lint; report command only.
   lint-artifact-digest:
     description: SHA-256 digest for the optional companion lint artifact; report command only.
+  baseline-report-id:
+    description: Optional baseline report identity for report mode. Discovers the matching current-run/attempt run artifact unless baseline-artifact-id is set.
+  baseline-artifact-id:
+    description: Optional baseline run artifact ID override for report mode, paired with baseline-artifact-digest.
+  baseline-artifact-digest:
+    description: SHA-256 digest for the optional baseline run artifact; report command only.
   upload-transcripts:
     description: Opt in to native JSONL and stdout/stderr logs, which may contain sensitive content.
     default: 'false'

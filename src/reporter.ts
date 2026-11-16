@@ -1,7 +1,7 @@
 import { parseDocument } from 'yaml';
 import { commentMarker, orderedBody, selectComment, type Comment, type CommentIdentity, type ReportOrder } from './comments.js';
 import { object } from './policy.js';
-import { escapeMarkdown, hasQualityDetails, renderQualitySection, type Report } from './reporting.js';
+import { escapeMarkdown, hasQualityDetails, renderComparisonSection, renderQualitySection, type Report } from './reporting.js';
 import { ReportingError, type GitHubClient } from './github.js';
 
 export const commentConcurrencyGroup = 'evals-${{ github.workflow_ref }}';
@@ -79,6 +79,7 @@ async function currentPull(client: GitHubClient, context: CommentContext, revisi
 export async function postReport(
   client: GitHubClient, context: CommentContext, report: Report, artifactId?: number,
   companion?: { report: Report; artifactId: number },
+  baseline?: { report: Report; artifactId: number },
 ): Promise<'created' | 'updated' | 'stale'> {
   positive(context.pullNumber); positive(context.runId);
   if (!/^[a-f0-9]{40}$/.test(report.revision)) throw new ReportingError('invalid-report-revision');
@@ -90,12 +91,24 @@ export async function postReport(
           companion.report.repository !== report.repository ||
           companion.report.revision !== report.revision ||
           companion.report.workflowRunId !== report.workflowRunId ||
-          companion.report.workflowRunAttempt !== report.workflowRunAttempt))) {
+          companion.report.workflowRunAttempt !== report.workflowRunAttempt)) ||
+        (baseline && (report.command !== 'run' || baseline.report.command !== 'run' ||
+          baseline.report.reportId.replace(/-(?:lint|run)$/, '') === context.reportId ||
+          baseline.report.repository !== report.repository ||
+          baseline.report.revision !== report.revision ||
+          baseline.report.workflowRunId !== report.workflowRunId ||
+          baseline.report.workflowRunAttempt !== report.workflowRunAttempt))) {
     throw new ReportingError('inconsistent-report-evidence');
   }
   if (companion) {
     positive(companion.artifactId);
     if (companion.artifactId === artifactId) throw new ReportingError('inconsistent-report-evidence');
+  }
+  if (baseline) {
+    positive(baseline.artifactId);
+    if (baseline.artifactId === artifactId || baseline.artifactId === companion?.artifactId) {
+      throw new ReportingError('inconsistent-report-evidence');
+    }
   }
   const path = workflowPath(context);
   const source = object(await client.request('GET', `/repos/${context.repository}/contents/${path}?ref=${context.workflowSha}`));
@@ -124,7 +137,7 @@ export async function postReport(
   const decision = selectComment(comments, identity, context.order, author);
   if (decision.action === 'stale') return 'stale';
   const run = `https://github.com/${context.repository}/actions/runs/${context.runId}`;
-  const summary = renderComment(report, artifactId, companion, run);
+  const summary = renderComment(report, artifactId, companion, run, baseline);
   const body = orderedBody(identity, context.order, summary +
     `\n[Exact revision](https://github.com/${context.repository}/commit/${report.revision}) | [Workflow run](${run})` +
     '\n');
@@ -151,6 +164,7 @@ export async function postReport(
 
 export function renderComment(
   report: Report, artifactId: number | undefined, companion: { report: Report; artifactId: number } | undefined, run: string,
+  baseline?: { report: Report; artifactId: number },
 ): string {
   const lint = companion?.report ?? (report.command === 'lint' ? report : undefined);
   const evaluation = report.command === 'run' ? report : undefined;
@@ -163,6 +177,7 @@ export function renderComment(
       ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
     (evaluation ? `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
       (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
+      (baseline ? `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n` : '') +
       (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
       (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
       (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
@@ -170,8 +185,17 @@ export function renderComment(
           `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
         ).join('\n') + '\n\n' +
         (rows.length > 100 ? `${rows.length - 100} further groups are in the structured artifact.\n\n` : '') : '') : '');
-  if (!evaluation || !rows.length || !hasQualityDetails(rows)) return base;
-  const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(base, 'utf8')));
-  const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
-  return quality ? `${base}${quality}\n\n` : base;
+  if (!evaluation) return base;
+  let output = base;
+  if (rows.length && hasQualityDetails(rows)) {
+    const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
+    const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
+    if (quality) output = `${output}${quality}\n\n`;
+  }
+  if (baseline) {
+    const maxComparisonBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
+    const comparison = renderComparisonSection('### Baseline vs. Candidate comparison', baseline.report, evaluation, 25, maxComparisonBytes);
+    if (comparison) output = `${output}${comparison}\n\n`;
+  }
+  return output;
 }

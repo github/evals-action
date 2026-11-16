@@ -83,15 +83,27 @@ describe('public inputs', () => {
       command: 'report', 'working-directory': '', suite: '', 'report-id': 'evals-run',
       'source-artifact-id': '123', 'source-artifact-digest': 'a'.repeat(64),
       'lint-artifact-id': '124', 'lint-artifact-digest': 'b'.repeat(64),
-    })).toMatchObject({ lintArtifactId: 124, lintArtifactDigest: 'b'.repeat(64) });
+      'baseline-report-id': 'evals-baseline',
+      'baseline-artifact-id': '125', 'baseline-artifact-digest': 'c'.repeat(64),
+    })).toMatchObject({
+      lintArtifactId: 124, lintArtifactDigest: 'b'.repeat(64),
+      baselineReportId: 'evals-baseline', baselineArtifactId: 125, baselineArtifactDigest: 'c'.repeat(64),
+    });
     for (const extra of [
       { 'lint-artifact-id': '124' },
       { 'lint-artifact-digest': 'b'.repeat(64) },
       { 'lint-artifact-id': '123', 'lint-artifact-digest': 'b'.repeat(64) },
+      { 'baseline-artifact-id': '125' },
+      { 'baseline-artifact-digest': 'c'.repeat(64) },
+      { 'baseline-artifact-id': '123', 'baseline-artifact-digest': 'c'.repeat(64) },
+      { 'lint-artifact-id': '124', 'lint-artifact-digest': 'b'.repeat(64), 'baseline-artifact-id': '124', 'baseline-artifact-digest': 'c'.repeat(64) },
+      { 'baseline-report-id': 'evals' },
+      { 'baseline-report-id': '../bad' },
     ]) expect(() => parseValues({
       command: 'report', 'working-directory': '', suite: '', 'report-id': 'evals-run',
       'source-artifact-id': '123', 'source-artifact-digest': 'a'.repeat(64), ...extra,
     })).toThrow();
+    expect(() => parseValues({ command: 'run', 'baseline-report-id': 'evals-baseline' })).toThrow(/only valid for report/);
   });
   it('preserves leading and trailing path spaces rather than selecting different files', () => {
     const inputs = parseValues({

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  displayCount, escapeMarkdown, parseStructuredReport, renderMatrix, renderSummary, structuredReport, type Report,
+  classifyGroupTransition, displayCount, escapeMarkdown, formatDurationDelta, formatScoreDelta,
+  formatSignedCount, formatTokenDelta, parseStructuredReport, renderComparisonSection,
+  renderMatrix, renderSummary, structuredReport, type Report,
 } from '../src/reporting.js';
 import { commentMarker, orderedBody, selectComment } from '../src/comments.js';
 
@@ -314,6 +316,84 @@ describe('minimal presentation projections', () => {
     ]) {
       expect(() => parseStructuredReport(invalid, expectation)).toThrow();
     }
+  });
+  it('renders Baseline vs. Candidate comparison summaries, group transitions, and byte budgets', () => {
+    const baseline = report({
+      reportId: 'evals-baseline',
+      outcome: 'failed', executed: 2, passed: 0, failed: 1,
+      durationMs: 38_523,
+      tokens: { input: 71_752, output: 1_447, total: 73_199 },
+      groups: [{
+        identity: 'c'.repeat(64), name: 'pr-description', passed: false,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 0.9375, threshold: 1, durationMs: 38_523,
+        tokens: { input: 71_752, output: 1_447, total: 73_199 },
+      }],
+    });
+    const candidate = report({
+      outcome: 'passed', executed: 2, passed: 1, failed: 0,
+      durationMs: 34_122,
+      tokens: { input: 72_017, output: 991, total: 73_008 },
+      groups: [{
+        identity: 'c'.repeat(64), name: 'pr-description', passed: true,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 1, threshold: 1, durationMs: 34_122,
+        tokens: { input: 72_017, output: 991, total: 73_008 },
+      }],
+    });
+    const summary = renderSummary(candidate, baseline);
+    expect(summary).toContain('## Baseline vs. Candidate comparison');
+    expect(summary).toContain('| Outcome | failed | passed | fixed |');
+    expect(summary).toContain('| Passed | 0 | 1 | +1 |');
+    expect(summary).toContain('| Failed | 1 | 0 | -1 |');
+    expect(summary).toContain('| Duration | 38523ms | 34122ms | -4401ms (-11.4%) |');
+    expect(summary).toContain('| Tokens | 73199 tokens (71752 in / 1447 out) | 73008 tokens (72017 in / 991 out) | -191 tokens (-0.3%; out: -456 / -31.5%) |');
+    expect(summary).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+
+    expect(formatSignedCount(undefined, 1)).toBe('-');
+    expect(formatSignedCount(2, 2)).toBe('0');
+    expect(formatScoreDelta(undefined, 1)).toBe('-');
+    expect(formatScoreDelta(0.9, 0.9)).toBe('0.00');
+    expect(formatScoreDelta(0.9, 0.7)).toBe('-0.20');
+    expect(formatDurationDelta(undefined, 10)).toBe('-');
+    expect(formatDurationDelta(100, 100)).toBe('0ms (0.0%)');
+    expect(formatDurationDelta(100, 150)).toBe('+50ms (+50.0%)');
+    expect(formatTokenDelta(undefined, { total: 10 })).toBe('-');
+    expect(formatTokenDelta({ total: 100 }, { total: 100 })).toBe('0 tokens (0.0%)');
+    expect(formatTokenDelta({ total: 0 }, { total: 0 })).toBe('0 tokens (0.0%)');
+    expect(formatTokenDelta({ input: 50, output: 50, total: 100 }, { input: 60, output: 60, total: 120 }))
+      .toBe('+20 tokens (+20.0%; out: +10 / +20.0%)');
+
+    const baseGroup = baseline.groups![0]!;
+    const candGroup = candidate.groups![0]!;
+    expect(classifyGroupTransition(undefined, candGroup)).toBe('added');
+    expect(classifyGroupTransition(baseGroup, undefined)).toBe('removed');
+    expect(classifyGroupTransition({ ...baseGroup, trials: 0, stimuliRun: 0 }, candGroup)).toBe('not-run');
+    expect(classifyGroupTransition(candGroup, baseGroup)).toBe('regressed');
+    expect(classifyGroupTransition({ ...candGroup, overallScore: 0.8 }, { ...candGroup, overallScore: 0.95 })).toBe('improved-score');
+    expect(classifyGroupTransition({ ...candGroup, overallScore: 0.95 }, { ...candGroup, overallScore: 0.8 })).toBe('regressed');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { total: 200 } }, { ...candGroup, tokens: { total: 100 } })).toBe('reduced-tokens');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { total: 100 } }, { ...candGroup, tokens: { total: 200 } })).toBe('increased-tokens');
+    expect(classifyGroupTransition({ ...candGroup, tokens: { total: 100 } }, { ...candGroup, tokens: { total: 100 } })).toBe('unchanged');
+
+    expect(renderComparisonSection('### Compare', baseline, candidate, 25, 0)).toBe('');
+    expect(renderComparisonSection('### Compare', baseline, candidate, 25, 50)).toBe('');
+    const noGroups = renderComparisonSection('### Compare', { ...baseline, groups: [] }, { ...candidate, groups: [] });
+    expect(noGroups).toContain('| Outcome | failed | passed | fixed |');
+    expect(noGroups).not.toContain('| Eval | Baseline |');
+    const regressedSummary = renderComparisonSection('### Compare', candidate, baseline);
+    expect(regressedSummary).toContain('| Outcome | passed | failed | regressed |');
+    const unchangedSummary = renderComparisonSection('### Compare', candidate, { ...candidate, executed: 4 });
+    expect(unchangedSummary).toContain('| Outcome | passed | passed | unchanged |');
+    expect(unchangedSummary).toContain('| Duration | 34122ms | 34122ms | - |');
+    const otherTransition = renderComparisonSection('### Compare', report({ outcome: 'error' }), report({ outcome: 'cancelled' }));
+    expect(otherTransition).toContain('| Outcome | error | cancelled | error -> cancelled |');
+    const tightBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 380);
+    expect(tightBudget).toContain('| Outcome | failed | passed | fixed |');
+    expect(tightBudget).not.toContain('| pr-description |');
+    const rowOverflowBudget = renderComparisonSection('### Compare', baseline, candidate, 25, 460);
+    expect(rowOverflowBudget).toContain('| Outcome | failed | passed | fixed |');
+    expect(rowOverflowBudget).not.toContain('| pr-description |');
   });
 });
 

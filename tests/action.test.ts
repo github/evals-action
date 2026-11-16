@@ -374,8 +374,51 @@ it('reports wrong revision and rejects report-token on execution commands', asyn
   mocks.revision = 'a'.repeat(40);
   mocks.inputs['report-token'] = 'report';
   await runAction();
+  expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-all-or-report'));
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('discovers or downloads baseline run artifacts in report mode and passes them to postReport and summary', async () => {
+  const baseline = importedReport({
+    reportId: 'evals-baseline',
+    outcome: 'failed',
+    code: 'native-verdict-failed',
+    passed: 0,
+    failed: 1,
+    groups: [{ identity: 'c'.repeat(64), passed: false, trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0 }],
+  });
+  discovery({ 123: importedReport(), 126: baseline });
+  mocks.inputs['baseline-report-id'] = 'evals-baseline';
+  await runAction();
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.post).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ reportId: 'evals' }),
+    expect.objectContaining({ reportId: 'evals', outcome: 'passed' }),
+    123,
+    undefined,
+    { artifactId: 126, report: expect.objectContaining({ reportId: 'evals-baseline', outcome: 'failed' }) },
+  );
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('## Baseline vs. Candidate comparison'));
+
+  mocks.post.mockClear();
+  mocks.inputs = {
+    command: 'report',
+    'source-artifact-id': '123', 'source-artifact-digest': 'd'.repeat(64),
+    'baseline-artifact-id': '126', 'baseline-artifact-digest': 'd'.repeat(64),
+    'report-token': 'synthetic-report-token',
+  };
+  await runAction();
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.post).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ reportId: 'evals' }),
+    expect.objectContaining({ reportId: 'evals', outcome: 'passed' }),
+    123,
+    undefined,
+    { artifactId: 126, report: expect.objectContaining({ reportId: 'evals-baseline', outcome: 'failed' }) },
+  );
 });
 
 it('preserves successful, empty and cancelled native outcomes and refuses unsupported plan before acquisition', async () => {

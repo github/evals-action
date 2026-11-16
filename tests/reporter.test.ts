@@ -228,6 +228,49 @@ describe('one sticky PR report for direct Action calls', () => {
     })).rejects.toThrow('inconsistent-report-evidence');
     expect(test.request).not.toHaveBeenCalled();
   });
+  it('renders Baseline vs. Candidate comparison in the sticky PR comment and rejects inconsistent baseline evidence', async () => {
+    const test = fixture();
+    const baselineReport: Report = {
+      ...report, reportId: 'smoke-baseline', suite: 'smoke', outcome: 'failed',
+      executed: 2, passed: 0, failed: 1, durationMs: 38_523,
+      tokens: { input: 71_752, output: 1_447, total: 73_199 },
+      groups: [{
+        identity: 'a'.repeat(64), name: 'pr-description', passed: false,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 0.9375, threshold: 1, durationMs: 38_523,
+        tokens: { input: 71_752, output: 1_447, total: 73_199 },
+      }],
+    };
+    const candidateReport: Report = {
+      ...report, suite: 'smoke', outcome: 'passed',
+      executed: 2, passed: 1, failed: 0, durationMs: 34_122,
+      tokens: { input: 72_017, output: 991, total: 73_008 },
+      groups: [{
+        identity: 'a'.repeat(64), name: 'pr-description', passed: true,
+        trials: 2, stimuliRun: 2, stimuliTotal: 2, skipped: 0,
+        overallScore: 1, threshold: 1, durationMs: 34_122,
+        tokens: { input: 72_017, output: 991, total: 73_008 },
+      }],
+    };
+    expect(await postReport(test.client, context, candidateReport, 123, undefined, {
+      report: baselineReport, artifactId: 125,
+    })).toBe('created');
+    const body = String(test.writes()[0]?.[2]?.body);
+    expect(body).toContain('**Baseline:** failed - 2 trials - [Evidence](https://github.com/o/r/actions/runs/1000/artifacts/125)');
+    expect(body).toContain('### Baseline vs. Candidate comparison');
+    expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+
+    for (const badBaseline of [
+      { report: { ...baselineReport, reportId: 'smoke' }, artifactId: 125 },
+      { report: { ...baselineReport, command: 'lint' }, artifactId: 125 },
+      { report: { ...baselineReport, revision: 'f'.repeat(40) }, artifactId: 125 },
+      { report: baselineReport, artifactId: 123 },
+    ]) {
+      const badTest = fixture();
+      await expect(postReport(badTest.client, context, candidateReport, 123, undefined, badBaseline))
+        .rejects.toThrow('inconsistent-report-evidence');
+    }
+  });
   it('accepts the same report identity for separate lint/run jobs but still requires successful lint', async () => {
     const lint: Report = { ...report, command: 'lint', outcome: 'validated', executed: 0 };
     const test = fixture();

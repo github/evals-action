@@ -135,7 +135,131 @@ export function renderQualitySection(
   return Buffer.byteLength(result, 'utf8') <= maxBytes ? result : '';
 }
 
-export function renderSummary(report: Report): string {
+export function classifyGroupTransition(baseline?: ReportGroup, candidate?: ReportGroup): string {
+  if (!baseline) return 'added';
+  if (!candidate) return 'removed';
+  if (baseline.trials === 0 || candidate.trials === 0) return 'not-run';
+  if (!baseline.passed && candidate.passed) return 'fixed';
+  if (baseline.passed && !candidate.passed) return 'regressed';
+  if (baseline.overallScore !== undefined && candidate.overallScore !== undefined) {
+    if (candidate.overallScore > baseline.overallScore) return 'improved-score';
+    if (candidate.overallScore < baseline.overallScore) return 'regressed';
+  }
+  if (baseline.trials === candidate.trials && baseline.tokens !== undefined && candidate.tokens !== undefined) {
+    if (candidate.tokens.total < baseline.tokens.total ||
+        (baseline.tokens.output !== undefined && candidate.tokens.output !== undefined &&
+          candidate.tokens.output < baseline.tokens.output)) {
+      return 'reduced-tokens';
+    }
+    if (candidate.tokens.total > baseline.tokens.total) return 'increased-tokens';
+  }
+  return 'unchanged';
+}
+
+export function formatSignedCount(baseline?: number, candidate?: number): string {
+  if (baseline === undefined || candidate === undefined) return '-';
+  const delta = candidate - baseline;
+  return delta > 0 ? `+${delta}` : `${delta}`;
+}
+
+export function formatScoreDelta(baseline?: number, candidate?: number): string {
+  if (baseline === undefined || candidate === undefined) return '-';
+  const delta = candidate - baseline;
+  if (Math.abs(delta) < 0.0005) return '0.00';
+  return `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`;
+}
+
+export function formatDurationDelta(baselineMs?: number, candidateMs?: number): string {
+  if (baselineMs === undefined || candidateMs === undefined) return '-';
+  const delta = candidateMs - baselineMs;
+  if (delta === 0) return '0ms (0.0%)';
+  const sign = delta > 0 ? '+' : '';
+  const pct = baselineMs > 0 ? ` (${sign}${((delta / baselineMs) * 100).toFixed(1)}%)` : '';
+  return `${sign}${delta}ms${pct}`;
+}
+
+export function formatTokenDelta(baselineTokens?: ReportTokens, candidateTokens?: ReportTokens): string {
+  if (baselineTokens === undefined || candidateTokens === undefined) return '-';
+  const delta = candidateTokens.total - baselineTokens.total;
+  const sign = delta > 0 ? '+' : '';
+  const pct = baselineTokens.total > 0 ? `${sign}${((delta / baselineTokens.total) * 100).toFixed(1)}%` : undefined;
+  let outSuffix = '';
+  if (baselineTokens.output !== undefined && candidateTokens.output !== undefined) {
+    const outDelta = candidateTokens.output - baselineTokens.output;
+    if (outDelta !== 0) {
+      const outSign = outDelta > 0 ? '+' : '';
+      const outPct = baselineTokens.output > 0 ? ` / ${outSign}${((outDelta / baselineTokens.output) * 100).toFixed(1)}%` : '';
+      outSuffix = `${pct ? '; ' : ''}out: ${outSign}${outDelta}${outPct}`;
+    }
+  }
+  const parens = pct || outSuffix ? ` (${pct ?? ''}${outSuffix})` : delta === 0 ? ' (0.0%)' : '';
+  return `${sign}${delta} tokens${parens}`;
+}
+
+function formatGroupCell(group?: ReportGroup): string {
+  if (!group) return '-';
+  const verdict = group.trials === 0 ? 'not-run' : group.passed ? 'passed' : 'failed';
+  return group.overallScore !== undefined ? `${verdict} (${group.overallScore.toFixed(2)})` : verdict;
+}
+
+export function renderComparisonSection(
+  heading: string, baseline: Report, candidate: Report, maxGroups = 25, maxBytes = 16_000,
+): string {
+  if (maxBytes <= 0) return '';
+  const outcomeTransition = baseline.outcome === 'failed' && candidate.outcome === 'passed'
+    ? 'fixed'
+    : baseline.outcome === 'passed' && candidate.outcome === 'failed'
+      ? 'regressed'
+      : baseline.outcome === candidate.outcome ? 'unchanged' : `${baseline.outcome} -> ${candidate.outcome}`;
+  const workloadsMatch = baseline.selection === candidate.selection &&
+    baseline.executed !== undefined && baseline.executed === candidate.executed;
+  const summaryTable =
+    `${heading}\n\n` +
+    '| Metric | Baseline | Candidate | Delta |\n| --- | --- | --- | --- |\n' +
+    `| Outcome | ${baseline.outcome} | ${candidate.outcome} | ${outcomeTransition} |\n` +
+    `| Passed | ${baseline.passed ?? '-'} | ${candidate.passed ?? '-'} | ${formatSignedCount(baseline.passed, candidate.passed)} |\n` +
+    `| Failed | ${baseline.failed ?? '-'} | ${candidate.failed ?? '-'} | ${formatSignedCount(baseline.failed, candidate.failed)} |\n` +
+    `| Duration | ${formatDuration(baseline.durationMs)} | ${formatDuration(candidate.durationMs)} | ${workloadsMatch ? formatDurationDelta(baseline.durationMs, candidate.durationMs) : '-'} |\n` +
+    `| Tokens | ${formatTokens(baseline.tokens)} | ${formatTokens(candidate.tokens)} | ${workloadsMatch ? formatTokenDelta(baseline.tokens, candidate.tokens) : '-'} |`;
+  if (Buffer.byteLength(summaryTable, 'utf8') > maxBytes) return '';
+  const baseGroups = baseline.groups ?? [];
+  const candGroups = candidate.groups ?? [];
+  if (baseGroups.length === 0 && candGroups.length === 0) return summaryTable;
+  const uniqueNames = (groups: readonly ReportGroup[]) => {
+    const names = groups.map((group) => group.name).filter((name): name is string => Boolean(name));
+    return names.length === groups.length && new Set(names).size === names.length;
+  };
+  const useNameKey = uniqueNames(baseGroups) && uniqueNames(candGroups);
+  const groupKey = (group: ReportGroup) => useNameKey ? group.name! : group.identity;
+  const baseMap = new Map(baseGroups.map((group) => [groupKey(group), group]));
+  const candMap = new Map(candGroups.map((group) => [groupKey(group), group]));
+  const keys = [...new Set([...baseMap.keys(), ...candMap.keys()])];
+  const groupHeader = '\n\n| Eval | Baseline | Candidate | Score Delta | Duration Delta | Token Delta | Transition |\n| --- | --- | --- | --- | --- | --- | --- |\n';
+  const footer = '\n\nFurther groups are available in the structured artifact.';
+  const footerBytes = Buffer.byteLength(footer, 'utf8');
+  let usedBytes = Buffer.byteLength(summaryTable + groupHeader, 'utf8');
+  if (usedBytes > maxBytes) return summaryTable;
+  const limit = Math.min(keys.length, maxGroups);
+  const rows: string[] = [];
+  for (let index = 0; index < limit; index++) {
+    const key = keys[index]!;
+    const baseGroup = baseMap.get(key);
+    const candGroup = candMap.get(key);
+    const displayName = escapeMarkdown((candGroup ?? baseGroup)!.name ?? (candGroup ?? baseGroup)!.identity.slice(0, 12));
+    const sameTrials = baseGroup !== undefined && candGroup !== undefined && baseGroup.trials === candGroup.trials;
+    const row = `| ${displayName} | ${formatGroupCell(baseGroup)} | ${formatGroupCell(candGroup)} | ${formatScoreDelta(baseGroup?.overallScore, candGroup?.overallScore)} | ${sameTrials ? formatDurationDelta(baseGroup?.durationMs, candGroup?.durationMs) : '-'} | ${sameTrials ? formatTokenDelta(baseGroup?.tokens, candGroup?.tokens) : '-'} | ${classifyGroupTransition(baseGroup, candGroup)} |`;
+    const rowBytes = Buffer.byteLength((rows.length ? '\n' : '') + row, 'utf8');
+    const needsFooterAfterRow = index + 1 < keys.length;
+    if (usedBytes + rowBytes + (needsFooterAfterRow ? footerBytes : 0) > maxBytes) break;
+    rows.push(row);
+    usedBytes += rowBytes;
+  }
+  if (rows.length === 0) return summaryTable;
+  const result = summaryTable + groupHeader + rows.join('\n') + (rows.length < keys.length ? footer : '');
+  return Buffer.byteLength(result, 'utf8') <= maxBytes ? result : summaryTable;
+}
+
+export function renderSummary(report: Report, baseline?: Report): string {
   const metrics = [
     ...(report.durationMs !== undefined ? [`Duration: ${report.durationMs}ms.`] : []),
     ...(report.tokens !== undefined ? [
@@ -144,6 +268,7 @@ export function renderSummary(report: Report): string {
         : `Tokens: ${report.tokens.total}.`,
     ] : []),
   ].join(' ');
+  const comparison = baseline ? renderComparisonSection('## Baseline vs. Candidate comparison', baseline, report) : '';
   return `# Evals: ${report.outcome}\n\n` +
     `Command: ${escapeMarkdown(report.command)}. Plan: ${report.completeness}.\n\n` +
     (report.suite ? `Suite: ${escapeMarkdown(report.suite)}.\n\n` : '') +
@@ -158,7 +283,8 @@ export function renderSummary(report: Report): string {
       (report.groups.length > 100 ? `\n\n${report.groups.length - 100} further groups are available in the structured artifact.` : '') + '\n' : '') +
     (report.groups && hasQualityDetails(report.groups)
       ? '\n' + renderQualitySection('## Quality and token usage', report.groups) + '\n'
-      : '');
+      : '') +
+    (comparison ? '\n' + comparison + '\n' : '');
 }
 
 function serializeTokens(tokens: ReportTokens): ReportTokens {

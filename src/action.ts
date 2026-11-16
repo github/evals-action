@@ -36,6 +36,7 @@ export async function runAction(): Promise<void> {
   let inputs: Inputs | undefined;
   let pullNumber: number | undefined;
   let companion: Evidence | undefined;
+  let baseline: Evidence | undefined;
   const nativeFiles: string[] = [];
   let nativeDirectory: string | undefined;
   try {
@@ -102,9 +103,30 @@ export async function runAction(): Promise<void> {
           artifactId: discoveredLint.id,
         };
       }
-      await commentReport(imported, reportToken || githubToken, pullNumber, primary.id, companion);
+      if (imported.command === 'run') {
+        if (inputs.baselineArtifactId !== undefined && inputs.baselineArtifactDigest) {
+          const expectedBaselineId = inputs.baselineReportId
+            ? [inputs.baselineReportId, reportPrefix(inputs.baselineReportId), `${reportPrefix(inputs.baselineReportId)}-run`]
+            : [`${reportPrefix(inputs.reportId)}-baseline`, `${reportPrefix(inputs.reportId)}-baseline-run`];
+          baseline = {
+            report: await readReportArtifact(inputs.baselineArtifactId, inputs.baselineArtifactDigest, expectedBaselineId, 'run'),
+            artifactId: inputs.baselineArtifactId,
+          };
+        } else if (inputs.baselineReportId) {
+          const discoveredBaseline = await discoverReportArtifacts(githubClient(githubToken || reportToken, requiredEnv('RUNNER_TEMP')), {
+            repository: requiredEnv('GITHUB_REPOSITORY'), runId: positiveEnv('GITHUB_RUN_ID'),
+            attempt: positiveEnv('GITHUB_RUN_ATTEMPT'), reportId: inputs.baselineReportId,
+          }, false);
+          if (!discoveredBaseline.run) throw new NativeError('report-artifacts-not-found', 'evidence');
+          baseline = {
+            report: await readReportArtifact(discoveredBaseline.run.id, discoveredBaseline.run.digest, discoveredBaseline.run.reportId, 'run'),
+            artifactId: discoveredBaseline.run.id,
+          };
+        }
+      }
+      await commentReport(imported, reportToken || githubToken, pullNumber, primary.id, companion, baseline);
       publishOutputs(imported);
-      await core.summary.addRaw(renderSummary(imported)).write();
+      await core.summary.addRaw(renderSummary(imported, baseline?.report)).write();
       return;
     }
 
@@ -226,15 +248,21 @@ export async function runAction(): Promise<void> {
 
 function reportPrefix(id: string): string { return id.replace(/-(?:lint|run)$/, ''); }
 
-async function commentReport(report: Report, token: string, pullNumber: number, artifactId?: number, companion?: Evidence): Promise<void> {
+async function commentReport(
+  report: Report, token: string, pullNumber: number, artifactId?: number, companion?: Evidence, baseline?: Evidence,
+): Promise<void> {
   try {
-    const outcome = await postReport(githubClient(token, requiredEnv('RUNNER_TEMP')), {
+    const client = githubClient(token, requiredEnv('RUNNER_TEMP'));
+    const context = {
       repository: report.repository, workflowRef: requiredEnv('GITHUB_WORKFLOW_REF'),
       workflowSha: requiredEnv('GITHUB_WORKFLOW_SHA'), job: requiredEnv('GITHUB_JOB'),
       reportId: reportPrefix(report.reportId), selection: report.selection,
       pullNumber, runId: report.workflowRunId,
       order: { runNumber: positiveEnv('GITHUB_RUN_NUMBER'), attempt: report.workflowRunAttempt },
-    }, report, artifactId, companion);
+    };
+    const outcome = baseline
+      ? await postReport(client, context, report, artifactId, companion, baseline)
+      : await postReport(client, context, report, artifactId, companion);
     if (outcome === 'stale') core.warning('A newer run or attempt already owns this report comment.');
   } catch (error) {
     throw new NativeError(error instanceof ReportingError ? error.code : 'comment-reporting-failed', 'execution');

@@ -252,6 +252,38 @@ only the lint ID/digest pair to override lint while discovering run evidence.
 Overrides still undergo digest and repository/revision/run/attempt checks.
 Artifacts uploaded by older Action versions require explicit IDs/digests.
 
+### Baseline vs. Candidate PR comparison
+
+To include a **Baseline vs. Candidate comparison** table (Outcome, Passed/Failed,
+Score delta, Duration delta, and Token `in/out` + `%` delta) in the sticky PR
+comment and job summary, run the baseline arm with a distinct `report-id`
+(such as `evals-baseline`), run the candidate arm with `report-id: evals`, and
+pass `baseline-report-id: evals-baseline` to the `report` step:
+
+```yaml
+  report:
+    needs: [lint, run-baseline, run]
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: evals-${{ github.workflow_ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: github/evals-action@v0
+        with:
+          command: report
+          report-id: evals
+          baseline-report-id: evals-baseline
+```
+
+You can also pass `baseline-artifact-id` and `baseline-artifact-digest`
+explicitly instead of discovering the baseline artifact by `baseline-report-id`.
+
 ## Commands
 
 | `command` | Behavior |
@@ -289,6 +321,8 @@ explicit lint rejects execution overrides.
 | `max-retries` | Nonnegative run override. All mode defaults to 0; explicit run preserves native default. |
 | `source-artifact-id`, `source-artifact-digest` | Optional paired overrides for report: exact primary artifact ID and its 64-character lowercase SHA-256 digest. Omit for automatic discovery. Providing both bypasses all discovery. |
 | `lint-artifact-id`, `lint-artifact-digest` | Optional paired lint override for report. Uses the shared report ID or legacy primary ID prefix plus `-lint`. Without a primary override, run evidence is still discovered. |
+| `baseline-report-id` | Optional baseline report identity for report mode (e.g. `evals-baseline`). Discovers the matching current-run/attempt run artifact unless `baseline-artifact-id` is set. |
+| `baseline-artifact-id`, `baseline-artifact-digest` | Optional paired baseline run override for report mode. Must be distinct from primary and lint artifacts. |
 | `upload-transcripts` | Default false; opt in to raw native JSONL and stdout/stderr, potentially sensitive. |
 | `artifact-retention-days` | 1-90, default 7; subject to repository retention policy. |
 

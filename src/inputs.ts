@@ -14,6 +14,9 @@ export interface Inputs {
   sourceArtifactDigest?: string;
   lintArtifactId?: number;
   lintArtifactDigest?: string;
+  baselineReportId?: string;
+  baselineArtifactId?: number;
+  baselineArtifactDigest?: string;
   uploadTranscripts: boolean;
   retentionDays: number;
   credentialEnv: string[];
@@ -68,11 +71,23 @@ export function parseInputs(read: InputReader): Inputs {
   const sourceArtifactDigest = text('source-artifact-digest');
   const lintArtifactId = integer('lint-artifact-id', 1);
   const lintArtifactDigest = text('lint-artifact-digest');
+  const baselineReportId = text('baseline-report-id');
+  const baselineArtifactId = integer('baseline-artifact-id', 1);
+  const baselineArtifactDigest = text('baseline-artifact-digest');
+  if (baselineReportId && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(baselineReportId)) {
+    throw new Error('baseline-report-id must be 1-64 letters, digits, underscores or hyphens.');
+  }
+  if (baselineReportId && baselineReportId.replace(/-(?:lint|run)$/, '') === reportId.replace(/-(?:lint|run)$/, '')) {
+    throw new Error('baseline-report-id must be distinct from report-id.');
+  }
   if (sourceArtifactDigest && !/^[a-f0-9]{64}$/.test(sourceArtifactDigest)) {
     throw new Error('Input source-artifact-digest must be a SHA-256 artifact digest.');
   }
   if (lintArtifactDigest && !/^[a-f0-9]{64}$/.test(lintArtifactDigest)) {
     throw new Error('Input lint-artifact-digest must be a SHA-256 artifact digest.');
+  }
+  if (baselineArtifactDigest && !/^[a-f0-9]{64}$/.test(baselineArtifactDigest)) {
+    throw new Error('Input baseline-artifact-digest must be a SHA-256 artifact digest.');
   }
   if ((lintArtifactId !== undefined) !== Boolean(lintArtifactDigest)) {
     throw new Error('Inputs lint-artifact-id and lint-artifact-digest must be provided together.');
@@ -80,12 +95,20 @@ export function parseInputs(read: InputReader): Inputs {
   if ((sourceArtifactId !== undefined) !== Boolean(sourceArtifactDigest)) {
     throw new Error('Inputs source-artifact-id and source-artifact-digest must be provided together.');
   }
+  if ((baselineArtifactId !== undefined) !== Boolean(baselineArtifactDigest)) {
+    throw new Error('Inputs baseline-artifact-id and baseline-artifact-digest must be provided together.');
+  }
   if (command !== 'report' && (sourceArtifactId !== undefined || sourceArtifactDigest ||
-      lintArtifactId !== undefined || lintArtifactDigest)) {
+      lintArtifactId !== undefined || lintArtifactDigest ||
+      baselineReportId || baselineArtifactId !== undefined || baselineArtifactDigest)) {
     throw new Error('Artifact identity inputs are only valid for report.');
   }
   if (lintArtifactId !== undefined && lintArtifactId === sourceArtifactId) {
     throw new Error('Lint and primary report artifacts must be distinct.');
+  }
+  if (baselineArtifactId !== undefined &&
+      (baselineArtifactId === sourceArtifactId || baselineArtifactId === lintArtifactId)) {
+    throw new Error('Baseline report artifact must be distinct from primary and lint artifacts.');
   }
   const retentionDays = integer('artifact-retention-days', 1) ?? 7;
   if (retentionDays > 90) throw new Error('artifact-retention-days must not exceed 90.');
@@ -103,6 +126,8 @@ export function parseInputs(read: InputReader): Inputs {
     reportId, ...(sourceArtifactId !== undefined ? { sourceArtifactId } : {}),
     ...(sourceArtifactDigest ? { sourceArtifactDigest } : {}),
     ...(lintArtifactId !== undefined ? { lintArtifactId, lintArtifactDigest } : {}),
+    ...(baselineReportId ? { baselineReportId } : {}),
+    ...(baselineArtifactId !== undefined ? { baselineArtifactId, baselineArtifactDigest } : {}),
     uploadTranscripts: boolean('upload-transcripts'), retentionDays,
     credentialEnv: lines('credential-env'),
   };
