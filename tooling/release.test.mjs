@@ -86,7 +86,7 @@ test('refuses to auto-release breaking changes as a patch', () => {
 test('plan releases a patch when a shipped file moves out of a shipped path', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'release-plan-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
-  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: repo, encoding: 'utf8' });
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd: repo, encoding: 'utf8' });
   mkdirSync(join(repo, 'src'));
   mkdirSync(join(repo, 'dist'));
   writeFileSync(join(repo, 'src', 'index.js'), 'export const value = 1;\n');
