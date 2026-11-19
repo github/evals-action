@@ -1,11 +1,19 @@
 name: Release
 on:
+  workflow_run:
+    workflows: [Model-free CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '23 */6 * * *'
   workflow_dispatch:
     inputs:
-      version:
-        description: Release tag (vMAJOR.MINOR.PATCH) for the current main commit
+      bump:
+        description: Version bump from the newest vMAJOR.MINOR.PATCH tag
         required: true
-        type: string
+        default: minor
+        type: choice
+        options: [patch, minor, major]
       prerelease:
         description: Publish as a prerelease (required while bundled license text is unresolved)
         required: true
@@ -24,13 +32,19 @@ concurrency:
 jobs:
   verify:
     name: Verify release candidate
+    # Unattended runs follow successful main pushes or reconcile on schedule; AUTO_RELEASE is the off switch.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.AUTO_RELEASE == 'true' && (github.event_name == 'schedule' ||
+      (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       actions: read
       contents: read
     outputs:
-      sha: ${{ github.sha }}
+      release: ${{ steps.ci.outputs.release }}
+      sha: ${{ steps.head.outputs.sha }}
       tag: ${{ steps.plan.outputs.tag }}
       alias: ${{ steps.plan.outputs.alias }}
       move-alias: ${{ steps.plan.outputs.move-alias }}
@@ -38,39 +52,62 @@ jobs:
       latest: ${{ steps.plan.outputs.latest }}
     steps:
       - name: Require dispatch from main
-        if: github.ref != 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
         run: |
           echo "::error::Releases are cut only from main."
           exit 1
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: main
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve main head
+        id: head
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
       - name: Plan release
         id: plan
         env:
-          VERSION: ${{ inputs.version }}
+          EVENT: ${{ github.event_name }}
+          BUMP: ${{ inputs.bump }}
           PRERELEASE: ${{ inputs.prerelease }}
-        run: node tooling/release.mjs "$VERSION" "$PRERELEASE"
+          AUTO_PRERELEASE: ${{ vars.AUTO_RELEASE_PRERELEASE }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            node tooling/release.mjs plan "$BUMP" "$PRERELEASE" false
+          else
+            node tooling/release.mjs plan patch "${AUTO_PRERELEASE:-true}" true
+          fi
       - name: Require Model-free CI success on this exact commit
+        id: ci
+        if: steps.plan.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
           REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ steps.head.outputs.sha }}
         run: |
           count="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success&per_page=1" --jq '.total_count')"
           if [ "$count" -lt 1 ]; then
-            echo "::error::Model-free CI has not succeeded for push $SHA on main."
-            exit 1
+            if [ "$EVENT" = workflow_dispatch ]; then
+              echo "::error::Model-free CI has not succeeded for push $SHA on main."
+              exit 1
+            fi
+            echo "::notice::Model-free CI has not succeeded for $SHA yet; its completion triggers the next release check."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
       - run: corepack enable
+        if: steps.ci.outputs.release == 'true'
       - run: corepack pnpm install --frozen-lockfile --ignore-scripts
+        if: steps.ci.outputs.release == 'true'
       - run: corepack pnpm check
+        if: steps.ci.outputs.release == 'true'
       - name: Require a clean checkout
+        if: steps.ci.outputs.release == 'true'
         run: |
           if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
             git status --short
@@ -80,7 +117,7 @@ jobs:
   publish:
     name: Publish ${{ needs.verify.outputs.tag }}
     needs: verify
-    if: ${{ !inputs.dry_run }}
+    if: needs.verify.outputs.release == 'true' && inputs.dry_run != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: release
@@ -94,11 +131,11 @@ jobs:
       TAG: ${{ needs.verify.outputs.tag }}
       ALIAS: ${{ needs.verify.outputs.alias }}
     steps:
-      - name: Require release environment reviewers
+      - name: Require a branch-restricted release environment
         run: |
-          rules="$(gh api "repos/$REPOSITORY/environments/release" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length')"
-          if [ "${rules:-0}" -lt 1 ]; then
-            echo "::error::The release environment must require reviewers before publication."
+          restricted="$(gh api "repos/$REPOSITORY/environments/release" --jq '.deployment_branch_policy != null')"
+          if [ "$restricted" != true ]; then
+            echo "::error::The release environment must restrict deployments to selected branches before unattended publication."
             exit 1
           fi
       - uses: actions/checkout@v7

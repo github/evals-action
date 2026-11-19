@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseVersion, planRelease, recheckPlan } from './release.mjs';
+import { nextVersion, parseVersion, planAutomatic, planRelease, recheckPlan } from './release.mjs';
 
 test('accepts only plain vMAJOR.MINOR.PATCH release tags', () => {
   assert.deepEqual(parseVersion('v0.3.0'), [0, 3, 0]);
@@ -43,4 +43,37 @@ test('rechecks retried publications against current tags', () => {
   assert.equal(recheckPlan({ ...base, tags: ['v0', 'v0.2.0', 'v0.3.0'] }).moveAlias, true);
   assert.throws(() => recheckPlan({ ...base, tags: ['v0', 'v0.2.0', 'v0.3.0', 'v0.4.0'] }), /stale/);
   assert.throws(() => recheckPlan({ ...base, tags: ['v0.2.0', 'v1.0.0'] }), /stale/);
+});
+
+test('bumps from the newest version tag', () => {
+  const tags = ['v0', 'v0.1.0', 'v0.2.0', 'v0.10.1', 'v0.2.0-rc.1', 'other'];
+  assert.equal(nextVersion(tags, 'patch'), 'v0.10.2');
+  assert.equal(nextVersion(tags, 'minor'), 'v0.11.0');
+  assert.equal(nextVersion(tags, 'major'), 'v1.0.0');
+  assert.equal(nextVersion([], 'patch'), 'v0.0.1');
+  assert.throws(() => nextVersion(tags, 'prerelease'), /patch, minor or major/);
+});
+
+test('automatically releases a patch only when shipped files changed', () => {
+  const base = { tags: ['v0', 'v0.2.0'], latestIsAncestor: true, messages: ['fix: handle empty report'] };
+  for (const file of ['src/main.ts', 'dist/index.js', 'action.yml']) {
+    assert.deepEqual(planAutomatic({ ...base, changedFiles: ['README.md', file] }), { release: true, version: 'v0.2.1' });
+  }
+  const skipped = planAutomatic({ ...base, changedFiles: ['README.md', 'tests/a.test.ts', '.github/workflows/ci.yml', 'src.md'] });
+  assert.equal(skipped.release, false);
+  assert.match(skipped.reason, /no changes to src\/, dist\/ or action\.yml since v0\.2\.0/);
+});
+
+test('skips commits already covered by a newer release tag', () => {
+  const plan = planAutomatic({ tags: ['v0.2.0'], latestIsAncestor: false, changedFiles: ['src/main.ts'], messages: [] });
+  assert.equal(plan.release, false);
+  assert.match(plan.reason, /not an ancestor/);
+});
+
+test('refuses to auto-release breaking changes as a patch', () => {
+  const base = { tags: ['v0.2.0'], latestIsAncestor: true, changedFiles: ['src/main.ts'] };
+  for (const message of ['feat!: drop input', 'refactor(report)!: rename output', 'fix: x\n\nBREAKING CHANGE: removed y', 'fix: x\n\nBREAKING-CHANGE: removed y']) {
+    assert.throws(() => planAutomatic({ ...base, messages: ['docs: ok', message] }), /manual minor or major release/, message);
+  }
+  assert.doesNotThrow(() => planAutomatic({ ...base, messages: ['fix: mention breaking change handling', 'feat: add! marker'] }));
 });

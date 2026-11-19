@@ -155,32 +155,44 @@ describe('real Copilot example contract', () => {
 });
 
 describe('release workflow contract', () => {
-  type Step = { name?: string; if?: string; uses?: string; run?: string; with?: Record<string, unknown> };
+  type Step = { id?: string; name?: string; if?: string; uses?: string; run?: string; with?: Record<string, unknown> };
   type Job = { needs?: string; if?: string; environment?: string; permissions: Record<string, string>; steps: Step[] };
 
-  it('publishes only manual, verified main commits through a protected environment', async () => {
+  it('publishes verified main heads automatically or by dispatch through a branch-restricted environment', async () => {
     const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8')) as {
-      on: Record<string, { inputs: Record<string, { default?: unknown }> }>;
+      on: {
+        workflow_run: { workflows: string[]; types: string[]; branches: string[] };
+        schedule: { cron: string }[];
+        workflow_dispatch: { inputs: Record<string, { default?: unknown; options?: string[] }> };
+      };
       permissions: Record<string, string>;
       jobs: Record<string, Job>;
     };
-    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
-    expect(workflow.on.workflow_dispatch!.inputs.prerelease!.default).toBe(true);
-    expect(workflow.on.workflow_dispatch!.inputs.dry_run!.default).toBe(true);
+    expect(Object.keys(workflow.on)).toEqual(['workflow_run', 'schedule', 'workflow_dispatch']);
+    expect(workflow.on.workflow_run).toEqual({ workflows: ['Model-free CI'], types: ['completed'], branches: ['main'] });
+    expect(workflow.on.schedule).toHaveLength(1);
+    const inputs = workflow.on.workflow_dispatch.inputs;
+    expect(inputs.bump!.options).toEqual(['patch', 'minor', 'major']);
+    expect(inputs.prerelease!.default).toBe(true);
+    expect(inputs.dry_run!.default).toBe(true);
     expect(workflow.permissions).toEqual({ contents: 'read' });
 
     const verify = workflow.jobs.verify!;
+    expect(verify.if).toContain("vars.AUTO_RELEASE == 'true'");
+    expect(verify.if).toContain("github.event.workflow_run.event == 'push'");
+    expect(verify.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(verify.permissions).toEqual({ actions: 'read', contents: 'read' });
-    expect(verify.steps[0]).toMatchObject({ if: "github.ref != 'refs/heads/main'" });
+    expect(verify.steps[0]).toMatchObject({ if: "github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'" });
     const runs = verify.steps.map((step) => step.run ?? '');
-    const order = ['tooling/release.mjs', 'actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success', 'pnpm check', 'git status --porcelain']
+    const order = ['git rev-parse HEAD', 'tooling/release.mjs plan patch', 'actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success', 'pnpm check', 'git status --porcelain']
       .map((text) => runs.findIndex((run) => run.includes(text)));
     expect(order.every((index, position) => index >= 0 && (position === 0 || index > order[position - 1]!))).toBe(true);
+    for (const step of verify.steps.slice(order[3]!)) expect(step.if).toBe("steps.ci.outputs.release == 'true'");
     const checkout = verify.steps.find((step) => step.uses === 'actions/checkout@v7')!;
-    expect(checkout.with).toMatchObject({ 'persist-credentials': false });
+    expect(checkout.with).toMatchObject({ ref: 'main', 'persist-credentials': false });
 
     const publish = workflow.jobs.publish!;
-    expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release' });
+    expect(publish).toMatchObject({ needs: 'verify', if: "needs.verify.outputs.release == 'true' && inputs.dry_run != true", environment: 'release' });
     expect(publish.permissions).toEqual({ actions: 'read', contents: 'write' });
     const pinned = publish.steps.filter((step) => step.uses).map((step) => step.uses);
     expect(pinned).toHaveLength(2);
@@ -188,13 +200,14 @@ describe('release workflow contract', () => {
     expect(pinned[1]).toMatch(/^actions\/setup-node@[0-9a-f]{40}$/);
     expect(publish.steps.find((step) => step.uses === 'actions/checkout@v7')!.with).toMatchObject({ 'persist-credentials': false });
     const publishRuns = publish.steps.map((step) => step.run ?? '');
-    const reviewers = publishRuns.findIndex((run) => run.includes('select(.type == "required_reviewers")'));
+    const branchPolicy = publishRuns.findIndex((run) => run.includes('.deployment_branch_policy != null'));
     const recheck = publishRuns.findIndex((run) => run.includes('tooling/release.mjs recheck'));
     const firstWrite = publishRuns.findIndex((run) => run.includes('git/tags'));
-    expect(reviewers).toBe(0);
-    expect(recheck).toBeGreaterThan(reviewers);
+    expect(branchPolicy).toBe(0);
+    expect(recheck).toBeGreaterThan(branchPolicy);
     expect(recheck).toBeLessThan(firstWrite);
     const script = publishRuns.join('\n');
+    expect(script).not.toContain('required_reviewers');
     expect(script).toContain('isDraft,isPrerelease');
     expect(script).toContain('gh release create "$TAG"');
     expect(script).toContain('--verify-tag');
