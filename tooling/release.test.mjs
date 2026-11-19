@@ -5,7 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { nextVersion, parseVersion, planAutomatic, planRelease, recheckPlan } from './release.mjs';
+import { isAncestor, nextVersion, parseVersion, planAutomatic, planRelease, recheckPlan } from './release.mjs';
+
+test('isAncestor treats only git exit 1 as "not an ancestor" and rethrows git errors', () => {
+  const exit = (status) => () => {
+    throw Object.assign(new Error('git failed'), { status });
+  };
+  assert.equal(isAncestor('v0.2.0', 'HEAD', () => ''), true);
+  assert.equal(isAncestor('v0.2.0', 'HEAD', exit(1)), false);
+  assert.throws(() => isAncestor('v0.2.0', 'HEAD', exit(128)), /git failed/);
+});
 
 test('accepts only plain vMAJOR.MINOR.PATCH release tags', () => {
   assert.deepEqual(parseVersion('v0.3.0'), [0, 3, 0]);

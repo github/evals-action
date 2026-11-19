@@ -75,14 +75,23 @@ function git(...args) {
   return execFileSync('git', args, { encoding: 'utf8' });
 }
 
+// `git merge-base --is-ancestor` exits 1 for "no"; any other failure is a git error.
+export function isAncestor(ancestor, descendant, run = execFileSync) {
+  try {
+    run('git', ['merge-base', '--is-ancestor', ancestor, descendant], { stdio: 'ignore' });
+    return true;
+  } catch (error) {
+    if (error.status === 1) return false;
+    throw error;
+  }
+}
+
 function automaticInput(tags) {
   const latest = newestVersion(tags);
   if (!latest) return { tags, latestIsAncestor: true, changedFiles: git('ls-files').split('\n').filter(Boolean), messages: [] };
-  let latestIsAncestor = true;
-  try {
-    execFileSync('git', ['merge-base', '--is-ancestor', latest, 'HEAD']);
-  } catch {
-    latestIsAncestor = false;
+  const latestIsAncestor = isAncestor(latest, 'HEAD');
+  if (!latestIsAncestor && !isAncestor('HEAD', latest)) {
+    throw new Error(`${latest} and this commit have diverged; fix the release tag before automatic releases can continue.`);
   }
   return {
     tags,

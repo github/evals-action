@@ -133,11 +133,12 @@ jobs:
       TAG: ${{ needs.verify.outputs.tag }}
       ALIAS: ${{ needs.verify.outputs.alias }}
     steps:
-      - name: Require a branch-restricted release environment
+      - name: Require a release environment restricted to main
         run: |
-          restricted="$(gh api "repos/$REPOSITORY/environments/release" --jq '.deployment_branch_policy != null')"
-          if [ "$restricted" != true ]; then
-            echo "::error::The release environment must restrict deployments to selected branches before unattended publication."
+          policy="$(gh api "repos/$REPOSITORY/environments/release" --jq '"\(.deployment_branch_policy.protected_branches // false) \(.deployment_branch_policy.custom_branch_policies // false)"')"
+          branches="$(gh api --paginate "repos/$REPOSITORY/environments/release/deployment-branch-policies" --jq '.branch_policies[] | "\(.type // "branch"):\(.name)"')"
+          if [ "$policy" != "false true" ] || [ "$branches" != "branch:main" ]; then
+            echo "::error::The release environment must restrict deployments to exactly branch main before unattended publication."
             exit 1
           fi
       - uses: actions/checkout@v7

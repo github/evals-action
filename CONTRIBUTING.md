@@ -128,9 +128,10 @@ The publish job runs in the `release` environment, creates an annotated version
 tag on that commit, publishes the GitHub Release with generated notes, advances the matching
 major alias (`v0` for 0.x, `v1` for 1.x) only when the release is the newest of its
 major line, and verifies that each written tag resolves to the verified commit.
-No version bump commit is needed; `package.json` stays at `0.0.0`. Restrict the
-`release` environment's deployment branches to `main`; the publish job fails
-before any write when the environment has no branch restriction. It does not
+No version bump commit is needed; `package.json` stays at `0.0.0`. Set the
+`release` environment's deployment branches to **Selected branches and tags**
+with the single branch rule `main`; the publish job fails before any write
+otherwise (including **Protected branches only**). It does not
 require reviewers, so releases complete without manual approval.
 If publication fails partway, use **Re-run failed jobs** on the same run. It
 resumes only when an existing version tag already points to the verified commit
