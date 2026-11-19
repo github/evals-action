@@ -93,6 +93,22 @@ jobs:
       TAG: ${{ needs.verify.outputs.tag }}
       ALIAS: ${{ needs.verify.outputs.alias }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Recheck release plan against current tags
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          MOVE_ALIAS: ${{ needs.verify.outputs.move-alias }}
+          LATEST: ${{ needs.verify.outputs.latest }}
+        run: |
+          RELEASE_TAGS="$(gh api --paginate "repos/$REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")')"
+          export RELEASE_TAGS
+          node tooling/release.mjs recheck "$TAG" "$PRERELEASE" "$MOVE_ALIAS" "$LATEST"
       - name: Create annotated version tag
         run: |
           if gh api "repos/$REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
@@ -111,8 +127,12 @@ jobs:
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
           LATEST: ${{ needs.verify.outputs.latest }}
         run: |
-          if gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
-            echo "Release $TAG already exists; resuming."
+          if state="$(gh release view "$TAG" --repo "$REPOSITORY" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"' 2>/dev/null)"; then
+            if [ "$state" != "false $PRERELEASE" ]; then
+              echo "::error::Release $TAG exists but is not a published release with prerelease=$PRERELEASE (draft/prerelease: $state)."
+              exit 1
+            fi
+            echo "Release $TAG is already published; resuming."
             exit 0
           fi
           flags=(--verify-tag --generate-notes --title "$TAG" "--latest=$LATEST")

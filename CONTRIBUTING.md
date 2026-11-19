@@ -116,8 +116,11 @@ major alias (`v0` for 0.x, `v1` for 1.x) only when the release is the newest of 
 major line, and verifies that each written tag resolves to the verified commit.
 No version bump commit is needed; `package.json` stays at `0.0.0`. Configure
 required reviewers on the `release` environment so publication needs approval.
-If publication fails partway, use **Re-run failed jobs** on the same run: it
-resumes only when an existing version tag already points to the verified commit.
+If publication fails partway, use **Re-run failed jobs** on the same run. It
+resumes only when an existing version tag already points to the verified commit
+and any existing GitHub Release is published with the requested prerelease
+setting. It rejects the retry if version tags changed after verification would
+alter the alias or latest decision; dispatch a new run in that case.
 GitHub Release is marked latest only for a stable release newer than every
 existing version tag.
 

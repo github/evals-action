@@ -181,8 +181,18 @@ describe('release workflow contract', () => {
 
     const publish = workflow.jobs.publish!;
     expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release', permissions: { contents: 'write' } });
-    expect(publish.steps.some((step) => step.uses)).toBe(false);
-    const script = publish.steps.map((step) => step.run).join('\n');
+    expect(publish.steps.filter((step) => step.uses).map((step) => step.uses)).toEqual([
+      'actions/checkout@v7',
+      'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
+    ]);
+    expect(publish.steps[0]!.with).toMatchObject({ 'persist-credentials': false });
+    const publishRuns = publish.steps.map((step) => step.run ?? '');
+    const recheck = publishRuns.findIndex((run) => run.includes('tooling/release.mjs recheck'));
+    const firstWrite = publishRuns.findIndex((run) => run.includes('git/tags'));
+    expect(recheck).toBeGreaterThanOrEqual(0);
+    expect(recheck).toBeLessThan(firstWrite);
+    const script = publishRuns.join('\n');
+    expect(script).toContain('isDraft,isPrerelease');
     expect(script).toContain('gh release create "$TAG"');
     expect(script).toContain('--verify-tag');
     expect(script).toContain('refs/tags/$ALIAS');

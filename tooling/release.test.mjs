@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseVersion, planRelease } from './release.mjs';
+import { parseVersion, planRelease, recheckPlan } from './release.mjs';
 
 test('accepts only plain vMAJOR.MINOR.PATCH release tags', () => {
   assert.deepEqual(parseVersion('v0.3.0'), [0, 3, 0]);
@@ -36,4 +36,11 @@ test('keeps the alias on the newest release of its major line', () => {
 test('refuses stable releases while bundled license text is unresolved', () => {
   assert.throws(() => planRelease({ version: 'v1.0.0', prerelease: false, tags: [], missingLicenseText: 3 }), /missing-license-text/);
   assert.doesNotThrow(() => planRelease({ version: 'v0.3.0', prerelease: true, tags: [], missingLicenseText: 3 }));
+});
+
+test('rechecks retried publications against current tags', () => {
+  const base = { version: 'v0.3.0', prerelease: false, missingLicenseText: 0, moveAlias: true, latest: true };
+  assert.equal(recheckPlan({ ...base, tags: ['v0', 'v0.2.0', 'v0.3.0'] }).moveAlias, true);
+  assert.throws(() => recheckPlan({ ...base, tags: ['v0', 'v0.2.0', 'v0.3.0', 'v0.4.0'] }), /stale/);
+  assert.throws(() => recheckPlan({ ...base, tags: ['v0.2.0', 'v1.0.0'] }), /stale/);
 });
