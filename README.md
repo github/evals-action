@@ -188,7 +188,7 @@ jobs:
 
   report:
     needs: [lint, run]
-    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -298,7 +298,7 @@ explicitly instead of discovering the baseline artifact by `baseline-report-id`
 | Omitted / `all` | Validate inputs, lint, run after successful lint, publish evidence, and update the PR comment. |
 | `lint` | Native whole-project lint. No selector or model credentials needed. Publishes a summary and artifact, without commenting. |
 | `run` | Native `vally eval --require-pass --output=jsonl ...`. Requires a suite, eval paths or tags. Publishes a summary and artifact, without commenting. |
-| `report` | Verify structured artifacts and update the sticky comment. Never installs Vally or runs a model. PR events only. |
+| `report` | Verify structured artifacts and write the report to the job summary. On pull requests, also update the sticky comment; on push and manual dispatch, no PR APIs are called. Never installs Vally or runs a model. |
 | `plan` | Reserved and unsupported; fails explicitly, never runs an eval. |
 
 Native arguments are separate argv values, never interpolated shell commands.
@@ -317,7 +317,7 @@ explicit lint rejects execution overrides.
 | `suite` | Native suite for all/run; mutually exclusive with paths/tags. |
 | `eval-paths` | Newline-separated literal paths for all/run. Spaces are preserved. No shell expansion. |
 | `tags` | Newline-separated native filters for all/run, e.g. `cost=free` or `flaky!=yes`. |
-| `github-token` | Defaults to `${{ github.token }}`. Used for model auth and PR reporting in all; artifact discovery and commenting in report; not forwarded in explicit lint/run. Discovery requires `actions: read`. |
+| `github-token` | Defaults to `${{ github.token }}`. Used for model auth and PR reporting in all; artifact discovery and PR commenting in report; not forwarded in explicit lint/run. Discovery requires `actions: read`. |
 | `copilot-token` | Optional explicit model token. Overrides automatic model auth in all; supports workflow-token auth in explicit run. |
 | `credential-env` | Advanced evaluator credential variable names, one per line, for BYOK/custom providers. Supplying these disables automatic model-token injection in all. Never put values here. Cannot list `COPILOT_GITHUB_TOKEN` with `copilot-token`. |
 | `report-token` | Optional bot/App comment token override for all/report. Discovery uses `github-token`, falling back to this token if absent. Human/PAT reporters are refused. Not valid on explicit lint/run. |
@@ -443,7 +443,9 @@ and its SHA-256 digests, or uses explicit ID/digest pairs. It downloads the
 selected artifacts itself, verifies digests and current
 repository/revision/run/attempt identity, and accepts only a bounded
 `report.json`. A companion must be successful lint from the same run/revision,
-but it can originate in a separate lint job.
+but it can originate in a separate lint job. On push and `workflow_dispatch`,
+report mode writes the verified report to the job summary without looking up a
+pull request or calling comment APIs.
 
 ## Example skill and eval
 

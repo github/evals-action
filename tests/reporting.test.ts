@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyGroupTransition, displayCount, escapeMarkdown, formatDurationDelta, formatScoreDelta,
   formatSignedCount, formatTokenDelta, parseStructuredReport, renderComparisonSection,
-  renderMatrix, renderSummary, structuredReport, type Report,
+  renderMatrix, renderReport, renderRunDiagnostics, renderSummary, structuredReport, type Report,
 } from '../src/reporting.js';
 import { commentMarker, orderedBody, selectComment } from '../src/comments.js';
 
@@ -52,6 +52,44 @@ describe('minimal presentation projections', () => {
     expect(summary).toContain('my-eval \\| &#64;team');
     expect(summary).not.toContain('c'.repeat(64));
     expect(text).not.toContain('evalFilePath');
+  });
+  it('renders shared report evidence links and keeps execution diagnostics collapsed', () => {
+    const candidate = report({
+      reportId: 'evals-run', outcome: 'passed', suite: 'smoke @team',
+      executed: 1, passed: 1, failed: 0,
+      engine: { version: '0.21.0', sha256: 'a'.repeat(64), dependencySha256: 'b'.repeat(64), lockSha256: 'c'.repeat(64) },
+      groups: [{
+        identity: 'c'.repeat(64), name: 'eval | @team', passed: true,
+        trials: 1, stimuliRun: 1, stimuliTotal: 1, skipped: 0,
+      }],
+    });
+    const lint = report({ reportId: 'evals-lint', command: 'lint', outcome: 'validated', executed: 0 });
+    const baseline = report({
+      reportId: 'evals-baseline', outcome: 'failed', executed: 1, passed: 0, failed: 1,
+      groups: [{
+        identity: 'c'.repeat(64), name: 'eval | @team', passed: false,
+        trials: 1, stimuliRun: 1, stimuliTotal: 0, skipped: 0,
+      }],
+    });
+    const runUrl = 'https://github.com/o/r/actions/runs/100';
+    const body = renderReport(candidate, {
+      runUrl, artifactId: 123,
+      companion: { report: lint, artifactId: 124 },
+      baseline: { report: baseline, artifactId: 125 },
+    });
+    const diagnostics = renderRunDiagnostics(candidate);
+
+    expect(body).toContain('Suite:** smoke &#64;team');
+    expect(body).toContain('| Eval | Trials | Result |');
+    expect(body).toContain('eval \\| &#64;team');
+    expect(body).toContain(`${runUrl}/artifacts/123`);
+    expect(body).toContain(`${runUrl}/artifacts/124`);
+    expect(body).toContain(`${runUrl}/artifacts/125`);
+    expect(diagnostics).toContain('<summary>Run diagnostics</summary>');
+    expect(diagnostics).toContain('| Category | none |');
+    expect(diagnostics).toContain('| Diagnostic | native-empty-selection |');
+    expect(diagnostics).toContain('| Vally version | 0.21.0 |');
+    expect(diagnostics).toContain(`| Executable SHA-256 | ${'a'.repeat(64)} |`);
   });
   it('does not turn unknown counts or not-run into a pass', () => {
     const notRun = report();

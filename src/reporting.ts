@@ -458,6 +458,96 @@ export function renderSummary(report: Report, baseline?: Report): string {
     (comparison ? '\n' + comparison + '\n' : '');
 }
 
+export interface ReportEvidence {
+  report: Report;
+  artifactId?: number;
+}
+
+export interface RenderReportOptions {
+  runUrl: string;
+  artifactId?: number;
+  companion?: ReportEvidence;
+  baseline?: ReportEvidence;
+}
+
+export function renderReport(
+  report: Report, { artifactId, companion, baseline, runUrl }: RenderReportOptions,
+): string {
+  const lint = companion?.report ?? (report.command === 'lint' ? report : undefined);
+  const evaluation = report.command === 'run' ? report : undefined;
+  const status = evaluation?.outcome ?? lint?.outcome ?? report.outcome;
+  const rows = evaluation?.groups ?? [];
+  const suite = evaluation?.suite;
+  const maxEvalRows = baseline ? 25 : 100;
+  const detailsBody =
+    (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
+    (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
+      ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${runUrl}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
+    (evaluation ? `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
+      (artifactId !== undefined ? ` - [Evidence](${runUrl}/artifacts/${artifactId})` : '') + '\n\n' +
+      (baseline ? `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'}` +
+        (baseline.artifactId !== undefined ? ` - [Evidence](${runUrl}/artifacts/${baseline.artifactId})` : '') + '\n\n' : '') +
+      (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
+      (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
+      (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
+        rows.slice(0, maxEvalRows).map((group) =>
+          `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
+        ).join('\n') + '\n\n' +
+        (rows.length > maxEvalRows ? `${rows.length - maxEvalRows} further groups are in the structured artifact.\n\n` : '') : '') : '');
+  if (!evaluation) return `# Evals: ${status}\n\n${detailsBody}`;
+  if (!baseline) {
+    let output = `# Evals: ${status}\n\n${detailsBody}`;
+    if (rows.length && hasQualityDetails(rows)) {
+      const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
+      const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
+      if (quality) output = `${output}${quality}\n\n`;
+    }
+    return output;
+  }
+
+  const { overallVerdict, markdown: verdictTable } = renderVerdictSummaryTable(baseline.report, evaluation, 25);
+  const header = `# Evals: ${overallVerdict} (${status})\n\n` +
+    (verdictTable ? `${verdictTable}\n\n` : '') +
+    (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
+    (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '');
+
+  let telemetry = detailsBody;
+  if (rows.length && hasQualityDetails(rows)) {
+    const maxQualityBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(header + telemetry, 'utf8')));
+    const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
+    if (quality) telemetry = `${telemetry}${quality}\n\n`;
+  }
+  const maxComparisonBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(header + telemetry, 'utf8')));
+  const comparison = renderComparisonSection('### Baseline vs. Candidate comparison', baseline.report, evaluation, 25, maxComparisonBytes, overallVerdict);
+  if (comparison) telemetry = `${telemetry}${comparison}\n\n`;
+
+  return `${header}<details>\n<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong></summary>\n\n${telemetry.trim()}\n\n</details>\n\n`;
+}
+
+export function renderRunDiagnostics(report: Report): string {
+  const metrics = [
+    ...(report.turns !== undefined ? [`Turns: ${report.turns}.`] : []),
+    ...(report.durationMs !== undefined ? [`Duration: ${report.durationMs}ms.`] : []),
+    ...(report.tokens !== undefined ? [
+      report.tokens.input !== undefined && report.tokens.output !== undefined
+        ? `Tokens: ${report.tokens.total} (${report.tokens.input} in / ${report.tokens.output} out).`
+        : `Tokens: ${report.tokens.total}.`,
+    ] : []),
+  ].join(' ');
+  return '<details>\n<summary>Run diagnostics</summary>\n\n' +
+    '| Field | Value |\n| --- | --- |\n' +
+    `| Command | ${escapeMarkdown(report.command)} |\n` +
+    `| Plan completeness | ${report.completeness} |\n` +
+    `| Revision | ${escapeMarkdown(report.revision)} |\n` +
+    `| Category | ${report.category} |\n` +
+    `| Diagnostic | ${escapeMarkdown(report.code)} |\n` +
+    `| Executed | ${report.executed ?? 'unknown'} |\n` +
+    (metrics ? `| Metrics | ${escapeMarkdown(metrics)} |\n` : '') +
+    (report.outcome === 'not-run' ? '| Evaluation status | Not an evaluation pass; a nonblocking not-run step can satisfy branch protection. |\n' : '') +
+    (report.engine ? `| Vally version | ${escapeMarkdown(report.engine.version)} |\n| Executable SHA-256 | ${escapeMarkdown(report.engine.sha256)} |\n` : '') +
+    '</details>\n\n';
+}
+
 function serializeTokens(tokens: ReportTokens): ReportTokens {
   return {
     ...(tokens.input !== undefined && tokens.output !== undefined

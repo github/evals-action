@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assertSerializedReporter, commentConcurrencyGroup, postReport, type CommentContext } from '../src/reporter.js';
 import { orderedBody } from '../src/comments.js';
 import { type GitHubClient, ReportingError } from '../src/github.js';
-import { type Report } from '../src/reporting.js';
+import { renderReport, type Report } from '../src/reporting.js';
 
 const context: CommentContext = {
   repository: 'o/r', workflowRef: 'o/r/.github/workflows/evals.yml@refs/pull/3/merge',
@@ -76,6 +76,9 @@ describe('one sticky PR report for direct Action calls', () => {
     expect(payload?.body).toContain('vally-acquisition-failed');
     expect(payload?.body).toContain(`/commit/${report.revision}`);
     expect(payload?.body).toContain('/actions/runs/1000/artifacts/123');
+    expect(payload?.body).toContain(renderReport(report, {
+      runUrl: 'https://github.com/o/r/actions/runs/1000', artifactId: 123,
+    }));
     expect(payload?.body).not.toContain('passed');
   });
   it('updates in place across selection changes and paginates without touching human comments', async () => {
@@ -264,6 +267,11 @@ describe('one sticky PR report for direct Action calls', () => {
     expect(body).toContain('### Baseline vs. Candidate comparison');
     expect(body).toContain('| Outcome | failed | passed (✅ Ship) | fixed |');
     expect(body).toContain('| pr-description | failed (0.94) | passed (1.00) | +0.06 | -2 | -4401ms (-11.4%) | -191 tokens (-0.3%; out: -456 / -31.5%) | fixed |');
+    expect(body).toContain(renderReport(candidateReport, {
+      runUrl: 'https://github.com/o/r/actions/runs/1000',
+      artifactId: 123,
+      baseline: { report: baselineReport, artifactId: 125 },
+    }));
 
     // Mixed verdicts (No ship, Re-run, still-failing token deltas) and 100-group comment byte budget
     const mixedBase: Report = {

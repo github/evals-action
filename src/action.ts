@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { parseInputs, type Inputs } from './inputs.js';
 import { assertRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
 import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
-import { parseStructuredReport, renderSummary, structuredReport, type Report } from './reporting.js';
+import { parseStructuredReport, renderReport, renderRunDiagnostics, structuredReport, type Report } from './reporting.js';
 import { githubClient, ReportingError, takeReportToken, takeSecretInput } from './github.js';
 import { postReport } from './reporter.js';
 import { acquireEngine, resolveRelease, sha256 } from './tooling.js';
@@ -47,11 +47,16 @@ export async function runAction(): Promise<void> {
       core.warning('Fork pull requests are excluded. No evaluator, installer, or commenter was started.');
       Object.assign(report, { outcome: 'not-run', category: 'policy', code: 'fork-execution-excluded', executed: 0 });
       publishOutputs(report);
-      await core.summary.addRaw(renderSummary(report)).write();
+      let artifactId: number | undefined;
       if (!reportMode) {
-        try { publishArtifactOutputs(await uploadReport(report, 7)); }
+        try {
+          const artifact = await uploadReport(report, 7);
+          artifactId = artifact.id;
+          publishArtifactOutputs(artifact);
+        }
         catch { core.setFailed('Required structured reporting failed: artifact upload did not complete.'); }
       }
+      await writeSummary(report, artifactId);
       return;
     }
     if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
@@ -68,7 +73,6 @@ export async function runAction(): Promise<void> {
           Object.keys(inputs.overrides).length || inputs.uploadTranscripts || inputs.workingDirectory) {
         throw new NativeError('report-command-does-not-accept-execution-inputs', 'configuration');
       }
-      if (pullNumber === undefined) throw new NativeError('report-command-requires-pull-request', 'policy');
       let primary: { id: number; digest: string; reportId: string | readonly string[]; command?: 'lint' | 'run' };
       let discoveredLint: ReportArtifact | undefined;
       if (inputs.sourceArtifactId !== undefined && inputs.sourceArtifactDigest) {
@@ -124,9 +128,15 @@ export async function runAction(): Promise<void> {
           };
         }
       }
-      await commentReport(imported, reportToken || githubToken, pullNumber, primary.id, companion, baseline);
       publishOutputs(imported);
-      await core.summary.addRaw(renderSummary(imported, baseline?.report)).write();
+      if (pullNumber !== undefined) {
+        try {
+          await commentReport(imported, reportToken || githubToken, pullNumber, primary.id, companion, baseline);
+        } catch (error) {
+          core.setFailed(`Evals PR reporting failed: ${error instanceof NativeError ? error.code : 'comment-reporting-failed'}.`);
+        }
+      }
+      await writeSummary(imported, primary.id, companion, baseline);
       return;
     }
 
@@ -213,8 +223,10 @@ export async function runAction(): Promise<void> {
   }
   if (report.code === 'native-empty-selection') core.warning('Native evidence reports zero executed trials. This is not an evaluation pass.');
   publishOutputs(report);
-  await core.summary.addRaw(renderSummary(report)).write();
-  if (reportMode) return;
+  if (reportMode) {
+    await writeSummary(report);
+    return;
+  }
   if (nativeDirectory) core.setOutput('native-diagnostics-path', nativeDirectory);
   let artifactId: number | undefined;
   try {
@@ -224,6 +236,7 @@ export async function runAction(): Promise<void> {
   } catch {
     core.setFailed('Required structured reporting failed: artifact upload did not complete.');
   }
+  await writeSummary(report, artifactId, companion);
   if (allMode && pullNumber !== undefined) {
     try {
       await commentReport(report, reportToken || githubToken, pullNumber, artifactId, companion);
@@ -267,6 +280,23 @@ async function commentReport(
     if (outcome === 'stale') core.warning('A newer run or attempt already owns this report comment.');
   } catch (error) {
     throw new NativeError(error instanceof ReportingError ? error.code : 'comment-reporting-failed', 'execution');
+  }
+}
+
+async function writeSummary(
+  report: Report, artifactId?: number, companion?: Evidence, baseline?: Evidence,
+): Promise<void> {
+  const runUrl = `https://github.com/${report.repository}/actions/runs/${report.workflowRunId}`;
+  const body = renderReport(report, {
+    runUrl,
+    ...(artifactId !== undefined ? { artifactId } : {}),
+    ...(companion ? { companion } : {}),
+    ...(baseline ? { baseline } : {}),
+  }) + renderRunDiagnostics(report);
+  try {
+    await core.summary.addRaw(body).write();
+  } catch {
+    core.warning('Job summary write failed. The report outcome is unchanged.');
   }
 }
 

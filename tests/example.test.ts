@@ -67,6 +67,7 @@ describe('real Copilot example contract', () => {
     expect(run!.needs).toBe('lint');
     expect(report!.needs).toEqual(['lint', 'run']);
     expect(report!.if).toContain('always()');
+    expect(report!.if).toContain("github.event_name == 'workflow_dispatch'");
     expect(report!.if).toContain('head.repo.full_name == github.repository');
     expect(report!.permissions).toEqual({ actions: 'read', contents: 'read', 'pull-requests': 'write' });
     expect(report!.steps).toEqual([{ uses: 'github/evals-action@v0', with: { command: 'report' } }]);

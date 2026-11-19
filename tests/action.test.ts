@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runAction } from '../src/action.js';
 import type { NativeResult } from '../src/native.js';
-import { structuredReport, type Report } from '../src/reporting.js';
+import { renderReport, renderRunDiagnostics, structuredReport, type Report } from '../src/reporting.js';
 import type { Inputs } from '../src/inputs.js';
 import { reportArtifactName } from '../src/artifacts.js';
 
@@ -107,6 +107,12 @@ function importedLint(revision = 'a'.repeat(40)): Report {
   delete lint.groups;
   return lint;
 }
+async function uploadedReports(): Promise<Report[]> {
+  const directories = (await readdir(root)).filter((name) => name.startsWith('evals-report-'));
+  return Promise.all(directories.map(async (directory) =>
+    JSON.parse(await readFile(join(root, directory, 'report.json'), 'utf8')) as Report,
+  ));
+}
 afterEach(async () => {
   Object.defineProperty(process, 'platform', platform);
   Object.defineProperty(process, 'arch', architecture);
@@ -130,6 +136,36 @@ it('reports the native failed verdict without initializing GitHub reporting', as
   expect(stored).toContain('"schemaVersion": 2');
   expect(stored).toContain('"suite": "smoke"');
   expect(mocks.upload.mock.calls[0]?.[0]).toMatch(/^evals-report\.evals\.run\.1\.[A-Za-z0-9]{6}$/);
+});
+
+it('writes the uploaded run report body and evidence link to the job summary', async () => {
+  await runAction();
+
+  const [report] = await uploadedReports();
+  expect(report).toBeDefined();
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(
+    renderReport(report!, { runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123 }) +
+      renderRunDiagnostics(report!),
+  );
+});
+
+it('writes the combined all-mode report and both artifact links to the job summary', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+
+  await runAction();
+
+  const reports = await uploadedReports();
+  const lint = reports.find((item) => item.command === 'lint');
+  const evaluation = reports.find((item) => item.command === 'run');
+  expect(lint).toBeDefined();
+  expect(evaluation).toBeDefined();
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(
+    renderReport(evaluation!, {
+      runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 124,
+      companion: { report: lint!, artifactId: 123 },
+    }) + renderRunDiagnostics(evaluation!),
+  );
 });
 
 function discovery(reports: Record<number, Report>): void {
@@ -286,6 +322,30 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
 
+it.each(['push', 'workflow_dispatch'] as const)('publishes verified report evidence to the summary on %s without PR APIs', async (eventName) => {
+  discovery({ 123: importedReport() });
+  vi.stubEnv('GITHUB_EVENT_NAME', eventName);
+  await writeFile(join(root, 'event.json'), '{}');
+
+  await runAction();
+
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'passed');
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith(
+    'https://api.github.com/repos/o/r/actions/runs/100/artifacts?per_page=100&page=1',
+    expect.anything(),
+  );
+  expect(mocks.download).toHaveBeenCalledWith(123, expect.objectContaining({
+    expectedHash: `sha256:${'d'.repeat(64)}`,
+  }));
+  const report = importedReport();
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(
+    renderReport(report, { runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123 }) +
+      renderRunDiagnostics(report),
+  );
+});
+
 it('validates both separate-job artifacts before updating one comment', async () => {
   mocks.downloadReports = {
     123: structuredReport(importedReport({ reportId: 'evals-run', suite: 'smoke' })),
@@ -305,6 +365,14 @@ it('validates both separate-job artifacts before updating one comment', async ()
   }), expect.objectContaining({ reportId: 'evals-run', suite: 'smoke' }), 123, {
     artifactId: 124, report: expect.objectContaining({ reportId: 'evals-lint', outcome: 'validated' }),
   });
+  const report = importedReport({ reportId: 'evals-run', suite: 'smoke' });
+  const lint = importedLint();
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(
+    renderReport(report, {
+      runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123,
+      companion: { report: lint, artifactId: 124 },
+    }) + renderRunDiagnostics(report),
+  );
   expect(mocks.setFailed).not.toHaveBeenCalled();
   mocks.post.mockClear();
   mocks.downloadReports[124] = structuredReport(importedLint('f'.repeat(40)));
@@ -325,20 +393,28 @@ it('warns for stale report attempts without changing the imported verdict', asyn
   expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('newer run'));
   expect(mocks.setFailed).not.toHaveBeenCalled();
   expect(mocks.upload).not.toHaveBeenCalled();
+  expect(mocks.summaryRaw).toHaveBeenCalledTimes(1);
 });
 
-it('rejects an artifact digest mismatch before reading evidence or writing a comment', async () => {
+it.each(['pull_request', 'push'] as const)('summarizes an artifact digest mismatch on %s without writing a comment', async (eventName) => {
   mocks.downloadReport = structuredReport(importedReport());
   mocks.inputs = {
     command: 'report', 'source-artifact-id': '123',
     'source-artifact-digest': 'd'.repeat(64),
     'report-token': 'synthetic-report-token',
   };
+  vi.stubEnv('GITHUB_EVENT_NAME', eventName);
+  if (eventName === 'push') await writeFile(join(root, 'event.json'), '{}');
   mocks.download.mockResolvedValue({ downloadPath: root, digestMismatch: true });
+
   await runAction();
+
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('source-artifact-digest-mismatch'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('# Evals: error'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('source-artifact-digest-mismatch'));
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.acquire).not.toHaveBeenCalled();
+  expect(mocks.upload).not.toHaveBeenCalled();
 });
 
 it('does not upload replacement evidence when report inputs are invalid', async () => {
@@ -400,7 +476,13 @@ it('discovers or downloads baseline run artifacts in report mode and passes them
     undefined,
     { artifactId: 126, report: expect.objectContaining({ reportId: 'evals-baseline', outcome: 'failed' }) },
   );
-  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('## Baseline vs. Candidate comparison'));
+  const candidate = importedReport();
+  expect(mocks.summaryRaw).toHaveBeenLastCalledWith(
+    renderReport(candidate, {
+      runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123,
+      baseline: { report: baseline, artifactId: 126 },
+    }) + renderRunDiagnostics(candidate),
+  );
 
   mocks.post.mockClear();
   mocks.inputs = {
@@ -418,6 +500,12 @@ it('discovers or downloads baseline run artifacts in report mode and passes them
     123,
     undefined,
     { artifactId: 126, report: expect.objectContaining({ reportId: 'evals-baseline', outcome: 'failed' }) },
+  );
+  expect(mocks.summaryRaw).toHaveBeenLastCalledWith(
+    renderReport(candidate, {
+      runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123,
+      baseline: { report: baseline, artifactId: 126 },
+    }) + renderRunDiagnostics(candidate),
   );
 });
 
@@ -452,6 +540,41 @@ it('fails report-only networking without rerunning Vally or uploading a replacem
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('comment-reporting-failed'));
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.upload).not.toHaveBeenCalled();
+});
+
+it('preserves the imported report summary when comment publication fails', async () => {
+  mocks.downloadReport = structuredReport(importedReport());
+  mocks.inputs = {
+    command: 'report', 'source-artifact-id': '123',
+    'source-artifact-digest': 'd'.repeat(64),
+    'github-token': 'automatic-token',
+  };
+  mocks.post.mockRejectedValue(new Error('private transport text'));
+
+  await runAction();
+
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('comment-reporting-failed'));
+  const report = importedReport();
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(
+    renderReport(report, { runUrl: 'https://github.com/o/r/actions/runs/100', artifactId: 123 }) +
+      renderRunDiagnostics(report),
+  );
+});
+
+it('treats a failed job-summary write as a warning without changing the report outcome', async () => {
+  mocks.downloadReport = structuredReport(importedReport());
+  mocks.inputs = {
+    command: 'report', 'source-artifact-id': '123',
+    'source-artifact-digest': 'd'.repeat(64),
+    'github-token': 'automatic-token',
+  };
+  mocks.summaryWrite.mockRejectedValueOnce(new Error('private summary text'));
+
+  await runAction();
+
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'passed');
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('summary'));
 });
 
 it('rejects malformed, stale-identity and execution-shaped report commands before GitHub writes', async () => {
@@ -663,6 +786,7 @@ it('keeps native outputs when comment or artifact publication fails', async () =
   expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'failed');
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('Required structured reporting failed'));
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('PR reporting failed'));
+  expect(mocks.summaryRaw).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(mocks.setFailed.mock.calls)).not.toContain('private');
 });
 

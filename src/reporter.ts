@@ -1,10 +1,7 @@
 import { parseDocument } from 'yaml';
 import { commentMarker, orderedBody, selectComment, type Comment, type CommentIdentity, type ReportOrder } from './comments.js';
 import { object } from './policy.js';
-import {
-  escapeMarkdown, hasQualityDetails, renderComparisonSection, renderQualitySection, renderVerdictSummaryTable,
-  type Report,
-} from './reporting.js';
+import { renderReport, type Report } from './reporting.js';
 import { ReportingError, type GitHubClient } from './github.js';
 
 export const commentConcurrencyGroup = 'evals-${{ github.workflow_ref }}';
@@ -140,8 +137,13 @@ export async function postReport(
   const decision = selectComment(comments, identity, context.order, author);
   if (decision.action === 'stale') return 'stale';
   const run = `https://github.com/${context.repository}/actions/runs/${context.runId}`;
-  const summary = renderComment(report, artifactId, companion, run, baseline);
-  const body = orderedBody(identity, context.order, summary +
+  const reportBody = renderReport(report, {
+    runUrl: run,
+    ...(artifactId !== undefined ? { artifactId } : {}),
+    ...(companion ? { companion } : {}),
+    ...(baseline ? { baseline } : {}),
+  });
+  const body = orderedBody(identity, context.order, reportBody +
     `\n[Exact revision](https://github.com/${context.repository}/commit/${report.revision}) | [Workflow run](${run})` +
     '\n');
   if (Buffer.byteLength(body, 'utf8') > 60_000) throw new ReportingError('report-comment-too-large');
@@ -163,58 +165,4 @@ export async function postReport(
     throw new ReportingError('comment-readback-mismatch');
   }
   return decision.action === 'create' ? 'created' : 'updated';
-}
-
-export function renderComment(
-  report: Report, artifactId: number | undefined, companion: { report: Report; artifactId: number } | undefined, run: string,
-  baseline?: { report: Report; artifactId: number },
-): string {
-  const lint = companion?.report ?? (report.command === 'lint' ? report : undefined);
-  const evaluation = report.command === 'run' ? report : undefined;
-  const status = evaluation?.outcome ?? lint?.outcome ?? report.outcome;
-  const rows = evaluation?.groups ?? [];
-  const suite = evaluation?.suite;
-  const maxEvalRows = baseline ? 25 : 100;
-  const detailsBody =
-    (suite ? `**Suite:** ${escapeMarkdown(suite)}\n\n` : evaluation ? '**Selection:** Native eval paths or tags\n\n' : '') +
-    (lint ? `**Lint:** ${lint.outcome}${lint.outcome === 'validated' ? ' (no model execution)' : ` - ${escapeMarkdown(lint.code)}`}` +
-      ((companion?.artifactId ?? artifactId) !== undefined ? ` - [Evidence](${run}/artifacts/${companion?.artifactId ?? artifactId})` : '') + '\n\n' : '') +
-    (evaluation ? `**Run:** ${evaluation.outcome} - ${evaluation.executed ?? 'unknown'} ${evaluation.executed === 1 ? 'trial' : 'trials'}` +
-      (artifactId !== undefined ? ` - [Evidence](${run}/artifacts/${artifactId})` : '') + '\n\n' +
-      (baseline ? `**Baseline:** ${baseline.report.outcome} - ${baseline.report.executed ?? 'unknown'} ${baseline.report.executed === 1 ? 'trial' : 'trials'} - [Evidence](${run}/artifacts/${baseline.artifactId})\n\n` : '') +
-      (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
-      (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '') +
-      (rows.length ? '| Eval | Trials | Result |\n| --- | ---: | --- |\n' +
-        rows.slice(0, maxEvalRows).map((group) =>
-          `| ${escapeMarkdown(group.name ?? group.identity.slice(0, 12))} | ${group.trials} | ${group.trials ? group.passed ? 'passed' : 'failed' : 'not-run'} |`,
-        ).join('\n') + '\n\n' +
-        (rows.length > maxEvalRows ? `${rows.length - maxEvalRows} further groups are in the structured artifact.\n\n` : '') : '') : '');
-  if (!evaluation) return `# Evals: ${status}\n\n${detailsBody}`;
-  if (!baseline) {
-    let output = `# Evals: ${status}\n\n${detailsBody}`;
-    if (rows.length && hasQualityDetails(rows)) {
-      const maxQualityBytes = Math.min(16_000, Math.max(0, 57_500 - Buffer.byteLength(output, 'utf8')));
-      const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
-      if (quality) output = `${output}${quality}\n\n`;
-    }
-    return output;
-  }
-
-  const { overallVerdict, markdown: verdictTable } = renderVerdictSummaryTable(baseline.report, evaluation, 25);
-  const header = `# Evals: ${overallVerdict} (${status})\n\n` +
-    (verdictTable ? `${verdictTable}\n\n` : '') +
-    (['error', 'failed', 'cancelled'].includes(evaluation.outcome) ? `Diagnostic: ${escapeMarkdown(evaluation.code)}.\n\n` : '') +
-    (evaluation.outcome === 'not-run' ? '**Not an evaluation pass.**\n\n' : '');
-
-  let telemetry = detailsBody;
-  if (rows.length && hasQualityDetails(rows)) {
-    const maxQualityBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(header + telemetry, 'utf8')));
-    const quality = renderQualitySection('### Quality & token summary', rows, 25, maxQualityBytes);
-    if (quality) telemetry = `${telemetry}${quality}\n\n`;
-  }
-  const maxComparisonBytes = Math.min(16_000, Math.max(0, 56_000 - Buffer.byteLength(header + telemetry, 'utf8')));
-  const comparison = renderComparisonSection('### Baseline vs. Candidate comparison', baseline.report, evaluation, 25, maxComparisonBytes, overallVerdict);
-  if (comparison) telemetry = `${telemetry}${comparison}\n\n`;
-
-  return `${header}<details>\n<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong></summary>\n\n${telemetry.trim()}\n\n</details>\n\n`;
 }
