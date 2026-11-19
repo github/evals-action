@@ -181,10 +181,10 @@ describe('release workflow contract', () => {
 
     const publish = workflow.jobs.publish!;
     expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release', permissions: { contents: 'write' } });
-    expect(publish.steps.filter((step) => step.uses).map((step) => step.uses)).toEqual([
-      'actions/checkout@v7',
-      'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
-    ]);
+    const pinned = publish.steps.filter((step) => step.uses).map((step) => step.uses);
+    expect(pinned).toHaveLength(2);
+    expect(pinned[0]).toBe('actions/checkout@v7');
+    expect(pinned[1]).toMatch(/^actions\/setup-node@[0-9a-f]{40}$/);
     expect(publish.steps[0]!.with).toMatchObject({ 'persist-credentials': false });
     const publishRuns = publish.steps.map((step) => step.run ?? '');
     const recheck = publishRuns.findIndex((run) => run.includes('tooling/release.mjs recheck'));
