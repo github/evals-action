@@ -5,9 +5,9 @@ sticky PR comment** with the suite, eval names, verdicts, and evidence links.
 Vally owns selection, execution and grading; the Action handles installation
 and GitHub integration.
 
-Use `github/evals-action@v0` for the latest 0.x pilot release
-(currently [v0.1.0](https://github.com/github/evals-action/releases/tag/v0.1.0)).
-Use `@v0.1.0` to stay on that specific Action release. The `v0` tag advances as
+Use `github/evals-action@v0` for the latest 0.x pilot release (see
+[releases](https://github.com/github/evals-action/releases)).
+Use an exact tag such as `@v0.2.0` to stay on a specific Action release. The `v0` tag advances as
 new 0.x releases are published; the interface may change during the pilot.
 Supported host: **Linux x64 GitHub-hosted runners**; the Action uses Node 24
 without a Node setup step. Your repository's Actions policy must allow it.
@@ -96,7 +96,7 @@ with:
   vally-version: '0.21.0' # Optional; omit for latest stable
 ```
 
-The Action version (`@v0` or `@v0.1.0`) and Vally version are independent. Selecting a
+The Action version (`@v0` or an exact tag such as `@v0.2.0`) and Vally version are independent. Selecting a
 published Vally release does not require an Action update. New versions work
 while the native CLI and evidence contracts remain compatible.
 Unsupported behavior or malformed evidence fails explicitly;
@@ -456,8 +456,9 @@ checkout and one `uses: ./` step, using the Action's defaults. In your repositor
 use `github/evals-action@v0` instead.
 
 The Action prerelease is not listed on Marketplace. Organizations
-that require full-SHA Action references can pin the release commit
-`83fa12332c3e44ad899f347eaf153a0d9b6432dc` for `v0.1.0`.
+that require full-SHA Action references can pin the commit of a
+[release tag](https://github.com/github/evals-action/releases), for example
+`uses: github/evals-action@<40-character-sha> # v0.2.0`.
 
 ## Development and acquisition
 

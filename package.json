@@ -16,8 +16,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:packaged": "node --test tooling/packaged.test.mjs",
-    "check:package": "pnpm check:dist && pnpm test:packaged",
-    "check": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm check:dist && pnpm test:packaged"
+    "test:release": "node --test tooling/release.test.mjs",
+    "check:package": "pnpm check:dist && pnpm test:packaged && pnpm test:release",
+    "check": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm check:dist && pnpm test:packaged && pnpm test:release"
   },
   "dependencies": {
     "@actions/artifact": "6.3.1",

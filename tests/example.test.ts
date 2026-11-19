@@ -153,3 +153,39 @@ describe('real Copilot example contract', () => {
     expect(skill).toContain('`EVALS_ACTION_SKILL_OK`');
   });
 });
+
+describe('release workflow contract', () => {
+  type Step = { name?: string; if?: string; uses?: string; run?: string; with?: Record<string, unknown> };
+  type Job = { needs?: string; if?: string; environment?: string; permissions: Record<string, string>; steps: Step[] };
+
+  it('publishes only manual, verified main commits through a protected environment', async () => {
+    const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8')) as {
+      on: Record<string, { inputs: Record<string, { default?: unknown }> }>;
+      permissions: Record<string, string>;
+      jobs: Record<string, Job>;
+    };
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
+    expect(workflow.on.workflow_dispatch!.inputs.prerelease!.default).toBe(true);
+    expect(workflow.on.workflow_dispatch!.inputs.dry_run!.default).toBe(true);
+    expect(workflow.permissions).toEqual({ contents: 'read' });
+
+    const verify = workflow.jobs.verify!;
+    expect(verify.permissions).toEqual({ actions: 'read', contents: 'read' });
+    expect(verify.steps[0]).toMatchObject({ if: "github.ref != 'refs/heads/main'" });
+    const runs = verify.steps.map((step) => step.run ?? '');
+    const order = ['tooling/release.mjs', 'actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success', 'pnpm check', 'git status --porcelain']
+      .map((text) => runs.findIndex((run) => run.includes(text)));
+    expect(order.every((index, position) => index >= 0 && (position === 0 || index > order[position - 1]!))).toBe(true);
+    const checkout = verify.steps.find((step) => step.uses === 'actions/checkout@v7')!;
+    expect(checkout.with).toMatchObject({ 'persist-credentials': false });
+
+    const publish = workflow.jobs.publish!;
+    expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release', permissions: { contents: 'write' } });
+    expect(publish.steps.some((step) => step.uses)).toBe(false);
+    const script = publish.steps.map((step) => step.run).join('\n');
+    expect(script).toContain('gh release create "$TAG"');
+    expect(script).toContain('--verify-tag');
+    expect(script).toContain('refs/tags/$ALIAS');
+    expect(script).not.toMatch(/git push|--tags/);
+  });
+});

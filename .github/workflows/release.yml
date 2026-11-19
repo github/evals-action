@@ -1,0 +1,141 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag (vMAJOR.MINOR.PATCH) for the current main commit
+        required: true
+        type: string
+      prerelease:
+        description: Publish as a prerelease (required while bundled license text is unresolved)
+        required: true
+        default: true
+        type: boolean
+      dry_run:
+        description: Verify only; do not create tags or a release
+        required: true
+        default: true
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ github.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      alias: ${{ steps.plan.outputs.alias }}
+      move-alias: ${{ steps.plan.outputs.move-alias }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      latest: ${{ steps.plan.outputs.latest }}
+    steps:
+      - name: Require dispatch from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases are cut only from main."
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Plan release
+        id: plan
+        env:
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: node tooling/release.mjs "$VERSION" "$PRERELEASE"
+      - name: Require Model-free CI success on this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          count="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success&per_page=1" --jq '.total_count')"
+          if [ "$count" -lt 1 ]; then
+            echo "::error::Model-free CI has not succeeded for push $SHA on main."
+            exit 1
+          fi
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile --ignore-scripts
+      - run: corepack pnpm check
+      - name: Require a clean checkout
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+            git status --short
+            echo "::error::pnpm check left the checkout dirty."
+            exit 1
+          fi
+  publish:
+    name: Publish ${{ needs.verify.outputs.tag }}
+    needs: verify
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      SHA: ${{ needs.verify.outputs.sha }}
+      TAG: ${{ needs.verify.outputs.tag }}
+      ALIAS: ${{ needs.verify.outputs.alias }}
+    steps:
+      - name: Create annotated version tag
+        run: |
+          if gh api "repos/$REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+            actual="$(gh api "repos/$REPOSITORY/commits/refs/tags/$TAG" --jq '.sha')"
+            if [ "$actual" != "$SHA" ]; then
+              echo "::error::$TAG already exists at $actual, expected $SHA."
+              exit 1
+            fi
+            echo "$TAG already points to $SHA; resuming."
+          else
+            object="$(gh api "repos/$REPOSITORY/git/tags" -f tag="$TAG" -f message="$TAG" -f object="$SHA" -f type=commit --jq '.sha')"
+            gh api "repos/$REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" > /dev/null
+          fi
+      - name: Publish GitHub Release
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          LATEST: ${{ needs.verify.outputs.latest }}
+        run: |
+          if gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; resuming."
+            exit 0
+          fi
+          flags=(--verify-tag --generate-notes --title "$TAG" "--latest=$LATEST")
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" --repo "$REPOSITORY" "${flags[@]}"
+      - name: Advance major alias
+        if: needs.verify.outputs.move-alias == 'true'
+        run: |
+          if gh api "repos/$REPOSITORY/git/ref/tags/$ALIAS" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPOSITORY/git/refs/tags/$ALIAS" -f sha="$SHA" -F force=true > /dev/null
+          else
+            gh api "repos/$REPOSITORY/git/refs" -f ref="refs/tags/$ALIAS" -f sha="$SHA" > /dev/null
+          fi
+      - name: Verify published refs
+        env:
+          MOVE_ALIAS: ${{ needs.verify.outputs.move-alias }}
+        run: |
+          refs=("$TAG")
+          if [ "$MOVE_ALIAS" = true ]; then refs+=("$ALIAS"); fi
+          for ref in "${refs[@]}"; do
+            actual="$(gh api "repos/$REPOSITORY/commits/refs/tags/$ref" --jq '.sha')"
+            if [ "$actual" != "$SHA" ]; then
+              echo "::error::$ref resolves to $actual, expected $SHA."
+              exit 1
+            fi
+          done
