@@ -22,6 +22,40 @@ function positive(value: unknown): number {
   return value;
 }
 
+export function assertReportEvidence(
+  reportId: string, report: Report, artifactId?: number,
+  companion?: { report: Report; artifactId: number },
+  baseline?: { report: Report; artifactId: number },
+): void {
+  if (report.reportId.replace(/-(?:lint|run)$/, '') !== reportId ||
+        (companion && (report.command !== 'run' || companion.report.command !== 'lint' ||
+          ![report.reportId, reportId, `${reportId}-lint`].includes(companion.report.reportId) ||
+          companion.report.outcome !== 'validated' ||
+          companion.report.repository !== report.repository ||
+          companion.report.revision !== report.revision ||
+          companion.report.workflowRunId !== report.workflowRunId ||
+          companion.report.workflowRunAttempt !== report.workflowRunAttempt)) ||
+        (baseline && (report.command !== 'run' || baseline.report.command !== 'run' ||
+          baseline.report.reportId.replace(/-(?:lint|run)$/, '') === reportId ||
+          baseline.report.repository !== report.repository ||
+          baseline.report.revision !== report.revision ||
+          baseline.report.workflowRunId !== report.workflowRunId ||
+          baseline.report.workflowRunAttempt !== report.workflowRunAttempt))) {
+    throw new ReportingError('inconsistent-report-evidence');
+  }
+  if (artifactId !== undefined) positive(artifactId);
+  if (companion) {
+    positive(companion.artifactId);
+    if (companion.artifactId === artifactId) throw new ReportingError('inconsistent-report-evidence');
+  }
+  if (baseline) {
+    positive(baseline.artifactId);
+    if (baseline.artifactId === artifactId || baseline.artifactId === companion?.artifactId) {
+      throw new ReportingError('inconsistent-report-evidence');
+    }
+  }
+}
+
 function workflowPath(context: CommentContext): string {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(context.repository) || !/^[a-f0-9]{40}$/.test(context.workflowSha)) {
     throw new ReportingError('invalid-workflow-identity');
@@ -83,33 +117,7 @@ export async function postReport(
 ): Promise<'created' | 'updated' | 'stale'> {
   positive(context.pullNumber); positive(context.runId);
   if (!/^[a-f0-9]{40}$/.test(report.revision)) throw new ReportingError('invalid-report-revision');
-  if (artifactId !== undefined) positive(artifactId);
-  if (report.reportId.replace(/-(?:lint|run)$/, '') !== context.reportId ||
-        (companion && (report.command !== 'run' || companion.report.command !== 'lint' ||
-          ![report.reportId, context.reportId, `${context.reportId}-lint`].includes(companion.report.reportId) ||
-          companion.report.outcome !== 'validated' ||
-          companion.report.repository !== report.repository ||
-          companion.report.revision !== report.revision ||
-          companion.report.workflowRunId !== report.workflowRunId ||
-          companion.report.workflowRunAttempt !== report.workflowRunAttempt)) ||
-        (baseline && (report.command !== 'run' || baseline.report.command !== 'run' ||
-          baseline.report.reportId.replace(/-(?:lint|run)$/, '') === context.reportId ||
-          baseline.report.repository !== report.repository ||
-          baseline.report.revision !== report.revision ||
-          baseline.report.workflowRunId !== report.workflowRunId ||
-          baseline.report.workflowRunAttempt !== report.workflowRunAttempt))) {
-    throw new ReportingError('inconsistent-report-evidence');
-  }
-  if (companion) {
-    positive(companion.artifactId);
-    if (companion.artifactId === artifactId) throw new ReportingError('inconsistent-report-evidence');
-  }
-  if (baseline) {
-    positive(baseline.artifactId);
-    if (baseline.artifactId === artifactId || baseline.artifactId === companion?.artifactId) {
-      throw new ReportingError('inconsistent-report-evidence');
-    }
-  }
+  assertReportEvidence(context.reportId, report, artifactId, companion, baseline);
   const path = workflowPath(context);
   const source = object(await client.request('GET', `/repos/${context.repository}/contents/${path}?ref=${context.workflowSha}`));
   if (source.encoding !== 'base64' || typeof source.content !== 'string' || source.content.length > 1_500_000) {

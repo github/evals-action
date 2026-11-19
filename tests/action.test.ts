@@ -39,7 +39,10 @@ vi.mock('node:child_process', async (importOriginal) => ({
     [Symbol.for('nodejs.util.promisify.custom')]: async () => ({ stdout: mocks.revision, stderr: '' }),
   }),
 }));
-vi.mock('../src/reporter.js', () => ({ postReport: mocks.post }));
+vi.mock('../src/reporter.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/reporter.js')>(),
+  postReport: mocks.post,
+}));
 vi.mock('../src/tooling.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/tooling.js')>(),
   resolveRelease: async () => ({ version: '0.19.0', integrity: 'synthetic' }),
@@ -345,6 +348,26 @@ it.each(['push', 'workflow_dispatch'] as const)('publishes verified report evide
       renderRunDiagnostics(report),
   );
 });
+
+it.each(['pull_request', 'push', 'workflow_dispatch'] as const)(
+  'rejects failed lint companion evidence before publishing outputs on %s',
+  async (eventName) => {
+    discovery({
+      123: importedReport(),
+      124: { ...importedLint(), outcome: 'error', code: 'native-lint-failed' },
+    });
+    vi.stubEnv('GITHUB_EVENT_NAME', eventName);
+    if (eventName !== 'pull_request') await writeFile(join(root, 'event.json'), '{}');
+
+    await runAction();
+
+    expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('inconsistent-report-evidence'));
+    expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'error');
+    expect(mocks.setOutput).not.toHaveBeenCalledWith('outcome', 'passed');
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('# Evals: error'));
+  },
+);
 
 it('validates both separate-job artifacts before updating one comment', async () => {
   mocks.downloadReports = {
@@ -750,6 +773,25 @@ it('does not start the eval when lint evidence cannot be saved', async () => {
   expect(mocks.post).toHaveBeenCalledTimes(1);
   expect(mocks.post.mock.calls[0]?.[2]).toMatchObject({ outcome: 'error', code: 'structured-artifact-upload-failed' });
   expect(mocks.setFailed).toHaveBeenCalled();
+});
+
+it('keeps the primary error in the summary when all-mode fails after uploading lint evidence', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['github-token'] = 'automatic-token';
+  mocks.nativeCommands.mockImplementationOnce((input: Inputs) => {
+    if (input.command === 'lint') mocks.revision = 'b'.repeat(40);
+  });
+
+  await runAction();
+
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('checkout-revision-changed'));
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'error');
+  const summary = String(mocks.summaryRaw.mock.calls[0]?.[0]);
+  expect(summary).toContain('# Evals: error');
+  expect(summary).toContain('checkout-revision-changed');
+  expect(summary).not.toContain('Lint:** validated');
+  expect(summary).toContain('/artifacts/124');
+  expect(summary).not.toContain('/artifacts/123');
 });
 
 it('skips eval after failed lint and still posts its failure once', async () => {

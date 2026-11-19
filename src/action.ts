@@ -9,7 +9,7 @@ import { assertRevision, containedFile, eventEligibility, inertEnvironment, obje
 import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
 import { parseStructuredReport, renderReport, renderRunDiagnostics, structuredReport, type Report } from './reporting.js';
 import { githubClient, ReportingError, takeReportToken, takeSecretInput } from './github.js';
-import { postReport } from './reporter.js';
+import { assertReportEvidence, postReport } from './reporter.js';
 import { acquireEngine, resolveRelease, sha256 } from './tooling.js';
 import { discoverReportArtifacts, reportArtifactName, type ReportArtifact } from './artifacts.js';
 
@@ -128,6 +128,7 @@ export async function runAction(): Promise<void> {
           };
         }
       }
+      assertReportEvidence(reportPrefix(inputs.reportId), imported, primary.id, companion, baseline);
       publishOutputs(imported);
       if (pullNumber !== undefined) {
         try {
@@ -236,7 +237,7 @@ export async function runAction(): Promise<void> {
   } catch {
     core.setFailed('Required structured reporting failed: artifact upload did not complete.');
   }
-  await writeSummary(report, artifactId, companion);
+  await writeSummary(report, artifactId, report.command === 'run' ? companion : undefined);
   if (allMode && pullNumber !== undefined) {
     try {
       await commentReport(report, reportToken || githubToken, pullNumber, artifactId, companion);
