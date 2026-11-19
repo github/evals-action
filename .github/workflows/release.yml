@@ -85,6 +85,7 @@ jobs:
     timeout-minutes: 5
     environment: release
     permissions:
+      actions: read
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
@@ -93,6 +94,13 @@ jobs:
       TAG: ${{ needs.verify.outputs.tag }}
       ALIAS: ${{ needs.verify.outputs.alias }}
     steps:
+      - name: Require release environment reviewers
+        run: |
+          rules="$(gh api "repos/$REPOSITORY/environments/release" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length')"
+          if [ "${rules:-0}" -lt 1 ]; then
+            echo "::error::The release environment must require reviewers before publication."
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.verify.outputs.sha }}

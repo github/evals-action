@@ -115,7 +115,8 @@ tag on that commit, publishes the GitHub Release with generated notes, advances 
 major alias (`v0` for 0.x, `v1` for 1.x) only when the release is the newest of its
 major line, and verifies that each written tag resolves to the verified commit.
 No version bump commit is needed; `package.json` stays at `0.0.0`. Configure
-required reviewers on the `release` environment so publication needs approval.
+required reviewers on the `release` environment; the publish job fails before
+any write when the environment has no required reviewers.
 If publication fails partway, use **Re-run failed jobs** on the same run. It
 resumes only when an existing version tag already points to the verified commit
 and any existing GitHub Release is published with the requested prerelease

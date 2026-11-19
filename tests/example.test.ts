@@ -180,16 +180,19 @@ describe('release workflow contract', () => {
     expect(checkout.with).toMatchObject({ 'persist-credentials': false });
 
     const publish = workflow.jobs.publish!;
-    expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release', permissions: { contents: 'write' } });
+    expect(publish).toMatchObject({ needs: 'verify', if: '${{ !inputs.dry_run }}', environment: 'release' });
+    expect(publish.permissions).toEqual({ actions: 'read', contents: 'write' });
     const pinned = publish.steps.filter((step) => step.uses).map((step) => step.uses);
     expect(pinned).toHaveLength(2);
     expect(pinned[0]).toBe('actions/checkout@v7');
     expect(pinned[1]).toMatch(/^actions\/setup-node@[0-9a-f]{40}$/);
-    expect(publish.steps[0]!.with).toMatchObject({ 'persist-credentials': false });
+    expect(publish.steps.find((step) => step.uses === 'actions/checkout@v7')!.with).toMatchObject({ 'persist-credentials': false });
     const publishRuns = publish.steps.map((step) => step.run ?? '');
+    const reviewers = publishRuns.findIndex((run) => run.includes('select(.type == "required_reviewers")'));
     const recheck = publishRuns.findIndex((run) => run.includes('tooling/release.mjs recheck'));
     const firstWrite = publishRuns.findIndex((run) => run.includes('git/tags'));
-    expect(recheck).toBeGreaterThanOrEqual(0);
+    expect(reviewers).toBe(0);
+    expect(recheck).toBeGreaterThan(reviewers);
     expect(recheck).toBeLessThan(firstWrite);
     const script = publishRuns.join('\n');
     expect(script).toContain('isDraft,isPrerelease');
