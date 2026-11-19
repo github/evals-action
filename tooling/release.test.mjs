@@ -111,3 +111,41 @@ test('plan releases a patch when a shipped file moves out of a shipped path', (t
   assert.match(output, /^release=true$/m);
   assert.match(output, /^tag=v0\.1\.1$/m);
 });
+
+test('CLI rejects diverged tags and skips a HEAD behind the latest release', (t) => {
+  const repo = mkdtempSync(join(tmpdir(), 'release-plan-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd: repo, encoding: 'utf8' });
+  mkdirSync(join(repo, 'src'));
+  mkdirSync(join(repo, 'dist'));
+  writeFileSync(join(repo, 'src', 'index.js'), 'export const value = 1;\n');
+  writeFileSync(join(repo, 'dist', 'bundled-dependencies.json'), '[]\n');
+  git('init', '-q');
+  git('add', '.');
+  git('commit', '-q', '-m', 'feat: initial');
+  git('branch', '-M', 'main');
+  git('tag', 'v0.2.0');
+
+  writeFileSync(join(repo, 'src', 'index.js'), 'export const value = 2;\n');
+  git('commit', '-q', '-am', 'fix: main change');
+  git('checkout', '-b', 'release-line', 'v0.2.0');
+  writeFileSync(join(repo, 'src', 'index.js'), 'export const value = 3;\n');
+  git('commit', '-q', '-am', 'fix: release change');
+  git('tag', 'v0.2.1');
+  git('checkout', 'main');
+
+  const plan = () => execFileSync(process.execPath, [fileURLToPath(new URL('./release.mjs', import.meta.url)), 'plan', 'patch', 'true', 'true'], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, GITHUB_OUTPUT: '' },
+  });
+  assert.throws(() => plan(), (error) => {
+    assert.match(error.stderr.toString(), /v0\.2\.1 and this commit have diverged/);
+    return true;
+  });
+
+  git('checkout', '--detach', 'v0.2.0');
+  const output = plan();
+  assert.match(output, /^release=false$/m);
+  assert.match(output, /v0\.2\.1 is not an ancestor/);
+});
