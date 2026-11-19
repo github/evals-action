@@ -72,7 +72,7 @@ test('skips commits already covered by a newer release tag', () => {
 
 test('refuses to auto-release breaking changes as a patch', () => {
   const base = { tags: ['v0.2.0'], latestIsAncestor: true, changedFiles: ['src/main.ts'] };
-  for (const message of ['feat!: drop input', 'refactor(report)!: rename output', 'fix: x\n\nBREAKING CHANGE: removed y', 'fix: x\n\nBREAKING-CHANGE: removed y']) {
+  for (const message of ['feat!: drop input', 'FEAT!: drop input', 'Refactor(report)!: rename output', 'fix: x\n\nBREAKING CHANGE: removed y', 'fix: x\n\nBREAKING-CHANGE: removed y']) {
     assert.throws(() => planAutomatic({ ...base, messages: ['docs: ok', message] }), /manual minor or major release/, message);
   }
   assert.doesNotThrow(() => planAutomatic({ ...base, messages: ['fix: mention breaking change handling', 'feat: add! marker'] }));

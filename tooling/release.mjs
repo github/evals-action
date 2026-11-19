@@ -37,7 +37,7 @@ export function nextVersion(tags, bump) {
 }
 
 const SHIPPED = [/^src\//, /^dist\//, /^action\.yml$/];
-const BREAKING_SUBJECT = /^[a-z]+(\([^)\n]*\))?!:/;
+const BREAKING_SUBJECT = /^[a-z]+(\([^)\n]*\))?!:/i;
 const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
 
 export function newestVersion(tags) {
