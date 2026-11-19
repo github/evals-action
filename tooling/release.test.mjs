@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { nextVersion, parseVersion, planAutomatic, planRelease, recheckPlan } from './release.mjs';
 
 test('accepts only plain vMAJOR.MINOR.PATCH release tags', () => {
@@ -76,4 +81,24 @@ test('refuses to auto-release breaking changes as a patch', () => {
     assert.throws(() => planAutomatic({ ...base, messages: ['docs: ok', message] }), /manual minor or major release/, message);
   }
   assert.doesNotThrow(() => planAutomatic({ ...base, messages: ['fix: mention breaking change handling', 'feat: add! marker'] }));
+});
+
+test('plan releases a patch when a shipped file moves out of a shipped path', (t) => {
+  const repo = mkdtempSync(join(tmpdir(), 'release-plan-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: repo, encoding: 'utf8' });
+  mkdirSync(join(repo, 'src'));
+  mkdirSync(join(repo, 'dist'));
+  writeFileSync(join(repo, 'src', 'index.js'), 'export const value = 1;\n');
+  writeFileSync(join(repo, 'dist', 'bundled-dependencies.json'), '[]\n');
+  git('init', '-q');
+  git('add', '.');
+  git('commit', '-q', '-m', 'feat: initial');
+  git('tag', 'v0.1.0');
+  mkdirSync(join(repo, 'lib'));
+  git('mv', 'src/index.js', 'lib/index.js');
+  git('commit', '-q', '-m', 'refactor: move entry point');
+  const output = execFileSync(process.execPath, [fileURLToPath(new URL('./release.mjs', import.meta.url)), 'plan', 'patch', 'false', 'true'], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: '' } });
+  assert.match(output, /^release=true$/m);
+  assert.match(output, /^tag=v0\.1\.1$/m);
 });

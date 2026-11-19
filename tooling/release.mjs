@@ -87,7 +87,7 @@ function automaticInput(tags) {
   return {
     tags,
     latestIsAncestor,
-    changedFiles: git('diff', '--name-only', latest, 'HEAD').split('\n').filter(Boolean),
+    changedFiles: git('diff', '--name-only', '--no-renames', latest, 'HEAD').split('\n').filter(Boolean),
     messages: git('log', '--format=%B%x00', `${latest}..HEAD`).split('\0').map((message) => message.trim()).filter(Boolean),
   };
 }
