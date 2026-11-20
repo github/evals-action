@@ -136,9 +136,10 @@ require reviewers, so releases complete without manual approval.
 If publication fails partway, use **Re-run failed jobs** on the same run. It
 resumes only when an existing version tag already points to the verified commit
 and any existing GitHub Release is published with the requested prerelease
-setting. It rejects the retry if version tags changed after verification would
-alter the alias or latest decision; the next automatic check or a new dispatch
-replans in that case.
+setting. It rejects the retry if a version tag at or above the planned version
+appeared after verification, or if changed version tags would alter the alias
+or latest decision; the next automatic check or a new dispatch replans in that
+case.
 GitHub Release is marked latest only for a stable release newer than every
 existing version tag.
 
