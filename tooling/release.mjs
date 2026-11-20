@@ -96,7 +96,7 @@ function automaticInput(tags) {
   if (!latest) return { tags, latestIsAncestor: true, changedFiles: git('ls-files').split('\n').filter(Boolean), messages: [] };
   const latestIsAncestor = isAncestor(latest, 'HEAD');
   if (!latestIsAncestor && !isAncestor('HEAD', latest)) {
-    throw new Error(`${latest} and this commit have diverged; fix the release tag before automatic releases can continue.`);
+    throw new Error(`${latest} and this commit have diverged; dispatch a manual release from main to supersede it; do not move published version tags.`);
   }
   return {
     tags,

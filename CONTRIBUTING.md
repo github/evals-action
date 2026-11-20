@@ -112,9 +112,11 @@ The [`Release` workflow](.github/workflows/release.yml) publishes the current
   when `src/`, `dist/` or `action.yml` changed since the newest version tag, and
   skip docs-, test- or workflow-only changes. A commit since that tag with a
   `type!:` subject or `BREAKING CHANGE:` footer fails the run instead of being
-  released as a patch. `AUTO_RELEASE_PRERELEASE` (default `true`) selects the
-  prerelease setting. Set `AUTO_RELEASE` to anything else to stop unattended
-  releases.
+  released as a patch. If the newest version tag is not in `main`'s history,
+  automatic runs fail; dispatch a manual release from `main` to supersede it
+  instead of moving the published tag. `AUTO_RELEASE_PRERELEASE` (default
+  `true`) selects the prerelease setting. Set `AUTO_RELEASE` to anything else
+  to stop unattended releases.
 - **Manual releases** use `workflow_dispatch` from `main` with `bump`
   (`patch`, `minor` or `major`; default `minor`), `prerelease` (default `true`)
   and `dry_run` (default `true`). Use them for minor and major versions.
