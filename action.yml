@@ -3,7 +3,7 @@ description: Acquire Vally and run native lint or evaluations with structured Gi
 author: GitHub
 inputs:
   command:
-    description: Default all validates, lints, runs the selected evals, and updates one PR comment. Report verifies evidence and writes a job summary on pull_request, push, and workflow_dispatch; only pull_request updates a PR comment. Plan is unsupported.
+    description: Default all validates, lints, and runs the selected evals. All and report update a PR comment on pull_request; other events use the job summary. Report verifies evidence without running evals. Plan is unsupported.
     default: all
   github-token:
     description: Automatic job token for Copilot and PR commenting in all mode, or artifact discovery and PR commenting in report mode. Discovery requires actions read. The all job token has combined permissions; use separate commands for isolation.

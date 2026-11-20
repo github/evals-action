@@ -116,6 +116,48 @@ may access that token. This is convenient, not credential isolation. Use only
 trusted reviewed sources, grant no unnecessary permissions, and use separate
 commands/jobs below when you need a narrower model token.
 
+## Running after another workflow
+
+The following lint-only example checks out the commit from a successful `CI`
+push to `main`. Replace `CI` with the name of an existing workflow and `evals`
+with your project directory. The `workflow_run` workflow file must exist on the
+default branch.
+
+```yaml
+name: Evals after CI
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: github/evals-action@v0
+        with:
+          command: lint
+          working-directory: evals
+```
+
+This example evaluates a same-repository push, not a PR. For PR-triggered
+workflows, establish the intended source and revision using trusted GitHub data
+before checkout. `workflow_run` does not itself make executed code trusted,
+even for lint; configure approvals and permissions accordingly. Results appear
+in the job summary and artifacts, not a PR comment.
+
 ## Advanced: separate jobs and permissions
 
 The **same Action** can be used in separate jobs. There is no custom verdict
@@ -388,6 +430,8 @@ revision. Check out the intended commit explicitly; the report records that
 checkout's HEAD. The Action does not authenticate the triggering run, PR, or
 revision, and does not comment on PRs for `workflow_run`. If provenance matters,
 validate it in the caller using trusted GitHub data, not artifact claims alone.
+For `pull_request` events, PR comment publication additionally requires the
+reported checkout revision to match the current PR head or merge revision.
 Configure protected environment approvals and minimum job permissions, including
 `copilot-requests: write` for workflow-token model use and `actions: read` for
 artifact discovery. Executing untrusted code can expose credentials and network
