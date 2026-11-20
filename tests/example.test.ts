@@ -204,6 +204,10 @@ describe('release workflow contract', () => {
     const recheck = publishRuns.findIndex((run) => run.includes('tooling/release.mjs recheck'));
     const firstWrite = publishRuns.findIndex((run) => run.includes('git/tags'));
     expect(branchPolicy).toBe(0);
+    const policyGuard = publishRuns[branchPolicy]!.indexOf('if [ "$policy" != "false true" ]');
+    const branchPolicyLookup = publishRuns[branchPolicy]!.indexOf('deployment-branch-policies');
+    expect(policyGuard).toBeGreaterThanOrEqual(0);
+    expect(policyGuard).toBeLessThan(branchPolicyLookup);
     expect(recheck).toBeGreaterThan(branchPolicy);
     expect(recheck).toBeLessThan(firstWrite);
     const script = publishRuns.join('\n');
