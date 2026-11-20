@@ -41,6 +41,25 @@ describe('telemetry workflow contracts', () => {
 });
 
 describe('documentation content contracts', () => {
+  it('documents a same-repository workflow_run checkout without model or PR-write permissions', async () => {
+    const readme = await readFile('README.md', 'utf8');
+    const source = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!)
+      .find((yaml) => yaml.includes('name: Evals after CI'))!;
+    const workflow = parse(source) as {
+      on: { workflow_run: { workflows: string[]; types: string[]; branches: string[] } };
+      permissions: Record<string, string>;
+      jobs: Record<string, { if: string; steps: Array<{ uses: string; with: Record<string, unknown> }> }>;
+    };
+    expect(workflow.on.workflow_run).toEqual({ workflows: ['CI'], types: ['completed'], branches: ['main'] });
+    expect(workflow.permissions).toEqual({ contents: 'read' });
+    expect(workflow.jobs.lint!.if).toContain("github.event.workflow_run.event == 'push'");
+    expect(workflow.jobs.lint!.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository');
+    expect(workflow.jobs.lint!.steps).toEqual([
+      { uses: 'actions/checkout@v7', with: { ref: '${{ github.event.workflow_run.head_sha }}', 'persist-credentials': false } },
+      { uses: 'github/evals-action@v0', with: { command: 'lint', 'working-directory': 'evals' } },
+    ]);
+  });
+
   it('states in Outcomes and evidence that passing checks do not guarantee AI correctness and omits the internal license-clearance note', async () => {
     const readme = await readFile('README.md', 'utf8');
     const outcomesMatch = /\n## Outcomes and evidence\n([\s\S]*?)(?=\n## |$)/.exec(readme);
@@ -54,7 +73,7 @@ describe('real Copilot example contract', () => {
   it('documents separate jobs with one automatic reporter and no artifact wiring', async () => {
     const readme = await readFile('README.md', 'utf8');
     const source = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!)
-      .find((yaml) => yaml.includes('\n  lint:'))!;
+      .find((yaml) => yaml.includes('\n  lint:') && yaml.includes('\n  report:'))!;
     const workflow = parse(source) as {
       jobs: Record<string, {
         needs?: string | string[]; if?: string; outputs?: unknown;

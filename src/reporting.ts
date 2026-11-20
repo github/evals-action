@@ -64,7 +64,7 @@ export interface ReportExpectation {
   repository: string;
   workflowRunId: number;
   workflowRunAttempt: number;
-  revision: string;
+  revision?: string;
 }
 
 export function escapeMarkdown(value: string): string {
@@ -670,11 +670,11 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
   const repository = string(raw.repository, 'repository', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
   const workflowRunId = positive(raw.workflowRunId, 'workflowRunId');
   const workflowRunAttempt = positive(raw.workflowRunAttempt, 'workflowRunAttempt');
-  const revision = string(raw.revision, 'revision', /^[a-f0-9]{40}$/);
+  const revision = string(raw.revision, 'revision', /^(?:[a-f0-9]{40}|unknown)$/);
   if (!(typeof expected.reportId === 'string' ? reportId === expected.reportId : expected.reportId.includes(reportId)) ||
       repository !== expected.repository ||
       workflowRunId !== expected.workflowRunId || workflowRunAttempt !== expected.workflowRunAttempt ||
-      revision !== expected.revision) {
+      (expected.revision !== undefined && revision !== expected.revision)) {
     throw new Error('Structured report identity does not match the current workflow.');
   }
   const command = string(raw.command, 'command');
@@ -686,6 +686,9 @@ export function parseStructuredReport(text: string, expected: ReportExpectation)
   const outcomes: Report['outcome'][] = ['error', 'not-run', 'validated', 'passed', 'failed', 'cancelled'];
   const outcome = string(raw.outcome, 'outcome') as Report['outcome'];
   if (!outcomes.includes(outcome)) throw new Error('Invalid structured report outcome.');
+  if (revision === 'unknown' && outcome !== 'error' && outcome !== 'not-run') {
+    throw new Error('A successful structured report requires a checkout revision.');
+  }
   const completeness = string(raw.completeness, 'completeness') as Report['completeness'];
   if (!['complete', 'partial', 'unknown'].includes(completeness)) throw new Error('Invalid structured report completeness.');
   const category = string(raw.category, 'category') as Report['category'];

@@ -2,15 +2,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from '../src/policy.js';
+import { checkoutRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from '../src/policy.js';
 
 const directories: string[] = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 
 describe('trust and inert operations', () => {
-  it('rejects privileged or unknown events', () => {
-    for (const name of ['pull_request_target', 'issue_comment', 'schedule']) expect(() => eventEligibility(name, {}, 'o/r')).toThrow();
-    for (const name of ['push', 'workflow_dispatch']) expect(eventEligibility(name, {}, 'o/r')).toBe('eligible');
+  it('rejects pull_request_target and accepts caller-configured events', () => {
+    expect(() => eventEligibility('pull_request_target', {}, 'o/r')).toThrow();
+    for (const name of ['push', 'workflow_dispatch', 'workflow_run', 'schedule', 'issue_comment']) {
+      expect(eventEligibility(name, {}, 'o/r')).toBe('eligible');
+    }
   });
   it('excludes forks and requires exact base identity', () => {
     const payload = (name: string, fork: boolean, base = 'o/r') => ({
@@ -41,9 +43,8 @@ describe('trust and inert operations', () => {
     expect(inertEnvironment({})).toEqual({ CI: 'true' });
   });
   it('checks immutable checkout identity without claiming authorization', () => {
-    assertRevision(`${'a'.repeat(40)}\n`, 'a'.repeat(40));
-    expect(() => assertRevision('a'.repeat(40), 'b'.repeat(40))).toThrow();
-    expect(() => assertRevision('main', 'main')).toThrow();
+    expect(checkoutRevision(`${'a'.repeat(40)}\n`)).toBe('a'.repeat(40));
+    expect(() => checkoutRevision('main')).toThrow();
   });
   it('contains paths including symlinks and preserves spaces', async () => {
     const root = await mkdtemp(join(tmpdir(), 'evals-policy-')); directories.push(root);

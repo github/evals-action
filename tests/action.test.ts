@@ -282,7 +282,7 @@ it('fails missing current-attempt evidence and discovery permission errors witho
 });
 
 it.each([
-  { workflowRunAttempt: 2 }, { workflowRunId: 101 }, { revision: 'f'.repeat(40) },
+  { workflowRunAttempt: 2 }, { workflowRunId: 101 },
   { repository: 'o/other' }, { reportId: 'other' },
 ])('verifies discovered report contents against current identity %j', async (overrides) => {
   discovery({ 123: importedReport() });
@@ -325,9 +325,10 @@ it('downloads and posts a digest-bound report without acquiring or executing Val
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
 
-it.each(['push', 'workflow_dispatch'] as const)('publishes verified report evidence to the summary on %s without PR APIs', async (eventName) => {
+it.each(['push', 'workflow_dispatch', 'workflow_run'] as const)('publishes verified report evidence to the summary on %s without PR APIs', async (eventName) => {
   discovery({ 123: importedReport() });
   vi.stubEnv('GITHUB_EVENT_NAME', eventName);
+  if (eventName === 'workflow_run') vi.stubEnv('GITHUB_SHA', 'f'.repeat(40));
   await writeFile(join(root, 'event.json'), '{}');
 
   await runAction();
@@ -465,8 +466,8 @@ it('does not initialize a reporting client for forks or invalid checkouts', asyn
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it('reports wrong revision and rejects report-token on execution commands', async () => {
-  mocks.revision = 'c'.repeat(40);
+it('rejects invalid checkout identity and report-token on execution commands', async () => {
+  mocks.revision = 'not-a-commit';
   await runAction();
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
@@ -476,6 +477,74 @@ it('reports wrong revision and rejects report-token on execution commands', asyn
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('report-token-only-valid-for-all-or-report'));
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('executes a caller-selected workflow_run checkout and reports its actual revision', async () => {
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_run');
+  await writeFile(join(root, 'event.json'), '{}');
+  mocks.revision = 'c'.repeat(40);
+  await runAction();
+  expect(mocks.nativeCommands).toHaveBeenCalledOnce();
+  expect((await uploadedReports())[0]?.revision).toBe('c'.repeat(40));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('c'.repeat(40)));
+  expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('can summarize an early execution error whose checkout revision is unknown', async () => {
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_run');
+  await writeFile(join(root, 'event.json'), '{}');
+  discovery({ 123: importedReport({ revision: 'unknown', outcome: 'error' }) });
+  await runAction();
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'error');
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('unknown'));
+});
+
+it('preserves an early all-mode error without attempting a revision-bound PR comment', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['working-directory'] = '../outside';
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('invalid-input-or-context'));
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
+  expect((await uploadedReports())[0]).toMatchObject({ revision: 'unknown', outcome: 'error' });
+});
+
+it('reports an unknown-revision run error without combining lint or baseline evidence', async () => {
+  discovery({
+    123: importedReport({ revision: 'unknown', outcome: 'error', code: 'invalid-input-or-context' }),
+    124: importedLint(),
+  });
+  mocks.inputs['baseline-report-id'] = 'evals-baseline';
+  await runAction();
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.download).toHaveBeenCalledTimes(1);
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'error');
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('cannot be combined'));
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('/artifacts/123'));
+});
+
+it('rejects a passing report with an unknown checkout revision', async () => {
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_run');
+  await writeFile(join(root, 'event.json'), '{}');
+  discovery({ 123: importedReport({ revision: 'unknown' }) });
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalled();
+  expect(mocks.setOutput).not.toHaveBeenCalledWith('outcome', 'passed');
+});
+
+it('refuses to execute if the selected checkout changes during acquisition', async () => {
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_run');
+  await writeFile(join(root, 'event.json'), '{}');
+  mocks.acquire.mockImplementationOnce(() => { mocks.revision = 'b'.repeat(40); });
+  await runAction();
+  expect(mocks.nativeCommands).not.toHaveBeenCalled();
+  expect(mocks.setFailed).toHaveBeenCalledWith(expect.stringContaining('checkout-revision-changed'));
+  expect((await uploadedReports())[0]?.revision).toBe('a'.repeat(40));
 });
 
 it('discovers or downloads baseline run artifacts in report mode and passes them to postReport and summary', async () => {
@@ -608,7 +677,6 @@ it('rejects malformed, stale-identity and execution-shaped report commands befor
   };
   for (const body of [
     'not-json',
-    structuredReport(importedReport({ revision: 'c'.repeat(40) })),
     structuredReport(importedReport({ workflowRunId: 101 })),
   ]) {
     vi.clearAllMocks();
@@ -837,7 +905,8 @@ it('reports invalid all-mode selection without acquiring or executing Vally', as
   await runAction();
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeCommands).not.toHaveBeenCalled();
-  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
   expect(mocks.setFailed).toHaveBeenCalled();
 });
 
