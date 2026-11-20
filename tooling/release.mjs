@@ -59,8 +59,11 @@ export function planAutomatic({ tags, latestIsAncestor, changedFiles, messages }
 
 // A retried publish job reuses verify outputs; reject them if newer tags appeared since verification.
 export function recheckPlan({ version, prerelease, tags, missingLicenseText, moveAlias, latest }) {
-  const plan = planRelease({ version, prerelease, tags: tags.filter((tag) => tag !== version), missingLicenseText });
-  if (plan.moveAlias !== moveAlias || plan.latest !== latest) {
+  const currentTags = tags.filter((tag) => tag !== version);
+  const plan = planRelease({ version, prerelease, tags: currentTags, missingLicenseText });
+  const newest = newestVersion(currentTags);
+  if ((newest && compare(parseVersion(newest), parseVersion(version)) >= 0) ||
+      plan.moveAlias !== moveAlias || plan.latest !== latest) {
     throw new Error(`Release plan for ${version} is stale: version tags changed after verification. Dispatch a new release run.`);
   }
   return plan;

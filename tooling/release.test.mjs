@@ -60,6 +60,12 @@ test('rechecks retried publications against current tags', () => {
   assert.throws(() => recheckPlan({ ...base, tags: ['v0.2.0', 'v1.0.0'] }), /stale/);
 });
 
+test('rejects prerelease plans when a higher-major tag appeared after verification', () => {
+  const base = { version: 'v0.3.0', prerelease: true, missingLicenseText: 0, moveAlias: true, latest: false };
+  assert.equal(recheckPlan({ ...base, tags: ['v0.2.0'] }).tag, 'v0.3.0');
+  assert.throws(() => recheckPlan({ ...base, tags: ['v0.2.0', 'v1.0.0'] }), /stale/);
+});
+
 test('bumps from the newest version tag', () => {
   const tags = ['v0', 'v0.1.0', 'v0.2.0', 'v0.10.1', 'v0.2.0-rc.1', 'other'];
   assert.equal(nextVersion(tags, 'patch'), 'v0.10.2');
