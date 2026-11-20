@@ -140,7 +140,7 @@ jobs:
             echo "::error::The release environment must restrict deployments to exactly branch main before unattended publication."
             exit 1
           fi
-          branches="$(gh api --paginate "repos/$REPOSITORY/environments/release/deployment-branch-policies" --jq '.branch_policies[] | "\(.type // "branch"):\(.name)"')"
+          branches="$(gh api --paginate "repos/$REPOSITORY/environments/release/deployment-branch-policies" --jq '.branch_policies[] | "\(.type):\(.name)"')"
           if [ "$branches" != "branch:main" ]; then
             echo "::error::The release environment must restrict deployments to exactly branch main before unattended publication."
             exit 1
