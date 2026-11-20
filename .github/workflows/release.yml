@@ -136,8 +136,12 @@ jobs:
       - name: Require a release environment restricted to main
         run: |
           policy="$(gh api "repos/$REPOSITORY/environments/release" --jq '"\(.deployment_branch_policy.protected_branches // false) \(.deployment_branch_policy.custom_branch_policies // false)"')"
+          if [ "$policy" != "false true" ]; then
+            echo "::error::The release environment must restrict deployments to exactly branch main before unattended publication."
+            exit 1
+          fi
           branches="$(gh api --paginate "repos/$REPOSITORY/environments/release/deployment-branch-policies" --jq '.branch_policies[] | "\(.type // "branch"):\(.name)"')"
-          if [ "$policy" != "false true" ] || [ "$branches" != "branch:main" ]; then
+          if [ "$branches" != "branch:main" ]; then
             echo "::error::The release environment must restrict deployments to exactly branch main before unattended publication."
             exit 1
           fi

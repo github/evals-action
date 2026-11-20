@@ -78,10 +78,12 @@ function git(...args) {
 // `git merge-base --is-ancestor` exits 1 for "no"; any other failure is a git error.
 export function isAncestor(ancestor, descendant, run = execFileSync) {
   try {
-    run('git', ['merge-base', '--is-ancestor', ancestor, descendant], { stdio: 'ignore' });
+    run('git', ['merge-base', '--is-ancestor', ancestor, descendant], { encoding: 'utf8' });
     return true;
   } catch (error) {
     if (error.status === 1) return false;
+    const stderr = error.stderr?.toString().trim();
+    if (stderr) throw new Error(`${error.message}\n${stderr}`, { cause: error });
     throw error;
   }
 }

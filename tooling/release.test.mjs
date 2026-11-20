@@ -13,7 +13,8 @@ test('isAncestor treats only git exit 1 as "not an ancestor" and rethrows git er
   };
   assert.equal(isAncestor('v0.2.0', 'HEAD', () => ''), true);
   assert.equal(isAncestor('v0.2.0', 'HEAD', exit(1)), false);
-  assert.throws(() => isAncestor('v0.2.0', 'HEAD', exit(128)), /git failed/);
+  const gitError = Object.assign(new Error('git failed'), { status: 128, stderr: 'fatal: bad object' });
+  assert.throws(() => isAncestor('v0.2.0', 'HEAD', () => { throw gitError; }), /fatal: bad object/);
 });
 
 test('accepts only plain vMAJOR.MINOR.PATCH release tags', () => {
