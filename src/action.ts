@@ -94,7 +94,9 @@ export async function runAction(): Promise<void> {
         } else throw new NativeError('report-artifacts-not-found', 'evidence');
       }
       const imported = await readReportArtifact(primary.id, primary.digest, primary.reportId, primary.command);
-      if (inputs.lintArtifactId !== undefined && primary.command !== 'lint') {
+      if (imported.revision === 'unknown') {
+        core.warning('The checkout revision is unknown; lint and baseline evidence cannot be combined with this report.');
+      } else if (inputs.lintArtifactId !== undefined && primary.command !== 'lint') {
         if (!inputs.lintArtifactDigest) throw new NativeError('lint-artifact-identity-required', 'configuration');
         companion = {
           report: await readReportArtifact(inputs.lintArtifactId, inputs.lintArtifactDigest,
@@ -107,7 +109,7 @@ export async function runAction(): Promise<void> {
           artifactId: discoveredLint.id,
         };
       }
-      if (imported.command === 'run') {
+      if (imported.command === 'run' && imported.revision !== 'unknown') {
         if (inputs.baselineArtifactId !== undefined && inputs.baselineArtifactDigest) {
           const expectedBaselineId = inputs.baselineReportId
             ? [inputs.baselineReportId, reportPrefix(inputs.baselineReportId), `${reportPrefix(inputs.baselineReportId)}-run`]
@@ -266,6 +268,10 @@ function reportPrefix(id: string): string { return id.replace(/-(?:lint|run)$/, 
 async function commentReport(
   report: Report, token: string, pullNumber: number, artifactId?: number, companion?: Evidence, baseline?: Evidence,
 ): Promise<void> {
+  if (report.revision === 'unknown') {
+    core.warning('PR comment skipped because the checkout revision is unknown. See the job summary and structured artifact.');
+    return;
+  }
   try {
     const client = githubClient(token, requiredEnv('RUNNER_TEMP'));
     const context = {

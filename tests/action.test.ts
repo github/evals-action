@@ -500,6 +500,34 @@ it('can summarize an early execution error whose checkout revision is unknown', 
   expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('unknown'));
 });
 
+it('preserves an early all-mode error without attempting a revision-bound PR comment', async () => {
+  mocks.inputs.command = 'all';
+  mocks.inputs['working-directory'] = '../outside';
+  await runAction();
+  expect(mocks.setFailed).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('invalid-input-or-context'));
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
+  expect((await uploadedReports())[0]).toMatchObject({ revision: 'unknown', outcome: 'error' });
+});
+
+it('reports an unknown-revision run error without combining lint or baseline evidence', async () => {
+  discovery({
+    123: importedReport({ revision: 'unknown', outcome: 'error', code: 'invalid-input-or-context' }),
+    124: importedLint(),
+  });
+  mocks.inputs['baseline-report-id'] = 'evals-baseline';
+  await runAction();
+  expect(mocks.setFailed).not.toHaveBeenCalled();
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.download).toHaveBeenCalledTimes(1);
+  expect(mocks.setOutput).toHaveBeenCalledWith('outcome', 'error');
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('cannot be combined'));
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('invalid-input-or-context'));
+  expect(mocks.summaryRaw).toHaveBeenCalledWith(expect.stringContaining('/artifacts/123'));
+});
+
 it('rejects a passing report with an unknown checkout revision', async () => {
   vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_run');
   await writeFile(join(root, 'event.json'), '{}');
@@ -877,7 +905,8 @@ it('reports invalid all-mode selection without acquiring or executing Vally', as
   await runAction();
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(mocks.nativeCommands).not.toHaveBeenCalled();
-  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining('PR comment skipped'));
   expect(mocks.setFailed).toHaveBeenCalled();
 });
 
