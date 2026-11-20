@@ -26,9 +26,12 @@ The Action invokes the acquired Vally CLI directly. Use only trusted,
 reviewed workflows and evaluation sources. Native project configuration can
 load executable plugins, including during lint; lint does not run subjects or
 judges, but it is not a sandbox. Native run may execute project setup, providers,
-executors and graders. Fork jobs and `pull_request_target` are excluded.
+executors and graders. Fork `pull_request` jobs and `pull_request_target` are excluded.
 
-The checkout revision is checked before acquisition and again before execution.
+The caller selects the checkout; its HEAD is recorded before acquisition and
+checked again before execution, not compared to `GITHUB_SHA`. For `workflow_run`,
+the caller must authenticate source run and revision provenance when needed;
+artifacts alone do not establish it.
 Workflow preparation can still intentionally change files in that checkout;
 the reported Git revision is not a claim that all working files are unchanged.
 The default `all` step, or an explicit `run` step, is the team's execution
@@ -59,7 +62,9 @@ For stronger separation, use the same Action in independent lint, run, and
 report jobs. Grant the run job only contents read and Copilot permission; grant
 the report job contents read and PR-write, but no Copilot permission. Explicit
 run rejects `report-token`. Reporting downloads and digest-verifies the current
-run's structured artifacts and checks repository/revision/run/attempt identity.
+run's structured artifacts and checks repository/run/attempt identity and
+revision consistency across combined reports. PR comments additionally validate
+the reported revision against the current PR.
 It never invokes Vally. Separate jobs reduce evaluator access to PR-write
 authority; they are optional, not a platform requirement.
 

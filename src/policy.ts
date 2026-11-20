@@ -18,12 +18,13 @@ export function eventEligibility(eventName: string, payload: unknown, repository
     }
     return head.full_name === repository && head.fork === false ? 'eligible' : 'fork';
   }
-  if (eventName !== 'push' && eventName !== 'workflow_dispatch') throw new Error('Unsupported workflow event.');
   return 'eligible';
 }
 
-export function assertRevision(actual: string, expected: string): void {
-  if (!/^[a-f0-9]{40}$/.test(expected) || actual.trim() !== expected) throw new Error('Checkout revision does not match GITHUB_SHA.');
+export function checkoutRevision(actual: string): string {
+  const revision = actual.trim();
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Checkout revision is not a commit SHA.');
+  return revision;
 }
 
 export async function projectDirectory(workspace: string, input: string): Promise<string> {

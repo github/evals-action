@@ -249,7 +249,8 @@ Providing the primary ID/digest pair bypasses discovery entirely; it reports
 only that artifact and any explicitly supplied lint companion, preserving
 existing workflows without requiring `actions: read`. Alternatively, supply
 only the lint ID/digest pair to override lint while discovering run evidence.
-Overrides still undergo digest and repository/revision/run/attempt checks.
+Overrides still undergo digest and repository/run/attempt checks; combined
+reports must also agree on checkout revision.
 Artifacts uploaded by older Action versions require explicit IDs/digests.
 
 ### Baseline vs. Candidate PR comparison
@@ -298,7 +299,7 @@ explicitly instead of discovering the baseline artifact by `baseline-report-id`
 | Omitted / `all` | Validate inputs, lint, run after successful lint, publish evidence, and update the PR comment. |
 | `lint` | Native whole-project lint. No selector or model credentials needed. Publishes a summary and artifact, without commenting. |
 | `run` | Native `vally eval --require-pass --output=jsonl ...`. Requires a suite, eval paths or tags. Publishes a summary and artifact, without commenting. |
-| `report` | Verify structured artifacts and write the report to the job summary. On pull requests, also update the sticky comment; on push and manual dispatch, no PR APIs are called. Never installs Vally or runs a model. |
+| `report` | Verify structured artifacts and write the report to the job summary. On pull requests, also update the sticky comment; other events do not call PR APIs. Never installs Vally or runs a model. |
 | `plan` | Reserved and unsupported; fails explicitly, never runs an eval. |
 
 Native arguments are separate argv values, never interpolated shell commands.
@@ -375,11 +376,22 @@ owned process group; hard job cancellation may prevent artifacts/comments.
 ## Trust and authentication
 
 Use trusted reviewed evals and select your own triggers/approval policy.
-Fork PRs and `pull_request_target` are excluded before acquisition. Native lint
+Fork `pull_request` events and `pull_request_target` are excluded before acquisition. Native lint
 can load executable plugins; run can invoke setup scripts, graders, providers
 and model tools. Environment filtering is not an OS sandbox. The Action
-verifies checkout revision before execution, but this does not prove that
-workflow preparation left every working file unchanged.
+records the checkout HEAD and checks that it remains unchanged before execution,
+but this does not prove that workflow preparation left every working file unchanged.
+
+The caller selects the trigger and checkout. For `workflow_run`, `GITHUB_SHA`
+identifies the workflow's default-branch context and need not be the evaluated
+revision. Check out the intended commit explicitly; the report records that
+checkout's HEAD. The Action does not authenticate the triggering run, PR, or
+revision, and does not comment on PRs for `workflow_run`. If provenance matters,
+validate it in the caller using trusted GitHub data, not artifact claims alone.
+Configure protected environment approvals and minimum job permissions, including
+`copilot-requests: write` for workflow-token model use and `actions: read` for
+artifact discovery. Executing untrusted code can expose credentials and network
+access even after approval; use isolated jobs and trusted inputs.
 
 All mode deliberately shares the job token between Copilot and PR reporting.
 The Action cannot remove a token's permissions. Separate jobs are an optional
@@ -441,9 +453,9 @@ mutually exclusive. Separate reporting jobs must use the same concurrency group.
 Report mode discovers artifacts using the authenticated current-run listing
 and its SHA-256 digests, or uses explicit ID/digest pairs. It downloads the
 selected artifacts itself, verifies digests and current
-repository/revision/run/attempt identity, and accepts only a bounded
+repository/run/attempt identity, and accepts only a bounded
 `report.json`. A companion must be successful lint from the same run/revision,
-but it can originate in a separate lint job. On push and `workflow_dispatch`,
+but it can originate in a separate lint job. On events other than `pull_request`,
 report mode writes the verified report to the job summary without looking up a
 pull request or calling comment APIs.
 

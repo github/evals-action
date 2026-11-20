@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseInputs, type Inputs } from './inputs.js';
-import { assertRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
+import { checkoutRevision, containedFile, eventEligibility, inertEnvironment, object, projectDirectory } from './policy.js';
 import { NativeError, nativeArguments, nativeEnvironment, runNative } from './native.js';
 import { parseStructuredReport, renderReport, renderRunDiagnostics, structuredReport, type Report } from './reporting.js';
 import { githubClient, ReportingError, takeReportToken, takeSecretInput } from './github.js';
@@ -30,7 +30,7 @@ export async function runAction(): Promise<void> {
     workflowRunId: Number(process.env.GITHUB_RUN_ID ?? 0), workflowRunAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 0),
     sourceJob: process.env.GITHUB_JOB ?? 'unknown', selection: '0'.repeat(64),
     command: allMode ? 'lint' : requestedCommand, outcome: 'error', completeness: 'unknown',
-    revision: /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? '') ? process.env.GITHUB_SHA! : 'unknown',
+    revision: 'unknown',
     category: 'configuration', code: 'invalid-input-or-context',
   };
   let inputs: Inputs | undefined;
@@ -146,7 +146,7 @@ export async function runAction(): Promise<void> {
       core.warning('Lint scans all evals under working-directory. Suite, eval-paths and tags selectors are ignored for lint.');
     }
     const cwd = await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory);
-    await verifyCheckout(cwd);
+    report.revision = await readCheckoutRevision(cwd);
     nativeDirectory = await mkdtemp(join(requiredEnv('RUNNER_TEMP'), 'evals-native-'));
     const home = join(nativeDirectory, 'home');
     await mkdir(home, { mode: 0o700 });
@@ -168,7 +168,7 @@ export async function runAction(): Promise<void> {
       version: engine.version, sha256: engine.sha256,
       dependencySha256: engine.dependencySha256, lockSha256: engine.lockSha256,
     };
-    await verifyCheckout(cwd);
+    await verifyCheckout(cwd, report.revision);
     if (await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory) !== cwd) {
       throw new NativeError('project-directory-changed', 'policy');
     }
@@ -189,7 +189,7 @@ export async function runAction(): Promise<void> {
         core.setOutput('lint-artifact-digest', saved.digest);
         report.category = 'policy';
         report.code = 'checkout-revision-changed';
-        await verifyCheckout(cwd);
+        await verifyCheckout(cwd, report.revision);
         if (await projectDirectory(requiredEnv('GITHUB_WORKSPACE'), inputs.workingDirectory) !== cwd) {
           throw new NativeError('project-directory-changed', 'policy');
         }
@@ -301,11 +301,15 @@ async function writeSummary(
   }
 }
 
-async function verifyCheckout(cwd: string): Promise<void> {
+async function readCheckoutRevision(cwd: string): Promise<string> {
   const revision = await execute('git', ['-C', cwd, 'rev-parse', 'HEAD'], {
     env: inertEnvironment(process.env), timeout: 10_000, maxBuffer: 4096,
   });
-  assertRevision(revision.stdout, requiredEnv('GITHUB_SHA'));
+  return checkoutRevision(revision.stdout);
+}
+
+async function verifyCheckout(cwd: string, expected: string): Promise<void> {
+  if (await readCheckoutRevision(cwd) !== expected) throw new NativeError('checkout-revision-changed', 'policy');
 }
 
 async function uploadReport(report: Report, retentionDays: number): Promise<{ id: number; digest: string; path: string }> {
@@ -337,7 +341,7 @@ async function readReportArtifact(
     const path = await containedFile(directory, 'report.json', 1024 * 1024);
     const report = parseStructuredReport(await readFile(path, 'utf8'), {
       reportId, repository: requiredEnv('GITHUB_REPOSITORY'), workflowRunId: positiveEnv('GITHUB_RUN_ID'),
-      workflowRunAttempt: positiveEnv('GITHUB_RUN_ATTEMPT'), revision: requiredEnv('GITHUB_SHA'),
+      workflowRunAttempt: positiveEnv('GITHUB_RUN_ATTEMPT'),
     });
     if (command !== undefined && report.command !== command) throw new NativeError('source-artifact-command-mismatch', 'evidence');
     return report;
